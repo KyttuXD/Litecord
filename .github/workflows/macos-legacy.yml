@@ -1,0 +1,38 @@
+name: macOS Legacy (OS X 10.5 - 10.11) experiments
+
+# Manual only. Builds legacy/probe with the MacPorts Rust 1.77 compiler for old Intel
+# Macs (docs/MACOS_LEGACY.md). The result is a test program, not Litecord itself.
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    name: Legacy probe (Rust runtime, TLS, audio)
+    runs-on: macos-15-intel
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Cargo 1.77 (drives the old compiler)
+        run: rustup toolchain install 1.77.0 --profile minimal --no-self-update
+
+      - name: Fetch the old-Mac compiler and compatibility library (sha256 checked)
+        run: |
+          sh packaging/macos/legacy/bootstrap-runtime.sh "$RUNNER_TEMP/legacy-rust"
+          sh packaging/macos/legacy/bootstrap-leopard.sh "$RUNNER_TEMP/legacy-rust"
+
+      - name: Build the probe for OS X 10.5+
+        run: bash packaging/macos/legacy/build-probe.sh "$RUNNER_TEMP/legacy-rust"
+
+      # The runner is a current macOS: this only shows the program is sound, not that 10.6 runs it.
+      - name: Run the probe on the build host
+        continue-on-error: true
+        run: dist/legacy-probe/litecord-legacy-probe
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: litecord-legacy-probe
+          path: dist/litecord-legacy-probe.zip

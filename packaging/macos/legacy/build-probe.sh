@@ -1,0 +1,43 @@
+#!/bin/bash
+# build-probe.sh BOOTSTRAP_DIRECTORY: builds legacy/probe for OS X 10.5 and later (Intel 64-bit)
+# with the MacPorts Rust 1.77 compiler fetched by bootstrap-runtime.sh + bootstrap-leopard.sh.
+# The recipe (compiler, compatibility library, flat namespace, old program format) comes from
+# KyttuXD/TheLastRoute, packaging/macos/legacy. Run on an Intel macOS build host.
+set -euo pipefail
+ROOT=$(git rev-parse --show-toplevel)
+TOOLCHAIN=${1:?usage: build-probe.sh BOOTSTRAP_DIRECTORY}
+COMPILER="$TOOLCHAIN/compiler-leopard"
+SUPPORT="$TOOLCHAIN/support-leopard/opt/local/lib"
+test -x "$COMPILER/bin/rustc"
+test -f "$SUPPORT/libMacportsLegacySystem.B.dylib"
+# The compiler program itself is a Darwin 10 binary and needs its own compatibility library.
+export DYLD_LIBRARY_PATH="$TOOLCHAIN/support/opt/local/lib:$COMPILER/lib:/usr/lib"
+export RUSTC="$COMPILER/bin/rustc"
+export MACOSX_DEPLOYMENT_TARGET=10.5
+# Flat namespace: the old system then finds clock_gettime, getentropy and the like in
+# libMacportsLegacySystem instead of looking for them (in vain) in its own libSystem.
+export RUSTFLAGS="-L native=$SUPPORT -C link-arg=-lMacportsLegacySystem.B -C link-arg=-Wl,-flat_namespace"
+cd "$ROOT/legacy/probe"
+# Cargo 1.77 drives the build: a newer Cargo passes switches this compiler does not know.
+rustup run 1.77.0 cargo build --locked --release --target x86_64-apple-darwin
+BIN="$ROOT/legacy/probe/target/x86_64-apple-darwin/release/litecord-legacy-probe"
+OUT="$ROOT/dist/legacy-probe"
+rm -rf "$OUT"
+mkdir -p "$OUT"
+cp "$BIN" "$OUT/"
+cp "$SUPPORT/libMacportsLegacySystem.B.dylib" "$OUT/"
+install_name_tool -change /opt/local/lib/libMacportsLegacySystem.B.dylib \
+    @executable_path/libMacportsLegacySystem.B.dylib "$OUT/litecord-legacy-probe"
+otool -L "$OUT/litecord-legacy-probe"
+otool -l "$OUT/litecord-legacy-probe" | grep -A4 -E 'LC_VERSION_MIN_MACOSX|LC_BUILD_VERSION' || true
+python3 "$ROOT/packaging/macos/legacy/machobind.py" "$OUT/litecord-legacy-probe" | head -n 2
+python3 "$ROOT/packaging/macos/legacy/machobind.py" "$OUT/litecord-legacy-probe" | head -n 1 | grep -q FLAT \
+    || { echo "not linked with a flat namespace" >&2; exit 1; }
+# OS X before 10.8 can only start the old program format (LC_UNIXTHREAD, load command 5).
+python3 -c 'import struct,sys;d=open(sys.argv[1],"rb").read();n=struct.unpack_from("<I",d,16)[0];o=32;c=[]
+for _ in range(n):
+    k,s=struct.unpack_from("<II",d,o);c.append(k);o+=s
+print("program format:", "LC_UNIXTHREAD (runs on 10.5+)" if 5 in c else "LC_MAIN (needs 10.8+)")
+sys.exit(0 if 5 in c else 1)' "$OUT/litecord-legacy-probe"
+(cd "$ROOT/dist" && rm -f litecord-legacy-probe.zip && zip -qry litecord-legacy-probe.zip legacy-probe)
+echo "Built dist/litecord-legacy-probe.zip"
