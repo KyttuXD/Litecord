@@ -661,7 +661,7 @@ impl ScreenCaptureManager {
 
                             let camera_handle = if let Some(cam_idx) = camera_index {
                                 info!("📷 [CAMERA WORKER] Buscando câmeras disponíveis na thread dedicada (índice selecionado: {})...", cam_idx);
-                                match cameras::devices() {
+                                match camera_devices() {
                                     Ok(devs) => {
                                         info!("📷 [CAMERA WORKER] {} dispositivo(s) de câmera encontrado(s) no sistema", devs.len());
                                         for (i, d) in devs.iter().enumerate() {

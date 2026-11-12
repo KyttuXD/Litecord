@@ -40,6 +40,7 @@ What works on that hardware (two 64-bit Xeons without AVX are fine for Litecord)
 - No global mute/deafen shortcuts.
 - Screen sharing sends whole displays: no single windows, no system audio, no mouse pointer.
 - Video is encoded on the CPU (OpenH264).
+- Sharing a camera needs macOS 14 or later (the camera library uses an API of that system). The `RUSTFLAGS` in the build command below is what lets the app start on older systems at all.
 - Updates open the nightly page in the browser instead of installing in place.
 - Started from Finder, settings and logs live in `~/Library/Application Support/Litecord`.
 
@@ -48,7 +49,7 @@ What works on that hardware (two 64-bit Xeons without AVX are fine for Litecord)
 Needs the Xcode Command Line Tools, Rust with `rustup target add x86_64-apple-darwin`, and `brew install nasm`.
 
 ```bash
-MACOSX_DEPLOYMENT_TARGET=10.12 cargo build --release --bin litecord --target x86_64-apple-darwin
+MACOSX_DEPLOYMENT_TARGET=10.12 RUSTFLAGS="-C link-arg=-Wl,-weak_framework,AVFoundation" cargo build --release --bin litecord --target x86_64-apple-darwin
 ```
 
 ```bash

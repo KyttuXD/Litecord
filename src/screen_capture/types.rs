@@ -314,9 +314,51 @@ pub struct CameraItemInfo {
     pub index: u32,
 }
 
+/// macOS only: the camera library asks AVFoundation for `AVCaptureDeviceTypeExternal`,
+/// which exists from macOS 14. The app links AVFoundation weakly so that it still starts
+/// on older systems, where that symbol is then missing: listing cameras there would read
+/// through a null address. So cameras are offered from macOS 14 only.
+#[cfg(target_os = "macos")]
+fn camera_api_available() -> bool {
+    static AVAILABLE: OnceLock<bool> = OnceLock::new();
+    *AVAILABLE.get_or_init(|| {
+        let mut buf = [0u8; 32];
+        let mut len = buf.len();
+        let ok = unsafe {
+            libc::sysctlbyname(
+                b"kern.osproductversion\0".as_ptr() as *const libc::c_char,
+                buf.as_mut_ptr() as *mut libc::c_void,
+                &mut len,
+                std::ptr::null_mut(),
+                0,
+            )
+        } == 0;
+        let text = String::from_utf8_lossy(&buf[..len.min(buf.len())]).trim_end_matches('\0').to_string();
+        let major: u32 = text.split('.').next().and_then(|v| v.parse().ok()).unwrap_or(0);
+        let available = ok && major >= 14;
+        if !available {
+            info!("📷 Câmeras indisponíveis neste macOS ({}): a biblioteca de câmera exige o macOS 14.", text);
+        }
+        available
+    })
+}
+
+#[cfg(not(target_os = "macos"))]
+fn camera_api_available() -> bool {
+    true
+}
+
+/// `cameras::devices()`, or an error on a system where the camera library cannot be used.
+pub fn camera_devices() -> Result<Vec<cameras::Device>, String> {
+    if !camera_api_available() {
+        return Err("camera capture needs macOS 14 or later".to_string());
+    }
+    cameras::devices().map_err(|e| format!("{:?}", e))
+}
+
 pub fn list_cameras() -> Vec<CameraItemInfo> {
     let mut result = Vec::new();
-    if let Ok(devs) = cameras::devices() {
+    if let Ok(devs) = camera_devices() {
         for (i, dev) in devs.into_iter().enumerate() {
             let name = dev.name.clone();
             result.push(CameraItemInfo {
