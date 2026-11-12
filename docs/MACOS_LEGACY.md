@@ -17,7 +17,20 @@ PASS  audio input: "Built-in Line Input", 44100 Hz, 2 ch, 17408 frames recorded
 RESULT: all checks passed
 ```
 
-So on 10.6.8: a Rust program runs, reaches Discord over modern TLS (rustls; the system TLS stops at 1.0),
+`legacy/window-probe` (same workflow) opens a window with the patched miniquad of TheLastRoute and shows a
+picture drawn on the CPU and uploaded as a texture every frame. On the same Mac Pro:
+
+```
+PASS  window and OpenGL context created, shader compiled
+PASS  first frame drawn, window is 960 x 600
+PASS  363 frames in 6.0 s (60 per second), 0 mouse events, 0 key events
+RESULT: the window test finished
+```
+
+(It logs one harmless `invalid drawable` line before the first frame. Mouse and keyboard were not touched
+during that run, so input is not verified yet.)
+
+So on 10.6.8: a window with a CPU-drawn interface at 60 frames per second is possible, a Rust program runs, reaches Discord over modern TLS (rustls; the system TLS stops at 1.0),
 and plays and records sound through CoreAudio (cpal).
 
 ## How it is built
@@ -41,7 +54,7 @@ Measured by resolving Litecord's dependencies for Rust 1.77:
 | Part | Problem | Way forward |
 | :--- | :--- | :--- |
 | Interface (Slint) | Every Slint version Litecord accepts needs Rust newer than 1.77 (1.14 needs 1.88) | An older Slint with its software renderer, if the `.slint` files can be made to compile with it, or a separate small interface |
-| Window (winit) | Written for macOS 10.11+ | A window layer that runs on 10.6: the patched miniquad of TheLastRoute (OpenGL 2.1) is the candidate |
+| Window (winit) | Written for macOS 10.11+ | The patched miniquad of TheLastRoute (OpenGL 2.1): proven by `legacy/window-probe` |
 | Video, screen share, web viewers | `openh264`, `str0m`, `h264-reader`, `jpeg-encoder` need Rust 1.83 – 1.87; `openh264` is C++ | Left out of a legacy edition |
 | Camera, tray icon | `cameras` needs Rust 1.85 and AVFoundation (10.7+); tray needs 10.10+ | Left out |
 | Crypto versions | `sha2` 0.11 and `x25519-dalek` 3 need Rust 1.85 – 1.88 | Their previous major versions |
