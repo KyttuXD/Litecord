@@ -11,7 +11,9 @@ no particular GPU (the interface is drawn in software by default), so it is mean
 
 ## Mac Pro 3,1 (2008) and other Macs on 10.6 – 10.11
 
-The app cannot start on these systems as they are, and no build option changes that:
+The app cannot start on these systems as they are. A separate legacy edition is being explored:
+its test program already runs on a Mac Pro 3,1 with OS X 10.6.8, see [MACOS_LEGACY.md](MACOS_LEGACY.md).
+The reasons the normal build cannot be used:
 
 - The Rust standard library needs macOS 10.12 (older Rust reached 10.7, never 10.6, and cannot build this project).
 - The window, tray and camera libraries call AppKit / AVFoundation APIs that old systems do not have.
