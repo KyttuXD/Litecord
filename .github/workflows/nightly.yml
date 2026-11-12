@@ -1,0 +1,308 @@
+name: Nightly Release (all platforms)
+
+# The one workflow of this fork that publishes releases: every night it brings in the
+# upstream changes, builds Windows, Linux, the AppImage and macOS Intel, and replaces
+# the "nightly" pre-release with the new files. It lives in its own file so the files
+# that come from upstream stay untouched and the fork keeps merging cleanly.
+
+on:
+  schedule:
+    - cron: "0 6 * * *"
+  workflow_dispatch:
+    inputs:
+      force:
+        description: "Build and publish even if nothing changed since the last nightly"
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+concurrency:
+  group: nightly-release
+  cancel-in-progress: true
+
+env:
+  UPSTREAM_REPO: Ak4ai/Litecord
+
+jobs:
+  prepare:
+    name: Sync upstream & decide
+    runs-on: ubuntu-latest
+    outputs:
+      sha: ${{ steps.pick.outputs.sha }}
+      build: ${{ steps.pick.outputs.build }}
+      version: ${{ steps.pick.outputs.version }}
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      # Same as the "Sync fork" button. It is refused when upstream changed a workflow
+      # file (this token may not write those) or when the merge conflicts: then the
+      # nightly is built from the branch as it is and the sync is done by hand
+      # (see docs/FORK.md).
+      - name: Merge upstream into the default branch (best effort)
+        if: github.ref_name == github.event.repository.default_branch && github.repository != env.UPSTREAM_REPO
+        continue-on-error: true
+        run: |
+          gh api -X POST "repos/${{ github.repository }}/merge-upstream" -f branch="${{ github.ref_name }}"
+
+      - name: Pick the commit to build
+        id: pick
+        run: |
+          sha=$(gh api "repos/${{ github.repository }}/commits/${{ github.ref_name }}" --jq .sha)
+          last=$(gh api "repos/${{ github.repository }}/git/ref/tags/nightly" --jq .object.sha 2>/dev/null || true)
+          version=$(gh api "repos/${{ github.repository }}/contents/Cargo.toml?ref=$sha" -H "Accept: application/vnd.github.raw" \
+            | grep '^version' | head -1 | sed 's/version = "\(.*\)"/\1/')
+          build=true
+          if [ "$sha" = "$last" ] && [ "${{ inputs.force }}" != "true" ]; then
+            echo "Nothing new since the last nightly ($sha)."
+            build=false
+          fi
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+          echo "build=$build" >> "$GITHUB_OUTPUT"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+  build-windows:
+    name: Windows (installer & portable)
+    needs: prepare
+    if: needs.prepare.outputs.build == 'true'
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.prepare.outputs.sha }}
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: "windows-release"
+          cache-on-failure: true
+
+      - name: Build
+        run: cargo build --release --bin litecord
+
+      - name: Package portable zip
+        shell: pwsh
+        run: |
+          mkdir -p package_portable
+          Copy-Item target/release/litecord.exe package_portable/
+          Copy-Item README.md package_portable/ -ErrorAction SilentlyContinue
+          Compress-Archive -Path package_portable/* -DestinationPath litecord-windows-x64-portable.zip
+
+      - name: Build installer (Inno Setup)
+        shell: pwsh
+        run: iscc installer.iss
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: nightly-windows
+          path: |
+            litecord-windows-x64-portable.zip
+            target/installer/Litecord-Setup-x64.exe
+
+  build-linux:
+    name: Linux (.tar.gz)
+    needs: prepare
+    if: needs.prepare.outputs.build == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.prepare.outputs.sha }}
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+            pkg-config libasound2-dev libssl-dev libgtk-3-dev libayatana-appindicator3-dev \
+            libxdo-dev libx11-dev libxkbcommon-dev libwayland-dev libfontconfig1-dev \
+            libfreetype6-dev libxkbcommon-x11-dev libxkbcommon-x11-0 patchelf
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: "linux-release"
+          cache-on-failure: true
+
+      - name: Build
+        run: cargo build --release --bin litecord
+
+      - name: Package tar.gz
+        run: |
+          mkdir -p release-pkg
+          cp target/release/litecord release-pkg/
+          cp -r assets release-pkg/
+          cp README.md release-pkg/ 2>/dev/null || true
+          tar -czf litecord-linux-x64.tar.gz -C release-pkg .
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: nightly-linux
+          path: litecord-linux-x64.tar.gz
+
+  # Same recipe as upstream's build.yml (pkgforge-dev Anylinux AppImage, built on Arch).
+  build-appimage:
+    name: Linux (AppImage)
+    needs: prepare
+    if: needs.prepare.outputs.build == 'true'
+    runs-on: ubuntu-latest
+    container:
+      image: archlinux:latest
+    steps:
+      - name: Install build & bundling dependencies
+        run: |
+          pacman -Syu --noconfirm
+          pacman -S --noconfirm --needed \
+            base-devel git wget file strace rust clang cmake nasm pkgconf patchelf \
+            alsa-lib openssl gtk3 libayatana-appindicator xdotool \
+            libx11 libxcb libxkbcommon libxkbcommon-x11 wayland fontconfig freetype2 \
+            mesa vulkan-icd-loader pipewire pipewire-alsa \
+            gstreamer gst-plugins-base gst-plugins-good gst-plugin-pipewire \
+            xorg-server-xvfb
+
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.prepare.outputs.sha }}
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: "linux-appimage"
+          cache-on-failure: true
+
+      - name: Build and install under /usr
+        run: |
+          cargo build --release --bin litecord
+          install -Dm755 target/release/litecord /usr/bin/litecord
+
+      - name: Bundle AppImage (quick-sharun)
+        env:
+          DESKTOP: assets/litecord.desktop
+          ICON: assets/litecord.png
+          OUTPATH: ./dist
+          OUTNAME: Litecord-x86_64.AppImage
+          DEPLOY_OPENGL: 1
+          DEPLOY_PIPEWIRE: 1
+          DEPLOY_GTK: 1
+          DEPLOY_GSTREAMER: 1
+        run: |
+          wget --retry-connrefused --tries=5 -q \
+            https://raw.githubusercontent.com/pkgforge-dev/Anylinux-AppImages/refs/heads/main/useful-tools/quick-sharun.sh \
+            -O ./quick-sharun
+          chmod +x ./quick-sharun
+          mkdir -p dist
+          xvfb-run -a -- ./quick-sharun /usr/bin/litecord /usr/bin/gst-launch-1.0
+          ./quick-sharun --make-appimage
+          test -f dist/Litecord-x86_64.AppImage
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: nightly-appimage
+          path: dist/Litecord-x86_64.AppImage
+
+  # Intel Macs (x86_64). The deployment target is the oldest macOS the Rust standard
+  # library supports, so one app runs from a patched 2008 Mac Pro to a 2015+ MacBook Air.
+  build-macos:
+    name: macOS Intel (.app zip)
+    needs: prepare
+    if: needs.prepare.outputs.build == 'true'
+    runs-on: macos-15-intel
+    env:
+      MACOSX_DEPLOYMENT_TARGET: "10.12"
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.prepare.outputs.sha }}
+
+      # OpenH264 builds its x86 assembly with nasm.
+      - name: Install build tools
+        run: brew install nasm
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-apple-darwin
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: "macos-x64-release"
+          cache-on-failure: true
+
+      - name: Build
+        run: cargo build --release --bin litecord --target x86_64-apple-darwin
+
+      - name: Show architecture and minimum macOS of the binary
+        run: |
+          file target/x86_64-apple-darwin/release/litecord
+          otool -l target/x86_64-apple-darwin/release/litecord | grep -A4 -E "LC_VERSION_MIN_MACOSX|LC_BUILD_VERSION"
+
+      - name: Package Litecord.app
+        run: |
+          scripts/macos/bundle.sh target/x86_64-apple-darwin/release/litecord dist
+          test -f dist/Litecord-macos-x64.zip
+
+      # Informative only: a runner without audio devices or a logged-in desktop may
+      # refuse things a real Mac allows, so a failure here does not stop the nightly.
+      - name: Smoke test (the app stays up for 10 seconds)
+        continue-on-error: true
+        run: |
+          dist/Litecord.app/Contents/MacOS/litecord > smoke.log 2>&1 &
+          pid=$!
+          sleep 10
+          if kill -0 "$pid" 2>/dev/null; then
+            echo "litecord is still running after 10 s"
+            kill "$pid" || true
+          else
+            echo "litecord exited early:"; tail -40 smoke.log
+            exit 1
+          fi
+          tail -20 smoke.log || true
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: nightly-macos
+          path: dist/Litecord-macos-x64.zip
+
+  publish:
+    name: Publish the nightly pre-release
+    needs: [prepare, build-windows, build-linux, build-appimage, build-macos]
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      SHA: ${{ needs.prepare.outputs.sha }}
+      VERSION: ${{ needs.prepare.outputs.version }}
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: files
+          merge-multiple: true
+
+      - name: List files
+        run: find files -type f -exec ls -lh {} +
+
+      - name: Replace the nightly release
+        run: |
+          short=${SHA:0:7}
+          date=$(date -u +%Y-%m-%d)
+          cat > notes.md <<NOTES
+          Automatic build of commit $SHA ($date UTC), version $VERSION of the code.
+          Not a stable release: it is replaced by the next nightly.
+
+          | File | System |
+          | :--- | :--- |
+          | \`Litecord-Setup-x64.exe\` | Windows installer |
+          | \`litecord-windows-x64-portable.zip\` | Windows portable |
+          | \`Litecord-x86_64.AppImage\` | Linux, any distribution |
+          | \`litecord-linux-x64.tar.gz\` | Linux binary |
+          | \`Litecord-macos-x64.zip\` | macOS Intel, 10.12 or later (see docs/MACOS.md) |
+          NOTES
+          gh release delete nightly --cleanup-tag --yes 2>/dev/null || true
+          gh release create nightly \
+            --target "$SHA" \
+            --prerelease \
+            --title "Litecord Nightly $date ($short)" \
+            --notes-file notes.md \
+            $(find files -type f)

@@ -21,15 +21,6 @@ This guide explains how to compile and build production-ready Litecord binaries 
   sudo pacman -S --needed base-devel alsa-lib openssl libx11 fontconfig
   ```
 
-### macOS (Intel, 10.12 Sierra or later)
-- **Xcode Command Line Tools**: `xcode-select --install`
-- **Rust Toolchain** with the Intel target: `rustup target add x86_64-apple-darwin`
-- **nasm** (OpenH264 assembly): `brew install nasm`
-
-The build needs a recent Rust, so on a very old Mac it is easier to build on a newer one
-(Intel or Apple Silicon) and copy the app over: the target and `MACOSX_DEPLOYMENT_TARGET`
-below make the result run on 10.12 and later either way.
-
 ---
 
 ## 2. Build Commands
@@ -48,18 +39,6 @@ cargo run --bin litecord --release
 ```bash
 RUSTFLAGS="-C target-feature=+crt-static" cargo build --release --bin litecord
 ```
-
-### macOS Intel app bundle (`Litecord.app`)
-```bash
-MACOSX_DEPLOYMENT_TARGET=10.12 cargo build --release --bin litecord --target x86_64-apple-darwin
-scripts/macos/bundle.sh
-```
-`bundle.sh` creates `dist/Litecord.app` (with `packaging/macos/Info.plist`, the icon and an ad hoc
-signature) and `dist/Litecord-macos-x64.zip`. Build only `--bin litecord`: the test binaries under
-`src/bin` are Windows tools. Platform notes:
-- Baseline CPU is Penryn (SSE4.1): no AVX is required, SIMD paths are picked at run time.
-- Screen sharing uses `CGDisplayCreateImage` (`src/screen_capture/sources/macos.rs`), whole displays only.
-- Started from Finder, the app keeps its settings in `~/Library/Application Support/Litecord`.
 
 ### Universal AnyLinux AppImage (quick-sharun)
 Litecord packages all dynamic libraries into a distro-agnostic AppImage:

@@ -50,28 +50,3 @@ jobs:
 
       - name: Run Cargo Check
         run: cargo check --bin litecord
-
-  check-macos:
-    name: Check macOS Intel Build
-    runs-on: macos-15-intel
-    env:
-      MACOSX_DEPLOYMENT_TARGET: "10.12"
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Install build tools
-        run: brew install nasm
-
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: x86_64-apple-darwin
-
-      - name: Cache Rust dependencies
-        uses: Swatinem/rust-cache@v2
-        with:
-          shared-key: "macos-x64-ci"
-
-      - name: Run Cargo Check
-        run: cargo check --bin litecord --target x86_64-apple-darwin

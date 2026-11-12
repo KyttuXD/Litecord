@@ -6,6 +6,8 @@ use serde::{Deserialize, Serialize};
 const REPO_OWNER: &str = "Ak4ai";
 const REPO_NAME: &str = "Litecord";
 const CONFIG_FILE: &str = ".litecord_updater_config.json";
+#[cfg(target_os = "macos")]
+const MACOS_RELEASES_URL: &str = "https://github.com/KyttuXD/Litecord/releases/tag/nightly";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ReleaseInfo {
@@ -282,7 +284,9 @@ pub async fn download_and_install_update(
     #[cfg(target_os = "macos")]
     {
         let _ = &progress_tx;
-        return match std::process::Command::new("open").arg(&download_url).spawn() {
+        // Upstream publishes no macOS file: the macOS builds are the nightlies of the fork.
+        let _ = &download_url;
+        return match std::process::Command::new("open").arg(MACOS_RELEASES_URL).spawn() {
             Ok(_) => Err("No macOS a nova versão é baixada pelo navegador: substitua o Litecord.app pelo novo e abra de novo.".to_string()),
             Err(e) => Err(format!("não foi possível abrir o navegador: {:?}", e)),
         };
