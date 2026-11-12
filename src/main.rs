@@ -53,6 +53,29 @@ use windows_sys::Win32::UI::WindowsAndMessaging::{
 
 slint::include_modules!();
 
+/// Slint's default macOS menu bar is built with a newer `muda` than the one inside
+/// `tray-icon`. Both register an Objective-C class called `MudaMenuItem`, and the second
+/// registration aborts the app a moment after start. So the backend is created here
+/// without Slint's menu bar; the tray code installs the application menu instead.
+#[cfg(target_os = "macos")]
+fn use_winit_backend_without_slint_menu_bar() {
+    let mut builder = i_slint_backend_winit::Backend::builder().with_default_menu_bar(false);
+    // SLINT_BACKEND is "winit-software", "winit-femtovg", "software"... or unset (default renderer).
+    let wanted = std::env::var("SLINT_BACKEND").unwrap_or_default();
+    let renderer = wanted.strip_prefix("winit-").unwrap_or(&wanted);
+    if !renderer.is_empty() && renderer != "winit" {
+        builder = builder.with_renderer_name(renderer);
+    }
+    match builder.build() {
+        Ok(backend) => {
+            if let Err(e) = slint::platform::set_platform(Box::new(backend)) {
+                log::warn!("⚠️ Não foi possível instalar o backend winit sem barra de menus: {:?}", e);
+            }
+        }
+        Err(e) => log::warn!("⚠️ Não foi possível criar o backend winit sem barra de menus: {:?}", e),
+    }
+}
+
 /// Settings, the session fallback and the logs are files relative to the working
 /// directory. An app started from Finder or the Dock runs in `/`, which is read-only,
 /// so there (and for any `.app` bundle) they go to `~/Library/Application Support/Litecord`.
@@ -138,6 +161,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     if std::env::var_os("SLINT_BACKEND").is_none() && !video_settings::get_use_gpu_renderer() {
         std::env::set_var("SLINT_BACKEND", "winit-software");
     }
+    #[cfg(target_os = "macos")]
+    use_winit_backend_without_slint_menu_bar();
     info!("🖥️ Inicializando Slint AppWindow (renderizador: {})...",
         std::env::var("SLINT_BACKEND").unwrap_or_else(|_| "GPU".to_string()));
     let app = match AppWindow::new() {

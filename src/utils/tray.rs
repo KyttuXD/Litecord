@@ -57,6 +57,35 @@ fn create_default_icon() -> Icon {
     Icon::from_rgba(rgba, width, height).expect("Falha ao gerar ícone do tray")
 }
 
+/// The application menu next to the Apple menu (Hide, Quit and their shortcuts). Built
+/// with the `muda` that `tray-icon` carries, since Slint's own menu bar is turned off on
+/// macOS (see `use_winit_backend_without_slint_menu_bar` in main.rs).
+#[cfg(target_os = "macos")]
+fn install_macos_app_menu() {
+    use tray_icon::menu::{PredefinedMenuItem, Submenu};
+
+    let app_menu = Submenu::with_items(
+        "Litecord",
+        true,
+        &[
+            &PredefinedMenuItem::hide(None),
+            &PredefinedMenuItem::hide_others(None),
+            &PredefinedMenuItem::show_all(None),
+            &PredefinedMenuItem::separator(),
+            &PredefinedMenuItem::quit(None),
+        ],
+    );
+    let menu_bar = app_menu.and_then(|app_menu| Menu::with_items(&[&app_menu]));
+    match menu_bar {
+        Ok(menu_bar) => {
+            menu_bar.init_for_nsapp();
+            // The menu must outlive this function: it is the app's menu bar from now on.
+            std::mem::forget(menu_bar);
+        }
+        Err(e) => warn!("Não foi possível criar o menu do aplicativo no macOS: {:?}", e),
+    }
+}
+
 impl SystemTrayManager {
     /// Call on the UI thread.
     pub fn setup() -> Self {
@@ -64,6 +93,9 @@ impl SystemTrayManager {
         {
             let _ = gtk::init();
         }
+
+        #[cfg(target_os = "macos")]
+        install_macos_app_menu();
 
         let tray_menu = Menu::new();
         let show_item = MenuItem::new("Exibir Litecord", true, None);
