@@ -188,6 +188,9 @@ jobs:
           DEPLOY_PIPEWIRE: 1
           DEPLOY_GTK: 1
           DEPLOY_GSTREAMER: 1
+          # quick-sharun now refuses Arch's stock Mesa (it links LLVM, +100 MB) unless
+          # told otherwise. Keeps the AppImage as it was built before that check.
+          I_WANT_FAT_APPIMAGE: 1
         run: |
           wget --retry-connrefused --tries=5 -q \
             https://raw.githubusercontent.com/pkgforge-dev/Anylinux-AppImages/refs/heads/main/useful-tools/quick-sharun.sh \
