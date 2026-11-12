@@ -9,6 +9,22 @@ no particular GPU (the interface is drawn in software by default), so it is mean
 | Mac Pro 3,1 (2008) and other Macs whose last official system is 10.11 El Capitan or older | Only with a patched newer macOS (dosdude1 patchers or OpenCore Legacy Patcher). 10.11 itself cannot run it: the Rust standard library needs 10.12. |
 | Apple Silicon Macs | Through Rosetta 2. |
 
+## Mac Pro 3,1 (2008) and other Macs on 10.6 – 10.11
+
+The app cannot start on these systems as they are, and no build option changes that:
+
+- The Rust standard library needs macOS 10.12 (older Rust reached 10.7, never 10.6, and cannot build this project).
+- The window, tray and camera libraries call AppKit / AVFoundation APIs that old systems do not have.
+- Discord only accepts TLS 1.2, which the system TLS of 10.6 – 10.8 does not offer.
+
+What works on that hardware (two 64-bit Xeons without AVX are fine for Litecord):
+
+| Route | Keeps the old macOS? | Runs |
+| :--- | :--- | :--- |
+| Boot a current Linux from a USB stick or a second drive | Yes, the internal system is not touched | `Litecord-x86_64.AppImage` |
+| Install macOS 10.12 – 10.13 with a dosdude1 patcher on another drive or partition | Yes, if it goes on its own drive | `Litecord-macos-x64.zip` (drawn in software, no Metal needed) |
+| OpenCore Legacy Patcher with a newer macOS | Yes, on its own drive | `Litecord-macos-x64.zip` |
+
 ## Install
 
 1. Download `Litecord-macos-x64.zip` from the [nightly release](https://github.com/KyttuXD/Litecord/releases/tag/nightly),
