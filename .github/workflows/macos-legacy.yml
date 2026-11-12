@@ -25,14 +25,17 @@ jobs:
           sh packaging/macos/legacy/bootstrap-leopard.sh "$RUNNER_TEMP/legacy-rust"
 
       - name: Build the probe for OS X 10.5+
-        run: bash packaging/macos/legacy/build-probe.sh "$RUNNER_TEMP/legacy-rust"
+        run: bash packaging/macos/legacy/build-probe.sh "$RUNNER_TEMP/legacy-rust" probe
+
+      - name: Build the window test for OS X 10.5+
+        run: bash packaging/macos/legacy/build-probe.sh "$RUNNER_TEMP/legacy-rust" window-probe
 
       # The runner is a current macOS: this only shows the program is sound, not that 10.6 runs it.
       - name: Run the probe on the build host
         continue-on-error: true
-        run: dist/legacy-probe/litecord-legacy-probe
+        run: dist/litecord-legacy-probe/litecord-legacy-probe
 
       - uses: actions/upload-artifact@v4
         with:
-          name: litecord-legacy-probe
-          path: dist/litecord-legacy-probe.zip
+          name: litecord-legacy-probes
+          path: dist/*.zip

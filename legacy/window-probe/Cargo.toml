@@ -1,0 +1,19 @@
+# Window test for old Intel Macs (OS X 10.5 - 10.11): see docs/MACOS_LEGACY.md.
+# Its own workspace, so the main Cargo.toml and Cargo.lock are never touched.
+[package]
+name = "litecord-legacy-window-probe"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.77"
+publish = false
+
+[workspace]
+
+[dependencies]
+# miniquad 0.4.11 with the old-Mac changes of TheLastRoute (OpenGL 2.1, no Metal, pre-Lion
+# AppKit calls), switched on at build time with LR_MACOS_LEGACY=1.
+miniquad = { git = "https://github.com/KyttuXD/TheLastRoute", rev = "7d2bc5aedebec634ebb4a7f081972b4fe1e53820" }
+
+[profile.release]
+opt-level = 2
+debug = 1
