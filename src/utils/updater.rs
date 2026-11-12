@@ -164,6 +164,8 @@ pub async fn check_version_status_detailed(respect_ignored: bool) -> Result<Deta
 
     let target_asset_name = if cfg!(target_os = "windows") {
         "Litecord-Setup-x64.exe"
+    } else if cfg!(target_os = "macos") {
+        "Litecord-macos-x64.zip"
     } else {
         "litecord-linux-x64.tar.gz"
     };
@@ -262,6 +264,7 @@ fn get_secure_update_dir() -> PathBuf {
 }
 
 /// Downloads the release file and launches the updater/installer
+#[cfg_attr(target_os = "macos", allow(unreachable_code, unused_variables, unused_mut))]
 pub async fn download_and_install_update(
     download_url: String,
     progress_tx: mpsc::Sender<f32>,
@@ -272,6 +275,17 @@ pub async fn download_and_install_update(
         && !download_url.starts_with("https://github-releases.githubusercontent.com/")
     {
         return Err("URL de atualização rejeitada por segurança: domínio não oficial.".to_string());
+    }
+
+    // macOS: the app is a bundle the user placed somewhere (often /Applications), so it is
+    // not replaced in place. The browser downloads the new zip and the user swaps the app.
+    #[cfg(target_os = "macos")]
+    {
+        let _ = &progress_tx;
+        return match std::process::Command::new("open").arg(&download_url).spawn() {
+            Ok(_) => Err("No macOS a nova versão é baixada pelo navegador: substitua o Litecord.app pelo novo e abra de novo.".to_string()),
+            Err(e) => Err(format!("não foi possível abrir o navegador: {:?}", e)),
+        };
     }
 
     let client = reqwest::Client::builder()

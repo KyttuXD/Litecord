@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>CFBundleName</key>
+    <string>Litecord</string>
+    <key>CFBundleDisplayName</key>
+    <string>Litecord</string>
+    <key>CFBundleIdentifier</key>
+    <string>io.github.ak4ai.litecord</string>
+    <key>CFBundleExecutable</key>
+    <string>litecord</string>
+    <key>CFBundleIconFile</key>
+    <string>Litecord</string>
+    <key>CFBundlePackageType</key>
+    <string>APPL</string>
+    <key>CFBundleInfoDictionaryVersion</key>
+    <string>6.0</string>
+    <key>CFBundleShortVersionString</key>
+    <string>@SHORT_VERSION@</string>
+    <key>CFBundleVersion</key>
+    <string>@VERSION@</string>
+    <!-- Oldest macOS the Rust standard library supports on Intel. -->
+    <key>LSMinimumSystemVersion</key>
+    <string>10.12</string>
+    <key>LSApplicationCategoryType</key>
+    <string>public.app-category.social-networking</string>
+    <key>NSHighResolutionCapable</key>
+    <true/>
+    <key>NSSupportsAutomaticGraphicsSwitching</key>
+    <true/>
+    <!-- Without these two texts macOS 10.14+ ends the app the moment it opens the device. -->
+    <key>NSMicrophoneUsageDescription</key>
+    <string>Litecord uses the microphone for voice calls.</string>
+    <key>NSCameraUsageDescription</key>
+    <string>Litecord uses the camera when you share it in a call.</string>
+</dict>
+</plist>

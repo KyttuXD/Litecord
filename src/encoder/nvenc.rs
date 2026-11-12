@@ -216,6 +216,8 @@ impl FfmpegNvencEncoder {
                 let mut avutil_dll: *mut c_void = std::ptr::null_mut();
 
                 for codec_name in [
+                    #[cfg(target_os = "macos")]
+                    b"libavcodec.dylib\0".as_ptr(),
                     b"libavcodec.so.62\0".as_ptr(),
                     b"libavcodec.so.61\0".as_ptr(),
                     b"libavcodec.so.60\0".as_ptr(),
@@ -232,6 +234,8 @@ impl FfmpegNvencEncoder {
                 }
 
                 for util_name in [
+                    #[cfg(target_os = "macos")]
+                    b"libavutil.dylib\0".as_ptr(),
                     b"libavutil.so.60\0".as_ptr(),
                     b"libavutil.so.59\0".as_ptr(),
                     b"libavutil.so.58\0".as_ptr(),
@@ -248,7 +252,7 @@ impl FfmpegNvencEncoder {
                 }
 
                 if avcodec_dll.is_null() || avutil_dll.is_null() {
-                    return Err("Bibliotecas FFmpeg (libavcodec / libavutil) não encontradas no Linux".to_string());
+                    return Err("Bibliotecas FFmpeg (libavcodec / libavutil) não encontradas no sistema".to_string());
                 }
 
                 let get_proc_codec = move |sym: &[u8]| -> Option<unsafe extern "C" fn()> {

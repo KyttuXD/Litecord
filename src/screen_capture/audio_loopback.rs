@@ -438,6 +438,15 @@ pub fn start_audio_loopback_tx(
             unsafe {
                 windows_sys::Win32::System::Com::CoInitializeEx(std::ptr::null_mut(), windows_sys::Win32::System::Com::COINIT_MULTITHREADED as u32);
             }
+            // macOS and other systems: no way to capture what the system plays (no
+            // loopback device), so the stream goes out with picture only.
+            #[cfg(not(any(target_os = "windows", target_os = "linux")))]
+            {
+                let _ = (&is_running, &channel_id, &my_user_id);
+                info!("🔇 [LOOPBACK TX] Captura do áudio do sistema não disponível nesta plataforma: transmissão sem áudio.");
+                return;
+            }
+
             let _fine_timer = crate::utils::timer_resolution::FineTimerGuard::new();
             crate::cpu_profiler::set_current_thread_name("audio-loopback-tx");
 

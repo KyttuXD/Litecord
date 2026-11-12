@@ -214,12 +214,38 @@ Pre-compiled production binaries are available under [GitHub Releases](https://g
 | **🪟 Windows Portable (Beta 1.3.1)** | `litecord-windows-x64-portable.zip` | Standalone executable (`litecord.exe`). Statically linked CRT (`+crt-static`). |
 | **🐧 Linux AppImage (Beta 1.3.1 - Recommended)** | `Litecord-x86_64.AppImage` | Universal distro-agnostic AppImage (quick-sharun). Runs on any x86_64 Linux distro out of the box. |
 | **🐧 Linux Standalone (Beta 1.3.1)** | `litecord-linux-x64.tar.gz` | Native x86_64 Linux binary compiled with ALSA, X11/PipeWire and System Tray support. |
+| **🍎 macOS Intel (experimental, from the next release)** | `Litecord-macos-x64.zip` | `Litecord.app` for Intel Macs, macOS 10.12 Sierra or later. See [macOS (Intel)](#-macos-intel) below. |
 
 ### 🚀 Running the AppImage on Linux
 ```bash
 chmod +x Litecord-x86_64.AppImage
 ./Litecord-x86_64.AppImage
 ```
+
+---
+
+## 🍎 macOS (Intel)
+
+The macOS build targets **Intel Macs (x86_64) on macOS 10.12 Sierra or later**. It needs no AVX and no
+particular GPU (the interface is drawn in software by default), so it is meant to run on old machines too:
+
+| Machine | Works with |
+| :--- | :--- |
+| MacBook Air / Pro, iMac, Mac mini from 2010–2020 (for example the 2015 MacBook Air) | The macOS they already run (10.12 or later). |
+| Mac Pro 3,1 (2008) and other Macs whose last official system is 10.11 El Capitan or older | Only with a patched newer macOS (dosdude1 patchers or OpenCore Legacy Patcher). 10.11 itself cannot run it: the Rust standard library needs 10.12. |
+| Apple Silicon Macs | Through Rosetta 2. |
+
+1. Download `Litecord-macos-x64.zip`, unzip it and move `Litecord.app` to `/Applications`.
+2. The app is not signed with an Apple developer account, so the first time **right-click it and choose Open**
+   (or run `xattr -dr com.apple.quarantine /Applications/Litecord.app`).
+3. Allow the **Microphone** when asked (and **Camera** / **Screen Recording** when you share them).
+
+What differs from Windows and Linux for now: no global mute/deafen shortcuts, screen sharing sends whole
+displays (no single windows, no system audio, no mouse pointer), video is encoded on the CPU, and updates are
+downloaded through the browser instead of installed in place. Settings live in
+`~/Library/Application Support/Litecord`.
+
+> ⚠️ This build is new and has been compiled by CI only: reports from real Macs are welcome.
 
 ---
 
@@ -258,6 +284,15 @@ cargo run
 cargo build --release
 ```
 The optimized executable will be located at `target/release/litecord.exe` (Windows) or `target/release/litecord` (Linux).
+
+### 🍎 Build on macOS (Intel)
+```bash
+MACOSX_DEPLOYMENT_TARGET=10.12 cargo build --release --bin litecord --target x86_64-apple-darwin
+```
+```bash
+scripts/macos/bundle.sh
+```
+The second command wraps the binary into `dist/Litecord.app` and `dist/Litecord-macos-x64.zip`.
 
 ---
 

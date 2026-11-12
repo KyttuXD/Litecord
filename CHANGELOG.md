@@ -5,6 +5,12 @@ All notable changes to **Litecord** will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### 🍎 macOS (Intel)
+- **Primeira versão para Macs Intel** (macOS 10.12 Sierra ou mais novo, sem exigir AVX nem GPU específica): `Litecord-macos-x64.zip` com o `Litecord.app`. Serve de um MacBook Air 2015 a um Mac Pro 2008 com macOS mais novo instalado por patcher. Compartilhamento de tela inteira via CoreGraphics, configurações em `~/Library/Application Support/Litecord`, atualização baixada pelo navegador. Ainda sem atalhos globais, sem captura de janela única e sem áudio do sistema na transmissão. Compilada apenas no CI até agora: falta teste em Macs de verdade.
+- **In English:** first build for Intel Macs (macOS 10.12+, no AVX or specific GPU needed), experimental and so far only compiled by CI.
+
 ## [v1.3.1-beta] - 2026-10-26
 
 **Em resumo:** transmissões que não engasgam em notebooks com duas placas de vídeo nem com espectadores no celular, voz que se recupera sozinha quando o dispositivo de áudio, a sinalização ou a criptografia DAVE falham, uma tela de configurações nova, janela que reabre onde ficou, cards de convite e de evento no chat, e muitas correções de interface vindas de contribuidores. Parado, o Litecord continua em ~40 MB e 0,2% de CPU com a janela aberta.

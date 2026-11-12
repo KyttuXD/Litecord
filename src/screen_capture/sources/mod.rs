@@ -7,12 +7,18 @@ pub mod windows;
 
 pub mod linux_portal;
 
+#[cfg(target_os = "macos")]
+pub mod macos;
+
 pub use overlay::{start_window_border_overlay, stop_window_border_overlay};
 
 #[cfg(windows)]
 pub use self::windows::{capture_screen_rgb, list_capturable_windows, list_screens};
 
-#[cfg(not(windows))]
+#[cfg(target_os = "macos")]
+pub use self::macos::{capture_screen_rgb, list_capturable_windows, list_screens};
+
+#[cfg(not(any(windows, target_os = "macos")))]
 pub use self::linux_portal::{capture_screen_rgb, list_capturable_windows, list_screens};
 
 #[cfg(not(windows))]

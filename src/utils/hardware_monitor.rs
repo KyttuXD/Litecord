@@ -374,6 +374,22 @@ impl PlatformHardwareSampler {
 
     fn sample(&mut self, _with_gpu: bool) -> HardwareMetrics {
         let mut metrics = HardwareMetrics::default();
+        #[cfg(target_os = "macos")]
+        unsafe {
+            let mut info: libc::proc_taskinfo = std::mem::zeroed();
+            let size = std::mem::size_of::<libc::proc_taskinfo>() as libc::c_int;
+            let got = libc::proc_pidinfo(
+                std::process::id() as libc::c_int,
+                libc::PROC_PIDTASKINFO,
+                0,
+                &mut info as *mut libc::proc_taskinfo as *mut libc::c_void,
+                size,
+            );
+            if got == size {
+                metrics.ram_mb = (info.pti_resident_size / (1024 * 1024)) as u32;
+            }
+        }
+        #[cfg(not(target_os = "macos"))]
         if let Ok(content) = std::fs::read_to_string("/proc/self/status") {
             for line in content.lines() {
                 if line.starts_with("VmRSS:") {

@@ -162,11 +162,34 @@ pub fn get_secure_token_paths() -> (std::path::PathBuf, std::path::PathBuf) {
     (primary_path, fallback_path)
 }
 
+/// macOS has no /etc/machine-id: the hardware UUID plays that part.
+#[cfg(not(target_os = "windows"))]
+fn macos_hardware_uuid() -> Option<String> {
+    #[cfg(target_os = "macos")]
+    {
+        let out = std::process::Command::new("/usr/sbin/ioreg")
+            .args(["-rd1", "-c", "IOPlatformExpertDevice"])
+            .output()
+            .ok()?;
+        let text = String::from_utf8_lossy(&out.stdout);
+        let line = text.lines().find(|l| l.contains("IOPlatformUUID"))?;
+        let uuid = line.split('"').nth(3)?.trim().to_string();
+        if uuid.is_empty() { None } else { Some(uuid) }
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        None
+    }
+}
+
 #[cfg(not(target_os = "windows"))]
 pub fn get_linux_vault_key() -> [u8; 32] {
     use sha2::{Sha256, Digest};
     let machine_id = std::fs::read_to_string("/etc/machine-id")
         .or_else(|_| std::fs::read_to_string("/var/lib/dbus/machine-id"))
+        .ok()
+        .or_else(macos_hardware_uuid)
+        .ok_or(())
         .unwrap_or_else(|_| "litecord_static_mid_fallback".to_string());
     let user_id = std::env::var("USER")
         .or_else(|_| std::env::var("HOME"))

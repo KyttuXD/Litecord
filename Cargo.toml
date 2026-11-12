@@ -123,6 +123,9 @@ windows-capture = "2.0.1"
 gtk = "0.18"
 x11rb = { version = "0.14", features = ["allow-unsafe-code"] }
 ashpd = { version = "0.13", default-features = false, features = ["async-io", "screencast"] }
+
+# dlopen for the optional FFmpeg encoder (Linux and macOS), evdev on Linux, process memory on macOS.
+[target.'cfg(unix)'.dependencies]
 libc = "0.2"
 
 [build-dependencies]

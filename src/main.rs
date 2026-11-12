@@ -53,9 +53,32 @@ use windows_sys::Win32::UI::WindowsAndMessaging::{
 
 slint::include_modules!();
 
+/// Settings, the session fallback and the logs are files relative to the working
+/// directory. An app started from Finder or the Dock runs in `/`, which is read-only,
+/// so there (and for any `.app` bundle) they go to `~/Library/Application Support/Litecord`.
+/// A bare binary started from a writable folder keeps using that folder, as on Linux.
+#[cfg(target_os = "macos")]
+fn use_macos_data_dir() {
+    let in_bundle = std::env::current_exe()
+        .map(|p| p.to_string_lossy().contains(".app/Contents/MacOS"))
+        .unwrap_or(false);
+    let cwd_is_root = std::env::current_dir().map(|d| d.parent().is_none()).unwrap_or(true);
+    if !in_bundle && !cwd_is_root {
+        return;
+    }
+    if let Ok(home) = std::env::var("HOME") {
+        let dir = std::path::PathBuf::from(home).join("Library/Application Support/Litecord");
+        if std::fs::create_dir_all(&dir).is_ok() {
+            let _ = std::env::set_current_dir(&dir);
+        }
+    }
+}
+
 #[tokio::main(flavor = "multi_thread", worker_threads = 4)]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     commit_heap_pages_on_demand();
+    #[cfg(target_os = "macos")]
+    use_macos_data_dir();
     let _tokio_guard = tokio::runtime::Handle::current().enter();
 
     #[cfg(all(unix, not(target_vendor = "apple")))]
@@ -546,7 +569,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             let file: Vec<u16> = url.encode_utf16().chain(Some(0)).collect();
             ShellExecuteW(0, op.as_ptr(), file.as_ptr(), std::ptr::null(), std::ptr::null(), 1 /* SW_SHOWNORMAL */);
         }
-        #[cfg(not(target_os = "windows"))]
+        #[cfg(target_os = "macos")]
+        {
+            let _ = std::process::Command::new("open").arg(&url).spawn();
+        }
+        #[cfg(not(any(target_os = "windows", target_os = "macos")))]
         {
             let _ = std::process::Command::new("xdg-open").arg(&url).spawn();
         }
@@ -2830,7 +2857,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 if let Err(e) = updater::download_and_install_update(rel.download_url, prog_tx).await {
                     error!("Erro ao atualizar Litecord: {}", e);
                     let app_w = app_w_fail.clone();
-                    let err_msg = format!("Falha na atualização: {}", e);
+                    // macOS hands the download to the browser: that is a notice, not a failure.
+                    let err_msg = if cfg!(target_os = "macos") { e.clone() } else { format!("Falha na atualização: {}", e) };
                     let _ = slint::invoke_from_event_loop(move || {
                         if let Some(ui) = app_w.upgrade() {
                             ui.set_is_updating(false);

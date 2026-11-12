@@ -271,6 +271,9 @@ impl ScreenCaptureManager {
         REQUESTED_BITRATE_BPS.store(MAX_STREAM_BITRATE, Ordering::Relaxed);
         force_signaling_broadcast();
 
+        #[cfg(target_os = "macos")]
+        super::sources::macos::set_screen_index(screen_index);
+
         let on_local_arc: Arc<dyn Fn(SharedPixelBuffer<Rgba8Pixel>) + Send + Sync + 'static> = Arc::new(on_local_frame);
         #[cfg(target_os = "linux")]
         {

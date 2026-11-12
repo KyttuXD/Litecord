@@ -381,6 +381,21 @@ fn play_sound_fallback(sound: UiSound) {
             wav.extend_from_slice(&s_i16.to_le_bytes());
         }
 
+        // macOS: afplay reads a file, not stdin.
+        #[cfg(target_os = "macos")]
+        {
+            let path = std::env::temp_dir().join(format!("litecord_ui_sound_{}.wav", std::process::id()));
+            if std::fs::write(&path, &wav).is_ok() {
+                let _ = std::process::Command::new("afplay")
+                    .arg(&path)
+                    .stdout(std::process::Stdio::null())
+                    .stderr(std::process::Stdio::null())
+                    .status();
+                let _ = std::fs::remove_file(&path);
+            }
+        }
+
+        #[cfg(not(target_os = "macos"))]
         for player in &["pw-play", "paplay", "aplay"] {
             if let Ok(mut child) = std::process::Command::new(player)
                 .arg("-")
