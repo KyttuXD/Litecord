@@ -4,6 +4,15 @@ Upstream is [Ak4ai/Litecord](https://github.com/Ak4ai/Litecord). This fork adds 
 ([MACOS.md](MACOS.md)) and one release workflow, and tries to touch as little of upstream as possible so
 that new upstream versions keep merging without conflicts.
 
+## What this fork adds to the app itself
+
+- **Email and password login** (`src/auth/password_auth.rs`), next to the token and QR logins, with
+  authenticator, SMS and backup codes. A captcha from Discord is reported, never worked around.
+- **Message actions** (`src/http_messaging.rs`): replies, editing and deleting your own messages,
+  reactions (shown as chips, four quick ones to add), a typing line, channels marked as read when
+  opened, and `/upload <path>` to send a file. In the main app: click a message to see its actions.
+- macOS fixes: see [MACOS.md](MACOS.md) and [MACOS_LEGACY.md](MACOS_LEGACY.md).
+
 ## The English translation (2026-11-12)
 
 Upstream writes its log messages, comments, changelog and several documents in Portuguese. In this fork
