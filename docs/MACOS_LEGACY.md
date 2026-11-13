@@ -3,8 +3,9 @@
 Target machine: a Mac Pro 3,1 (2008, two Xeon E5462, 64-bit, SSE4.1) on **OS X 10.6.8**.
 The normal macOS build ([MACOS.md](MACOS.md)) needs 10.12 and cannot start there.
 A separate **legacy edition** (`legacy/app`) exists for these systems. It starts on the Mac Pro under
-10.6.8, opens its window and gets a QR login code from Discord; logging in and chatting have not been
-tried by a person yet. It has text chat only: no voice, pictures, settings or notifications.
+10.6.8, opens its window and gets a QR login code from Discord; logging in, chatting and a real voice
+call have not been tried by a person yet. It has text chat and voice channels: no pictures, video,
+screen sharing, settings or notifications.
 This page records what has been proven and what is left.
 
 ## The legacy edition
@@ -14,8 +15,21 @@ This page records what has been proven and what is left.
 - Scan the QR code with the Discord app on a phone (Settings > Scan QR Code). The login is kept in
   `~/Library/Application Support/Litecord Legacy/session`, readable by your user only, **not encrypted**.
 - Pick a server on the left, then a channel; type and press Return to send. The mouse wheel scrolls each list.
-- It is Litecord's own gateway, HTTP and QR-login code, compiled unchanged from `src/` (see
+- Click a `(voice)` channel to join it with the default microphone and speakers. A bar at the bottom of
+  the channel column shows the call, who is in it, and **Mute** / **Leave**.
+- `litecord-legacy --self-test` (from Terminal) checks the voice building blocks without logging in. On
+  the Mac Pro with 10.6.8 it prints:
+
+  ```
+  PASS  opus codec: 20 frames, 161 bytes each on average, decoded loudness 1.01 of the original
+  PASS  dave session: created (keys generated through OpenMLS)
+  ```
+- It is Litecord's own gateway, HTTP, QR-login, voice and audio code, compiled unchanged from `src/` (see
   `legacy/app/src/lib.rs`), with a small CPU-drawn interface in `legacy/app/src/main.rs`.
+- Voice needs Discord's DAVE encryption (`davey`, on OpenMLS) and Opus (`opus-rs`), which are written for
+  newer Rust. `legacy/vendor/prepare.py` downloads fixed versions (sha256 checked) and rewrites the few
+  newer constructs; run it before building `legacy/app`. `legacy-check.yml` type-checks the result with
+  Rust 1.77 on every change under `legacy/`.
 
 Two things OS X 10.6 does differently had to be worked around (both found on the Mac Pro):
 
@@ -78,7 +92,7 @@ Measured by resolving Litecord's dependencies for Rust 1.77:
 | Video, screen share, web viewers | `openh264`, `str0m`, `h264-reader`, `jpeg-encoder` need Rust 1.83 – 1.87; `openh264` is C++ | Left out of a legacy edition |
 | Camera, tray icon | `cameras` needs Rust 1.85 and AVFoundation (10.7+); tray needs 10.10+ | Left out |
 | Crypto versions | `sha2` 0.11 and `x25519-dalek` 3 need Rust 1.85 – 1.88 | Their previous major versions |
-| Litecord's own code | Uses language features newer than 1.77 in places | Rewritten where the legacy edition uses that code |
+| Voice (DAVE, Opus) | `davey` and `opus-rs` are edition 2024; OpenMLS and `rand_core` use newer library functions | Patched copies made by `legacy/vendor/prepare.py`: done |
+| Litecord's own code | Uses language features newer than 1.77 in places | The network and voice code needed one small rewrite (`src/gateway/voice.rs`); the rest is not used |
 
-The legacy edition therefore has its own window layer and starts with text chat; voice is the next step
-(audio in and out already work in the probe).
+The legacy edition therefore has its own window layer, with text chat and voice.

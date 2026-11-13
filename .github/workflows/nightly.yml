@@ -276,7 +276,7 @@ jobs:
           name: nightly-macos
           path: dist/Litecord-macos-x64.zip
 
-  # Legacy edition for OS X 10.5 - 10.11 (text chat only, see docs/MACOS_LEGACY.md), built
+  # Legacy edition for OS X 10.5 - 10.11 (text chat and voice, see docs/MACOS_LEGACY.md), built
   # with the MacPorts Rust 1.77 compiler. Experimental: a failure here does not hold back
   # the other files.
   build-macos-legacy:
@@ -340,7 +340,7 @@ jobs:
           | \`Litecord-x86_64.AppImage\` | Linux, any distribution |
           | \`litecord-linux-x64.tar.gz\` | Linux binary |
           | \`Litecord-macos-x64.zip\` | macOS Intel, 10.12 or later (see docs/MACOS.md) |
-          | \`Litecord-Legacy-macos-10.5.zip\` | Old Intel Macs, OS X 10.5 - 10.11: legacy edition, text chat only (see docs/MACOS_LEGACY.md) |
+          | \`Litecord-Legacy-macos-10.5.zip\` | Old Intel Macs, OS X 10.5 - 10.11: legacy edition, text chat and voice (see docs/MACOS_LEGACY.md) |
           NOTES
           gh release delete nightly --cleanup-tag --yes 2>/dev/null || true
           gh release create nightly \
