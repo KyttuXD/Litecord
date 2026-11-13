@@ -1,88 +1,88 @@
-# Pendências para a próxima release
+# Pending items for the next release
 
-Auditoria de 17/10/2026: decisões registradas, plano, código e GitHub.
-Este documento registra o estado; não autoriza publicação.
+Audit of 17/10/2026: recorded decisions, plan, code and GitHub.
+This document records the state; it does not authorize publishing.
 
-## Decisões vigentes
+## Current decisions
 
-- Manter um único worker. Terminar as mudanças relacionadas a ele e publicar juntas.
-- Testar a web por oferta/resposta manual ou worker local enquanto isso.
-- Deixar VM/Linux e NAT simulado para o fim do plano.
-- Não medir 1% low, conforme decisão registrada no plano.
-- O lote de leveza da v1.2.1 foi separado das etapas maiores 4, 5, 6.2 e 7.
-  Depois a web foi antecipada. As etapas maiores não devem ser confundidas com
-  correções pequenas já concluídas nem consideradas prontas por estarem no plano.
+- Keep a single worker. Finish the changes related to it and publish them together.
+- Test the web part with a manual offer/answer or a local worker in the meantime.
+- Leave VM/Linux and simulated NAT for the end of the plan.
+- Do not measure 1% low, as decided in the plan.
+- The v1.2.1 lightness batch was separated from the larger stages 4, 5, 6.2 and 7.
+  The web part was brought forward afterwards. The larger stages must not be confused
+  with the small fixes already completed, nor considered done just because they are in the plan.
 
-## Já concluído
+## Already done
 
-- Lote de leveza: renderizador por CPU como padrão com opção GPU, microfone em
-  thread própria, atualização da interface por evento/visibilidade, correções de
-  timers e dispositivos que continuavam ativos após sair da chamada.
-- Fila de decodificação de 120 para 30 quadros, pedido de quadro-chave dirigido ao
-  transmissor e espera crescente quando não há dispositivo de saída.
-- Diagnóstico de rede com STUN, sinalização e relatório.
-- Voz ponta a ponta e chamada com microfone real: PASS registrado nas medições
-  anteriores; não foram repetidas nesta auditoria.
-- Arredondamento de avatares/servidores no renderizador por software.
-- Web: H.264 reaproveitado, áudio Opus, limite de três espectadores, chave por
-  sessão, controles na interface, sinalização cifrada e modo manual de teste.
-  Chrome validado localmente, com e sem worker; a publicação continua pendente.
-- Botão de compartilhar na web reduzido a um globo de 32×32 px, com descrição e
-  contagem de espectadores ao passar o mouse e rótulo de acessibilidade.
+- Lightness batch: CPU renderer as the default with a GPU option, microphone on its
+  own thread, event/visibility-driven interface updates, fixes for
+  timers and devices that stayed active after leaving the call.
+- Decode queue from 120 to 30 frames, keyframe request directed at the
+  sender and growing wait when there is no output device.
+- Network diagnostic with STUN, signaling and report.
+- End-to-end voice and a call with a real microphone: PASS recorded in the
+  earlier measurements; not repeated in this audit.
+- Rounding of avatars/servers in the software renderer.
+- Web: H.264 reused, Opus audio, three-viewer limit, per-session
+  key, controls in the interface, encrypted signaling and manual test mode.
+  Chrome validated locally, with and without the worker; publishing is still pending.
+- Web share button reduced to a 32×32 px globe, with a description and
+  viewer count on hover and an accessibility label.
 
-## Implementações maiores ainda pendentes
+## Larger implementations still pending
 
-- [x] **Etapa 4 — Receber vídeo com a GPU** (Windows): decodificação DXVA e camadas
-  do DirectComposition; OpenH264 continua como reserva. Linux (VA-API) não feito.
-- [x] **Etapa 5 — Assistir sob demanda** (local, [desenho](WATCH_ON_DEMAND.md)):
-  pedido de assistir, envio só a quem pediu, chave por transmissão entregue com
-  X25519, ajuste de taxa pelo pior espectador, codificação pausada sem espectador.
-- [x] Transição decidida: protocolo 3, atualização obrigatória. O worker local já
-  exige `v=3` (`MIN_PROTOCOL = 3`); publicar **junto** com a release, nunca antes.
-- [ ] **Etapa 6.2 — Prioridade de threads não relacionadas a áudio.** Comparar
-  antes/depois com jogo rodando; só adotar se houver ganho sem prejudicar vídeo.
+- [x] **Stage 4 — Receive video with the GPU** (Windows): DXVA decoding and
+  DirectComposition layers; OpenH264 remains as the fallback. Linux (VA-API) not done.
+- [x] **Stage 5 — Watch on demand** (local, [design](WATCH_ON_DEMAND.md)):
+  watch request, sending only to whoever asked, per-stream key delivered with
+  X25519, rate adjustment by the worst viewer, encoding paused without viewers.
+- [x] Transition decided: protocol 3, mandatory update. The local worker already
+  requires `v=3` (`MIN_PROTOCOL = 3`); publish **together** with the release, never before.
+- [ ] **Stage 6.2 — Priority of non-audio threads.** Compare
+  before/after with a game running; only adopt it if there is a gain without hurting video.
 
-## Validações pendentes
+## Pending validations
 
-- [ ] Transmissão real entre redes distintas, tanto nativa quanto web. STUN local
-  e teste de NAT não comprovam esse cenário. Sem TURN, algumas redes não conectam.
-- [ ] VM/Linux: executar atalhos globais e NAT simulado, deixados para o fim.
-- [ ] Compilar e testar o estado atual no Linux. O CI anterior não cobre as novas
-  mudanças de WebRTC/Opus/interface ainda locais.
-- [x] Custo da transmissão web com captura real 1080p60, um e três espectadores
+- [ ] Real streaming between distinct networks, both native and web. Local STUN
+  and the NAT test do not prove this scenario. Without TURN, some networks do not connect.
+- [ ] VM/Linux: run global shortcuts and simulated NAT, left for the end.
+- [ ] Build and test the current state on Linux. The previous CI does not cover the new
+  WebRTC/Opus/interface changes that are still local.
+- [x] Cost of web streaming with real 1080p60 capture, one and three viewers
   (`web_share_real.cjs`, Chrome/Edge/Firefox).
-- [ ] Teste prolongado de 2–3 h: rodou 101 min (parado por falta de memória no PC),
-  CPU estável; a memória privada do receptor subiu de 222 para 277 MB, a investigar.
-- [ ] Hardware AMD e outros navegadores: continuam sem validação.
-- [ ] Medição final de leveza após as últimas mudanças, usando `scripts/perf/`.
+- [ ] Prolonged 2–3 h test: ran 101 min (stopped for lack of memory on the PC),
+  CPU stable; the receiver's private memory rose from 222 to 277 MB, to be investigated.
+- [ ] AMD hardware and other browsers: still not validated.
+- [ ] Final lightness measurement after the latest changes, using `scripts/perf/`.
 
-O par de teste na nuvem era a **opção 2** do diagnóstico e ficou pendente; é uma
-ferramenta para testar outras redes, não uma correção já autorizada/implementada.
-A comparação direta com TeamSpeak também não foi feita nem é requisito definido.
+The cloud test pair was **option 2** of the diagnosis and remained pending; it is a
+tool for testing other networks, not a fix that has already been authorized/implemented.
+A direct comparison with TeamSpeak was not done either and is not a defined requirement.
 
-## Fechamento da release no GitHub
+## Closing the release on GitHub
 
-- [ ] Revisar `CHROME_VERSION` e `CLIENT_BUILD_NUMBER` em
-  `src/utils/client_identity.rs` com valores verificados, sem inventá-los.
-- [ ] Consolidar e versionar as mudanças locais, revisar o diff e executar CI
-  Linux/Windows para o commit final, incluindo os pacotes de distribuição.
-- [ ] Atualizar versão em `Cargo.toml`, `Cargo.lock`, `installer.iss` e rótulos de
-  download; completar data, testes e texto final do CHANGELOG.
-- [ ] Revisar afirmações de desempenho dos READMEs: os números de CPU/RAM vêm
-  deste PC; as promessas de zero perda de FPS não foram verificadas em jogos.
-- [ ] Publicar o worker uma vez, junto da transição planejada; validar sinalização
-  nativa e web após o deploy.
-- [ ] Gerar artefatos de release **sem a feature `automation`**.
-- [ ] Preparar/postar a issue dos bugs do Slint e o comentário da #27 solicitando
-  teste em AMD. Os [rascunhos](RELEASE_COMMUNICATION_DRAFTS.md) foram
-  preservados neste repositório a partir do scratchpad temporário; revisar textos,
-  métricas e link do build antes de postar. Nada foi postado nesta auditoria.
-- [ ] Criar tag/release somente após o fechamento e a validação dos artefatos.
+- [ ] Review `CHROME_VERSION` and `CLIENT_BUILD_NUMBER` in
+  `src/utils/client_identity.rs` with verified values, without inventing them.
+- [ ] Consolidate and version the local changes, review the diff and run Linux/Windows
+  CI for the final commit, including the distribution packages.
+- [ ] Update the version in `Cargo.toml`, `Cargo.lock`, `installer.iss` and download
+  labels; complete the date, tests and final text of the CHANGELOG.
+- [ ] Review the performance claims in the READMEs: the CPU/RAM numbers come
+  from this PC; the promises of zero FPS loss were not verified in games.
+- [ ] Publish the worker once, together with the planned transition; validate native
+  and web signaling after the deploy.
+- [ ] Generate release artifacts **without the `automation` feature**.
+- [ ] Prepare/post the issue about the Slint bugs and the #27 comment requesting
+  testing on AMD. The [drafts](RELEASE_COMMUNICATION_DRAFTS.md) were
+  preserved in this repository from the temporary scratchpad; review the texts,
+  metrics and build link before posting. Nothing was posted in this audit.
+- [ ] Create the tag/release only after closing out and validating the artifacts.
 
-Estado verificado no GitHub nesta auditoria: a última release continua sendo
-`v1.2.0-beta` (12/10). O CI da branch `perf/idle-lightness` passou no commit
-`8b5933fb70a85756ae401e3c84ac2866c167858b`; esse resultado é anterior ao HEAD
-local `871e2dd` e às mudanças ainda não commitadas.
+State verified on GitHub in this audit: the latest release is still
+`v1.2.0-beta` (12/10). CI for the `perf/idle-lightness` branch passed on commit
+`8b5933fb70a85756ae401e3c84ac2866c167858b`; that result predates the local HEAD
+`871e2dd` and the changes not yet committed.
 
-Referências: [plano](../plan.md), [changelog](../CHANGELOG.md),
-[testes e uso da transmissão web](WEB_SHARING.md).
+References: [plan](../plan.md), [changelog](../CHANGELOG.md),
+[web streaming tests and usage](WEB_SHARING.md).

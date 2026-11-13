@@ -55,9 +55,9 @@ pub fn parse_discord_markdown(input: &str) -> String {
                 ("", trimmed)
             };
             if lang.is_empty() {
-                lines_to_process.push((format!("[Bloco de Código]\n{}", code_body.trim_end()), true));
+                lines_to_process.push((format!("[Code Block]\n{}", code_body.trim_end()), true));
             } else {
-                lines_to_process.push((format!("[Bloco de Código ({})]\n{}", lang, code_body.trim_end()), true));
+                lines_to_process.push((format!("[Code Block ({})]\n{}", lang, code_body.trim_end()), true));
             }
         } else {
             for line in part.split('\n') {
@@ -210,18 +210,18 @@ fn apply_inline_markdown(input: &str) -> String {
     });
 
     // <@!USER_ID> and <@USER_ID> — user mentions
-    s = regex_replace_simple(&s, "<@!", ">", |_inner| "@usuário".to_string());
-    s = regex_replace_simple(&s, "<@&", ">", |_inner| "@cargo".to_string());
+    s = regex_replace_simple(&s, "<@!", ">", |_inner| "@user".to_string());
+    s = regex_replace_simple(&s, "<@&", ">", |_inner| "@role".to_string());
     s = regex_replace_simple(&s, "<@", ">", |inner| {
         // Only if purely numeric (user ID)
         if inner.chars().all(|c| c.is_ascii_digit()) {
-            "@usuário".to_string()
+            "@user".to_string()
         } else {
             format!("<@{}>", inner)
         }
     });
     // <#CHANNEL_ID> — channel mentions
-    s = regex_replace_simple(&s, "<#", ">", |inner| super::channel_names::lookup(inner).map(|(_, name)| format!("#{name}")).unwrap_or_else(|| "#canal".to_string()));
+    s = regex_replace_simple(&s, "<#", ">", |inner| super::channel_names::lookup(inner).map(|(_, name)| format!("#{name}")).unwrap_or_else(|| "#channel".to_string()));
 
     // <:name:ID> — custom emoji
     s = regex_replace_simple(&s, "<a:", ">", |inner| {
@@ -1150,7 +1150,7 @@ pub fn format_discord_message_parts(m: &Value) -> (String, Vec<String>, Vec<Mess
                     embed_parts_all.push(f_embed);
                 }
                 if !f_content.is_empty() {
-                    content_parts.push(format!("↪ *[Mensagem encaminhada]*\n{}", f_content));
+                    content_parts.push(format!("↪ *[Forwarded message]*\n{}", f_content));
                     content_lines.extend(f_lines);
                 } else if !f_lines.is_empty() {
                     content_lines.extend(f_lines);
@@ -1257,7 +1257,7 @@ pub fn format_discord_message_parts(m: &Value) -> (String, Vec<String>, Vec<Mess
                             });
                             if !links.iter().any(|l| l.url == url) {
                                 links.push(LinkData {
-                                    label: format!("Titulo: {}", parsed_title),
+                                    label: format!("Title: {}", parsed_title),
                                     url: url.to_string(),
                                 });
                             }
@@ -1339,7 +1339,7 @@ pub fn format_discord_message_parts(m: &Value) -> (String, Vec<String>, Vec<Mess
                     let w = embed["image"]["width"].as_i64().unwrap_or(0) as i32;
                     let h = embed["image"]["height"].as_i64().unwrap_or(0) as i32;
                     links.push(LinkData {
-                        label: "Ver Imagem do Embed".to_string(),
+                        label: "View Embed Image".to_string(),
                         url: img_url.to_string(),
                     });
                     attachments_list.push(MessageAttachmentData {
@@ -1361,10 +1361,10 @@ pub fn format_discord_message_parts(m: &Value) -> (String, Vec<String>, Vec<Mess
             if let Some(video_url) = embed["video"]["url"].as_str() {
                 if !video_url.is_empty() {
                     links.push(LinkData {
-                        label: "Assistir Vídeo".to_string(),
+                        label: "Watch Video".to_string(),
                         url: video_url.to_string(),
                     });
-                    ep.push(format!("🎥 [Vídeo: {}]", video_url));
+                    ep.push(format!("🎥 [Video: {}]", video_url));
                 }
             }
 
@@ -1372,11 +1372,11 @@ pub fn format_discord_message_parts(m: &Value) -> (String, Vec<String>, Vec<Mess
             if let Some(thumb_url) = embed["thumbnail"]["url"].as_str() {
                 if !thumb_url.is_empty() {
                     links.push(LinkData {
-                        label: "Ver Miniatura do Embed".to_string(),
+                        label: "View Embed Thumbnail".to_string(),
                         url: thumb_url.to_string(),
                     });
                     if ep.is_empty() && embed.get("title").is_none() && embed.get("description").is_none() && embed.get("image").is_none() {
-                        ep.push(format!("🖼️ [Miniatura: {}]", thumb_url));
+                        ep.push(format!("🖼️ [Thumbnail: {}]", thumb_url));
                     }
                 }
             }
@@ -1414,7 +1414,7 @@ pub fn format_discord_message_parts(m: &Value) -> (String, Vec<String>, Vec<Mess
     if let Some(attachments) = m["attachments"].as_array() {
         for att in attachments {
             let id = att["id"].as_str().unwrap_or("").to_string();
-            let filename = att["filename"].as_str().unwrap_or("arquivo").to_string();
+            let filename = att["filename"].as_str().unwrap_or("file").to_string();
             let url = att["url"].as_str().unwrap_or("").to_string();
             let proxy_url = att["proxy_url"].as_str().unwrap_or(&url).to_string();
             let content_type = att["content_type"].as_str().unwrap_or("").to_string();
@@ -1443,10 +1443,10 @@ pub fn format_discord_message_parts(m: &Value) -> (String, Vec<String>, Vec<Mess
 
             if is_voice {
                 let dur = duration_secs.map(|d| format!(" ({:.0}s)", d)).unwrap_or_default();
-                content_parts.push(format!("🎤 [Mensagem de Voz{}]", dur));
+                content_parts.push(format!("🎤 [Voice Message{}]", dur));
                 if !url.is_empty() {
                     links.push(LinkData {
-                        label: format!("▶ Ouvir Mensagem de Voz{}", dur),
+                        label: format!("▶ Listen to Voice Message{}", dur),
                         url: url.clone(),
                     });
                 }
@@ -1467,7 +1467,7 @@ pub fn format_discord_message_parts(m: &Value) -> (String, Vec<String>, Vec<Mess
                 }
             } else if !url.is_empty() {
                 links.push(LinkData {
-                    label: format!("Imagem: {}", filename),
+                    label: format!("Image: {}", filename),
                     url: url.clone(),
                 });
             }
@@ -1563,36 +1563,36 @@ pub fn format_discord_message_parts(m: &Value) -> (String, Vec<String>, Vec<Mess
     let content = if content_parts.is_empty() && embed_parts_all.is_empty() && buttons.is_empty() && attachments_list.is_empty() && embed_lines.is_empty() && links.is_empty() {
         match msg_type {
             0 => String::new(),
-            1 => "[Membro adicionado ao grupo]".to_string(),
-            2 => "[Membro removido do grupo]".to_string(),
-            3 => "[Chamada de voz iniciada/encerrada]".to_string(),
-            4 => "[Nome do canal alterado]".to_string(),
-            5 => "[Ícone do canal alterado]".to_string(),
-            6 => "[Mensagem Fixada]".to_string(),
-            7 => "[Novo membro entrou no servidor!]".to_string(),
-            8 => "[Servidor Impulsionado!]".to_string(),
-            9 => "[Servidor alcançou nível 1 de impulso!]".to_string(),
-            10 => "[Servidor alcançou nível 2 de impulso!]".to_string(),
-            11 => "[Servidor alcançou nível 3 de impulso!]".to_string(),
-            12 => "[Canal seguido adicionado]".to_string(),
-            14 => "[Servidor desqualificado da descoberta]".to_string(),
-            15 => "[Servidor requalificado na descoberta]".to_string(),
-            18 => "[Novo tópico criado]".to_string(),
+            1 => "[Member added to the group]".to_string(),
+            2 => "[Member removed from the group]".to_string(),
+            3 => "[Voice call started/ended]".to_string(),
+            4 => "[Channel name changed]".to_string(),
+            5 => "[Channel icon changed]".to_string(),
+            6 => "[Pinned Message]".to_string(),
+            7 => "[New member joined the server!]".to_string(),
+            8 => "[Server Boosted!]".to_string(),
+            9 => "[Server reached boost level 1!]".to_string(),
+            10 => "[Server reached boost level 2!]".to_string(),
+            11 => "[Server reached boost level 3!]".to_string(),
+            12 => "[Followed channel added]".to_string(),
+            14 => "[Server disqualified from Discovery]".to_string(),
+            15 => "[Server requalified for Discovery]".to_string(),
+            18 => "[New thread created]".to_string(),
             19 => String::new(),
             20 => String::new(),
-            21 => "[Mensagem inicial de tópico/fórum]".to_string(),
-            22 => "[Lembrete de convite]".to_string(),
+            21 => "[Initial thread/forum message]".to_string(),
+            22 => "[Invite reminder]".to_string(),
             23 => String::new(),
-            24 => "[Ação do AutoMod]".to_string(),
-            25 => "[Compra de assinatura de cargo]".to_string(),
-            26 => "[Oferta Nitro / Upgrade]".to_string(),
-            27..=30 => "[Transmissão de Palco iniciada/atualizada]".to_string(),
-            31 => "[Assinatura de aplicativo ativada]".to_string(),
-            32 => "[Integração de canal adicionada]".to_string(),
-            33 => "[Integração de canal removida]".to_string(),
-            36..=38 => "[Alerta de segurança do servidor]".to_string(),
-            39 => "[Compra realizada no servidor]".to_string(),
-            40 => "[Resultado de enquete finalizado]".to_string(),
+            24 => "[AutoMod action]".to_string(),
+            25 => "[Role subscription purchase]".to_string(),
+            26 => "[Nitro Offer / Upgrade]".to_string(),
+            27..=30 => "[Stage broadcast started/updated]".to_string(),
+            31 => "[Application subscription activated]".to_string(),
+            32 => "[Channel integration added]".to_string(),
+            33 => "[Channel integration removed]".to_string(),
+            36..=38 => "[Server security alert]".to_string(),
+            39 => "[Purchase made on the server]".to_string(),
+            40 => "[Poll result finalized]".to_string(),
             _ => String::new(),
         }
     } else {
@@ -1659,7 +1659,7 @@ mod tests {
     #[test]
     fn test_empty_line_preservation() {
         let mut links = Vec::new();
-        let input = "Primeira linha\n\nSegunda linha";
+        let input = "First line\n\nSecond line";
         let lines = parse_text_into_lines(input, &mut links);
         assert_eq!(lines.len(), 3);
         assert!(lines[1].blocks.is_empty());
@@ -1740,7 +1740,7 @@ mod tests {
             ]
         });
         let (content, _, content_lines, embed_content, _, _, _, _, _, _, _, _, _, _) = format_discord_message_parts(&msg);
-        assert!(content.contains("Mensagem encaminhada"));
+        assert!(content.contains("Forwarded message"));
         assert!(content.contains("Jogo Gratis: Half-Life 2"));
         assert!(embed_content.contains("Disponível no Steam!"));
         assert!(!content_lines.is_empty());
@@ -1774,9 +1774,9 @@ mod tests {
             ]
         });
         let (content, _, _, _, _, _, _, _, _, _, _, links, _, attachments) = format_discord_message_parts(&msg);
-        assert!(content.contains("Mensagem de Voz"));
+        assert!(content.contains("Voice Message"));
         assert!(content.contains("15s"));
-        assert!(links.iter().any(|l| l.label.contains("Ouvir Mensagem de Voz")));
+        assert!(links.iter().any(|l| l.label.contains("Listen to Voice Message")));
         assert!(attachments.iter().any(|a| a.is_image && a.url.contains("game-banner.png")));
     }
 

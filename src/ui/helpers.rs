@@ -368,26 +368,26 @@ pub fn populate_video_interface_settings(ui: &AppWindow) {
     let enc_items = vec![
         SettingOptionItem {
             id: "auto".into(),
-            name: "Automático (Recomendado)".into(),
-            desc: "Prioriza aceleração por hardware GPU disponível com fallback para CPU.".into(),
+            name: "Automatic (Recommended)".into(),
+            desc: "Prefers available GPU hardware acceleration, falling back to the CPU.".into(),
             is_selected: enc == "auto",
         },
         SettingOptionItem {
             id: "nvenc".into(),
             name: "NVIDIA NVENC".into(),
-            desc: "Codificação acelerada por hardware via GPU NVIDIA GeForce / RTX.".into(),
+            desc: "Hardware-accelerated encoding on NVIDIA GeForce / RTX GPUs.".into(),
             is_selected: enc == "nvenc",
         },
         SettingOptionItem {
             id: "ffmpeg".into(),
             name: "FFmpeg Hardware (VA-API / QSV)".into(),
-            desc: "Pipeline acelerado por GPU via FFmpeg (VA-API, QSV, NVENC).".into(),
+            desc: "GPU-accelerated pipeline through FFmpeg (VA-API, QSV, NVENC).".into(),
             is_selected: enc == "ffmpeg",
         },
         SettingOptionItem {
             id: "openh264".into(),
             name: "Cisco OpenH264 (CPU)".into(),
-            desc: "Codificação universal por software multithread com otimizações SIMD.".into(),
+            desc: "Universal multithreaded software encoding with SIMD optimizations.".into(),
             is_selected: enc == "openh264",
         },
     ];
@@ -396,20 +396,20 @@ pub fn populate_video_interface_settings(ui: &AppWindow) {
     let vcap_items = vec![
         SettingOptionItem {
             id: "auto".into(),
-            name: "Automático (Recomendado)".into(),
-            desc: "Tenta PrintWindow para janelas DirectX e usa BitBlt GDI para desktop e fallback.".into(),
+            name: "Automatic (Recommended)".into(),
+            desc: "Tries PrintWindow for DirectX windows and uses BitBlt GDI for the desktop and as a fallback.".into(),
             is_selected: vcap == "auto",
         },
         SettingOptionItem {
             id: "printwindow".into(),
             name: "PrintWindow (DirectX / DWM)".into(),
-            desc: "Captura direta de janelas em primeiro ou segundo plano via DWM.".into(),
+            desc: "Direct capture of foreground or background windows through DWM.".into(),
             is_selected: vcap == "printwindow",
         },
         SettingOptionItem {
             id: "bitblt".into(),
             name: "BitBlt GDI (Desktop Crop)".into(),
-            desc: "Captura clássica de alto desempenho diretamente do framebuffer do desktop.".into(),
+            desc: "Classic high-performance capture straight from the desktop framebuffer.".into(),
             is_selected: vcap == "bitblt",
         },
     ];
@@ -418,20 +418,20 @@ pub fn populate_video_interface_settings(ui: &AppWindow) {
     let vcap_items = vec![
         SettingOptionItem {
             id: "auto".into(),
-            name: "Automático (Recomendado)".into(),
-            desc: "Utiliza o seletor nativo do sistema via XDG Desktop Portal e PipeWire.".into(),
+            name: "Automatic (Recommended)".into(),
+            desc: "Uses the system's native picker through XDG Desktop Portal and PipeWire.".into(),
             is_selected: vcap == "auto",
         },
         SettingOptionItem {
             id: "portal".into(),
             name: "XDG Desktop Portal + PipeWire".into(),
-            desc: "Captura de tela moderna de baixa latência compatível com Wayland e Flatpak.".into(),
+            desc: "Modern low-latency screen capture compatible with Wayland and Flatpak.".into(),
             is_selected: vcap == "portal",
         },
         SettingOptionItem {
             id: "x11".into(),
             name: "X11 Fallback".into(),
-            desc: "Captura legada direta de tela em sessões gráficas X11.".into(),
+            desc: "Legacy direct screen capture in X11 graphical sessions.".into(),
             is_selected: vcap == "x11",
         },
     ];
@@ -440,20 +440,20 @@ pub fn populate_video_interface_settings(ui: &AppWindow) {
     let aloop_items = vec![
         SettingOptionItem {
             id: "auto".into(),
-            name: "Automático (Recomendado)".into(),
-            desc: "Captura com isolamento de processo WASAPI (exclui o Litecord do áudio da stream).".into(),
+            name: "Automatic (Recommended)".into(),
+            desc: "Capture with WASAPI process isolation (excludes Litecord from the stream audio).".into(),
             is_selected: aloop == "auto",
         },
         SettingOptionItem {
             id: "wasapi_isolated".into(),
-            name: "WASAPI Process-Loopback Isolado".into(),
-            desc: "Captura nativa que remove vozes dos amigos e sons do Litecord da sua transmissão.".into(),
+            name: "WASAPI Process-Loopback Isolated".into(),
+            desc: "Native capture that removes your friends' voices and Litecord sounds from your stream.".into(),
             is_selected: aloop == "wasapi_isolated",
         },
         SettingOptionItem {
             id: "cpal".into(),
             name: "CPAL WASAPI Loopback".into(),
-            desc: "Captura direta do endpoint de saída padrão do sistema operacional.".into(),
+            desc: "Direct capture of the operating system's default output endpoint.".into(),
             is_selected: aloop == "cpal",
         },
     ];
@@ -462,20 +462,20 @@ pub fn populate_video_interface_settings(ui: &AppWindow) {
     let aloop_items = vec![
         SettingOptionItem {
             id: "auto".into(),
-            name: "Automático (Recomendado)".into(),
-            desc: "Captura monitor do sink padrão PulseAudio/PipeWire via GStreamer pulsesrc.".into(),
+            name: "Automatic (Recommended)".into(),
+            desc: "Captures the monitor of the default PulseAudio/PipeWire sink through GStreamer pulsesrc.".into(),
             is_selected: aloop == "auto",
         },
         SettingOptionItem {
             id: "pulsesrc".into(),
             name: "GStreamer pulsesrc (Monitor)".into(),
-            desc: "Pipeline GStreamer dedicado conectado ao sink monitor do PipeWire.".into(),
+            desc: "Dedicated GStreamer pipeline connected to the PipeWire monitor sink.".into(),
             is_selected: aloop == "pulsesrc",
         },
         SettingOptionItem {
             id: "cpal".into(),
             name: "CPAL Audio Loopback".into(),
-            desc: "Captura padrão via interface de áudio CPAL.".into(),
+            desc: "Standard capture through the CPAL audio interface.".into(),
             is_selected: aloop == "cpal",
         },
     ];
@@ -571,26 +571,26 @@ pub fn populate_network_proxy_settings(ui: &AppWindow) {
     let mode_items = vec![
         SettingOptionItem {
             id: "off".into(),
-            name: "Desativado (Conexão Direta)".into(),
-            desc: "Conexão direta aos servidores do Discord (Padrão).".into(),
+            name: "Disabled (Direct Connection)".into(),
+            desc: "Direct connection to Discord's servers (Default).".into(),
             is_selected: settings.proxy_mode == "off",
         },
         SettingOptionItem {
             id: "http".into(),
             name: "Proxy HTTP / HTTPS".into(),
-            desc: "Túnel HTTP CONNECT para redes restritas e proxies.".into(),
+            desc: "HTTP CONNECT tunnel for restricted networks and proxies.".into(),
             is_selected: settings.proxy_mode == "http" || settings.proxy_mode == "https",
         },
         SettingOptionItem {
             id: "socks5".into(),
             name: "Proxy SOCKS5".into(),
-            desc: "Túnel SOCKS5 compatível com Tor, Shadowsocks e SSH.".into(),
+            desc: "SOCKS5 tunnel compatible with Tor, Shadowsocks and SSH.".into(),
             is_selected: settings.proxy_mode == "socks5",
         },
         SettingOptionItem {
             id: "system".into(),
-            name: "Proxy do Sistema".into(),
-            desc: "Detecta automaticamente o proxy global do sistema.".into(),
+            name: "System Proxy".into(),
+            desc: "Automatically detects the system-wide proxy.".into(),
             is_selected: settings.proxy_mode == "system",
         },
     ];
@@ -630,22 +630,22 @@ pub fn get_master_command_suggestions() -> Arc<std::sync::Mutex<Vec<CommandSugge
         Arc::new(std::sync::Mutex::new(vec![
             CommandSuggestionItem {
                 name: "/play".to_string(),
-                desc: "Tocar música ou adicionar à fila".to_string(),
+                desc: "Play music or add it to the queue".to_string(),
                 usage: "/play <query>".to_string(),
                 app_id: "".to_string(),
-                app_name: "Música".to_string(),
+                app_name: "Music".to_string(),
                 cmd_id: "".to_string(),
                 version: "".to_string(),
                 param_name: "query".to_string(),
-                param_desc: "Nome da música ou link do YouTube/Spotify".to_string(),
+                param_desc: "Song name or YouTube/Spotify link".to_string(),
                 is_required: true,
             },
             CommandSuggestionItem {
                 name: "/skip".to_string(),
-                desc: "Pular para a próxima música".to_string(),
+                desc: "Skip to the next song".to_string(),
                 usage: "/skip".to_string(),
                 app_id: "".to_string(),
-                app_name: "Música".to_string(),
+                app_name: "Music".to_string(),
                 cmd_id: "".to_string(),
                 version: "".to_string(),
                 param_name: "".to_string(),
@@ -654,10 +654,10 @@ pub fn get_master_command_suggestions() -> Arc<std::sync::Mutex<Vec<CommandSugge
             },
             CommandSuggestionItem {
                 name: "/stop".to_string(),
-                desc: "Parar reprodução e limpar a fila".to_string(),
+                desc: "Stop playback and clear the queue".to_string(),
                 usage: "/stop".to_string(),
                 app_id: "".to_string(),
-                app_name: "Música".to_string(),
+                app_name: "Music".to_string(),
                 cmd_id: "".to_string(),
                 version: "".to_string(),
                 param_name: "".to_string(),
@@ -666,10 +666,10 @@ pub fn get_master_command_suggestions() -> Arc<std::sync::Mutex<Vec<CommandSugge
             },
             CommandSuggestionItem {
                 name: "/pause".to_string(),
-                desc: "Pausar a reprodução atual".to_string(),
+                desc: "Pause the current playback".to_string(),
                 usage: "/pause".to_string(),
                 app_id: "".to_string(),
-                app_name: "Música".to_string(),
+                app_name: "Music".to_string(),
                 cmd_id: "".to_string(),
                 version: "".to_string(),
                 param_name: "".to_string(),
@@ -678,10 +678,10 @@ pub fn get_master_command_suggestions() -> Arc<std::sync::Mutex<Vec<CommandSugge
             },
             CommandSuggestionItem {
                 name: "/resume".to_string(),
-                desc: "Retomar a reprodução pausada".to_string(),
+                desc: "Resume the paused playback".to_string(),
                 usage: "/resume".to_string(),
                 app_id: "".to_string(),
-                app_name: "Música".to_string(),
+                app_name: "Music".to_string(),
                 cmd_id: "".to_string(),
                 version: "".to_string(),
                 param_name: "".to_string(),
@@ -690,10 +690,10 @@ pub fn get_master_command_suggestions() -> Arc<std::sync::Mutex<Vec<CommandSugge
             },
             CommandSuggestionItem {
                 name: "/queue".to_string(),
-                desc: "Ver a fila de músicas atual".to_string(),
+                desc: "View the current song queue".to_string(),
                 usage: "/queue".to_string(),
                 app_id: "".to_string(),
-                app_name: "Música".to_string(),
+                app_name: "Music".to_string(),
                 cmd_id: "".to_string(),
                 version: "".to_string(),
                 param_name: "".to_string(),
@@ -702,10 +702,10 @@ pub fn get_master_command_suggestions() -> Arc<std::sync::Mutex<Vec<CommandSugge
             },
             CommandSuggestionItem {
                 name: "/nowplaying".to_string(),
-                desc: "Exibir a música tocando agora".to_string(),
+                desc: "Show the song playing now".to_string(),
                 usage: "/nowplaying".to_string(),
                 app_id: "".to_string(),
-                app_name: "Música".to_string(),
+                app_name: "Music".to_string(),
                 cmd_id: "".to_string(),
                 version: "".to_string(),
                 param_name: "".to_string(),
@@ -714,10 +714,10 @@ pub fn get_master_command_suggestions() -> Arc<std::sync::Mutex<Vec<CommandSugge
             },
             CommandSuggestionItem {
                 name: "/247".to_string(),
-                desc: "Manter o bot 24/7 conectado no canal de voz".to_string(),
+                desc: "Keep the bot connected to the voice channel 24/7".to_string(),
                 usage: "/247".to_string(),
                 app_id: "".to_string(),
-                app_name: "Música".to_string(),
+                app_name: "Music".to_string(),
                 cmd_id: "".to_string(),
                 version: "".to_string(),
                 param_name: "".to_string(),
@@ -782,7 +782,7 @@ pub async fn load_guild_command_index(
                             // Option is optional — do not force a required parameter pill
                             let opt_name = opt["name"].as_str().unwrap_or("");
                             let opt_desc = opt["description"].as_str().unwrap_or("");
-                            param_desc = format!("Opcional: {} ({})", opt_name, opt_desc);
+                            param_desc = format!("Optional: {} ({})", opt_name, opt_desc);
                             is_required = false;
                         }
                     }
@@ -833,14 +833,14 @@ pub async fn load_guild_command_index(
                         if let Some(ui) = app_weak.upgrade() {
                             let model = std::rc::Rc::new(slint::VecModel::from(slint_suggestions));
                             ui.set_command_suggestions(model.into());
-                            info!("✅ Carregados {} comandos inteligentes reais dos bots do servidor com identificadores!", count);
+                            info!("✅ Loaded {} real smart commands from the server's bots with identifiers!", count);
                         }
                     });
                 }
             }
         }
         Err(e) => {
-            warn!("Não foi possível carregar o índice de comandos do servidor {}: {}", guild_id, e);
+            warn!("Could not load the command index of server {}: {}", guild_id, e);
         }
     }
 }

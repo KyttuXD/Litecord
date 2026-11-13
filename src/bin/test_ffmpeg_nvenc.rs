@@ -14,7 +14,7 @@ struct AVRational {
 
 fn main() {
     println!("============================================================");
-    println!("🚀 TESTE: FFMPEG HARDWARE ENCODER (h264_nvenc) ESTILO OBS/SUNSHINE");
+    println!("🚀 TEST: FFMPEG HARDWARE ENCODER (h264_nvenc) OBS/SUNSHINE STYLE");
     println!("============================================================");
 
     let dll_paths = [
@@ -42,10 +42,10 @@ fn main() {
         }
 
         if avcodec_dll.is_null() {
-            println!("❌ avcodec-61.dll não pôde ser carregada.");
+            println!("❌ avcodec-61.dll could not be loaded.");
             return;
         }
-        println!("✅ avcodec-61.dll carregada com sucesso! Handle: {:p}", avcodec_dll);
+        println!("✅ avcodec-61.dll loaded successfully! Handle: {:p}", avcodec_dll);
 
         let avutil_name = CString::new("avutil-59.dll").unwrap();
         let avutil_dll = windows_sys::Win32::System::LibraryLoader::GetModuleHandleA(avutil_name.as_ptr() as *const u8);
@@ -102,18 +102,18 @@ fn main() {
             windows_sys::Win32::System::LibraryLoader::GetProcAddress(avutil_dll, b"av_opt_set_q\0".as_ptr())
         );
 
-        println!("🔍 Buscando codec 'h264_nvenc'...");
+        println!("🔍 Looking for codec 'h264_nvenc'...");
         let codec_name = CString::new("h264_nvenc").unwrap();
         let codec = find_encoder_fn(codec_name.as_ptr());
         if codec.is_null() {
-            println!("❌ 'h264_nvenc' não encontrado no libavcodec.");
+            println!("❌ 'h264_nvenc' not found in libavcodec.");
             return;
         }
-        println!("✅ Codec 'h264_nvenc' ENCONTRADO! Handle: {:p}", codec);
+        println!("✅ Codec 'h264_nvenc' FOUND! Handle: {:p}", codec);
 
         let ctx = alloc_context_fn(codec);
         if ctx.is_null() {
-            println!("❌ Falha ao alocar AVCodecContext.");
+            println!("❌ Failed to allocate AVCodecContext.");
             return;
         }
 
@@ -172,15 +172,15 @@ fn main() {
         dict_set_fn(&mut opts, b"repeat-headers\0".as_ptr() as *const c_char, b"1\0".as_ptr() as *const c_char, 0);
         dict_set_fn(&mut opts, b"aud\0".as_ptr() as *const c_char, b"0\0".as_ptr() as *const c_char, 0);
 
-        println!("🚀 Inicializando AVCodecContext com avcodec_open2 passando AVDictionary...");
+        println!("🚀 Initializing AVCodecContext with avcodec_open2 passing an AVDictionary...");
         let ret = open2_fn(ctx, codec, &mut opts as *mut *mut c_void);
         dict_free_fn(&mut opts);
         if ret < 0 {
-            println!("❌ avcodec_open2 falhou com código: {}", ret);
+            println!("❌ avcodec_open2 failed with code: {}", ret);
             return;
         }
-        println!("🎉 SUCESSO! NVIDIA NVENC HARDWARE ENCODER INICIALIZADO COM ZERO-LATENCY!");
-        println!("🎉 SUCESSO! NVIDIA NVENC HARDWARE ENCODER INICIALIZADO NA GPU!");
+        println!("🎉 SUCCESS! NVIDIA NVENC HARDWARE ENCODER INITIALIZED WITH ZERO-LATENCY!");
+        println!("🎉 SUCCESS! NVIDIA NVENC HARDWARE ENCODER INITIALIZED ON THE GPU!");
 
         let frame = frame_alloc_fn();
         let frame_u8 = frame as *mut u8;
@@ -196,12 +196,12 @@ fn main() {
 
         let mut decoder = openh264::decoder::Decoder::new().unwrap();
 
-        println!("\n⏱️ TESTANDO ENCODE CONTÍNUO DE 10 QUADROS NA RTX 3050 (1080p 60 FPS):");
+        println!("\n⏱️ TESTING CONTINUOUS ENCODE OF 10 FRAMES ON THE RTX 3050 (1080p 60 FPS):");
         for i in 0..10 {
             *(frame_u8.add(136) as *mut i64) = i * 16666; // pts
 
             if i == 5 {
-                println!("   [Frame #5] 👉 FORÇANDO KEYFRAME...");
+                println!("   [Frame #5] 👉 FORCING KEYFRAME...");
                 // In FFmpeg 6/7, AV_FRAME_FLAG_KEY = (1 << 0) in flags (offset 160 or 164)
                 // Let's set pict_type = 1 and flags |= 1 across potential offsets
                 *(frame_u8.add(120) as *mut i32) = 1; // pict_type = AV_PICTURE_TYPE_I
@@ -256,13 +256,13 @@ fn main() {
                 match decoder.decode(bytes) {
                     Ok(Some(yuv)) => {
                         use openh264::formats::YUVSource;
-                        println!("      🎉 DECODER OPENH264 SUCESSO! Dimensões: {:?}", yuv.dimensions());
+                        println!("      🎉 OPENH264 DECODER SUCCESS! Dimensions: {:?}", yuv.dimensions());
                     }
                     Ok(None) => {
-                        println!("      ⚠️ DECODER OPENH264 retornou Ok(None)");
+                        println!("      ⚠️ OPENH264 DECODER returned Ok(None)");
                     }
                     Err(e) => {
-                        println!("      ❌ DECODER OPENH264 ERRO: {:?}", e);
+                        println!("      ❌ OPENH264 DECODER ERROR: {:?}", e);
                     }
                 }
             }

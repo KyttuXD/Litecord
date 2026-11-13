@@ -47,7 +47,7 @@ pub fn save_ignored_version(tag: &str) {
     };
     if let Ok(data) = serde_json::to_string_pretty(&cfg) {
         let _ = std::fs::write(get_config_path(), data);
-        info!("🏷️ Versão {} marcada como ignorada em {}", tag, CONFIG_FILE);
+        info!("🏷️ Version {} marked as ignored in {}", tag, CONFIG_FILE);
     }
 }
 
@@ -67,10 +67,10 @@ pub struct DetailedVersionInfo {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum VersionComparisonStatus {
-    UpToDate,        // Atualizado
-    Outdated,        // Desatualizado
-    AheadOfRelease,  // Dev / À frente da release pública
-    Modified,        // Modificado localmente (dirty)
+    UpToDate,        // Up to date
+    Outdated,        // Outdated
+    AheadOfRelease,  // Dev / Ahead of the public release
+    Modified,        // Modified locally (dirty)
 }
 
 /// Returns the formatted local version string (e.g. "v0.3.8 (0a21d14)" or "v0.3.8 (0a21d14-modified)")
@@ -143,23 +143,23 @@ pub async fn check_version_status_detailed(respect_ignored: bool) -> Result<Deta
     let is_dirty = env!("LITECORD_GIT_DIRTY") == "true";
 
     let url = format!("https://api.github.com/repos/{}/{}/releases/latest", REPO_OWNER, REPO_NAME);
-    info!("🔍 Comparando versão local ({}) com a última release do GitHub...", get_local_version_string());
+    info!("🔍 Comparing local version ({}) with the latest GitHub release...", get_local_version_string());
 
     let client = reqwest::Client::builder()
         .user_agent("Litecord-App-Updater")
         .timeout(std::time::Duration::from_secs(10))
         .build()
-        .map_err(|e| format!("Erro ao inicializar cliente HTTP: {:?}", e))?;
+        .map_err(|e| format!("Error initializing HTTP client: {:?}", e))?;
 
     let resp = client.get(&url).send().await
-        .map_err(|e| format!("Falha de conexão com o GitHub: {:?}", e))?;
+        .map_err(|e| format!("Failed to connect to GitHub: {:?}", e))?;
 
     if !resp.status().is_success() {
-        return Err(format!("API do GitHub retornou status HTTP {}", resp.status()));
+        return Err(format!("GitHub API returned HTTP status {}", resp.status()));
     }
 
     let json: serde_json::Value = resp.json().await
-        .map_err(|e| format!("Erro ao decodificar JSON do GitHub: {:?}", e))?;
+        .map_err(|e| format!("Error decoding GitHub JSON: {:?}", e))?;
 
     let tag_name = json["tag_name"].as_str().unwrap_or("v0.0.0").to_string();
     let remote_version = tag_name.trim_start_matches('v').to_string();
@@ -194,41 +194,41 @@ pub async fn check_version_status_detailed(respect_ignored: bool) -> Result<Deta
     }
 
     if respect_ignored && is_version_ignored(&tag_name) {
-        info!("Versão remota {} está marcada como ignorada pelo usuário.", tag_name);
+        info!("Remote version {} is marked as ignored by the user.", tag_name);
     }
 
     let (status, formatted_status) = if is_newer_version(&remote_version, &local_version) {
         (
             VersionComparisonStatus::Outdated,
-            format!("Desatualizado (v{} disponível no GitHub)", remote_version),
+            format!("Outdated (v{} available on GitHub)", remote_version),
         )
     } else if is_newer_version(&local_version, &remote_version) {
         if is_dirty {
             (
                 VersionComparisonStatus::Modified,
-                format!("Dev / Modificado ({}-modified • release v{})", local_hash, remote_version),
+                format!("Dev / Modified ({}-modified • release v{})", local_hash, remote_version),
             )
         } else {
             (
                 VersionComparisonStatus::AheadOfRelease,
-                format!("Atualizado / Dev ({} • à frente da release v{})", local_hash, remote_version),
+                format!("Up to date / Dev ({} • ahead of release v{})", local_hash, remote_version),
             )
         }
     } else {
         if is_dirty {
             (
                 VersionComparisonStatus::Modified,
-                format!("Modificado ({}-modified • base v{})", local_hash, remote_version),
+                format!("Modified ({}-modified • base v{})", local_hash, remote_version),
             )
         } else {
             (
                 VersionComparisonStatus::UpToDate,
-                format!("Atualizado (v{} • {})", local_version, local_hash),
+                format!("Up to date (v{} • {})", local_version, local_hash),
             )
         }
     };
 
-    info!("📊 Status de Versionamento: {}", formatted_status);
+    info!("📊 Versioning status: {}", formatted_status);
 
     Ok(DetailedVersionInfo {
         status,
@@ -271,12 +271,12 @@ pub async fn download_and_install_update(
     download_url: String,
     progress_tx: mpsc::Sender<f32>,
 ) -> Result<(), String> {
-    info!("Iniciando download da atualização: {}", download_url);
+    info!("Starting update download: {}", download_url);
     if !download_url.starts_with("https://github.com/Ak4ai/Litecord/")
         && !download_url.starts_with("https://objects.githubusercontent.com/")
         && !download_url.starts_with("https://github-releases.githubusercontent.com/")
     {
-        return Err("URL de atualização rejeitada por segurança: domínio não oficial.".to_string());
+        return Err("Update URL rejected for security: unofficial domain.".to_string());
     }
 
     // macOS: the app is a bundle the user placed somewhere (often /Applications), so it is
@@ -287,21 +287,21 @@ pub async fn download_and_install_update(
         // Upstream publishes no macOS file: the macOS builds are the nightlies of the fork.
         let _ = &download_url;
         return match std::process::Command::new("open").arg(MACOS_RELEASES_URL).spawn() {
-            Ok(_) => Err("No macOS a nova versão é baixada pelo navegador: substitua o Litecord.app pelo novo e abra de novo.".to_string()),
-            Err(e) => Err(format!("não foi possível abrir o navegador: {:?}", e)),
+            Ok(_) => Err("On macOS the new version is downloaded by the browser: replace Litecord.app with the new one and open it again.".to_string()),
+            Err(e) => Err(format!("could not open the browser: {:?}", e)),
         };
     }
 
     let client = reqwest::Client::builder()
         .user_agent("Litecord-App-Updater")
         .build()
-        .map_err(|e| format!("Erro ao criar cliente HTTP: {:?}", e))?;
+        .map_err(|e| format!("Error creating HTTP client: {:?}", e))?;
 
     let mut response = client.get(&download_url).send().await
-        .map_err(|e| format!("Falha na conexão de download: {:?}", e))?;
+        .map_err(|e| format!("Download connection failed: {:?}", e))?;
 
     if !response.status().is_success() {
-        return Err(format!("Download falhou com status HTTP {}", response.status()));
+        return Err(format!("Download failed with HTTP status {}", response.status()));
     }
 
     let total_size = response.content_length().unwrap_or(0);
@@ -310,13 +310,13 @@ pub async fn download_and_install_update(
     if cfg!(target_os = "windows") {
         let installer_path = temp_dir.join("Litecord-Update-Setup.exe");
         let mut file = tokio::fs::File::create(&installer_path).await
-            .map_err(|e| format!("Falha ao criar arquivo temporário: {:?}", e))?;
+            .map_err(|e| format!("Failed to create temporary file: {:?}", e))?;
 
         let mut downloaded: u64 = 0;
 
         while let Some(chunk) = response.chunk().await.map_err(|e| format!("Erro no download: {:?}", e))? {
             tokio::io::AsyncWriteExt::write_all(&mut file, &chunk).await
-                .map_err(|e| format!("Erro ao gravar dados: {:?}", e))?;
+                .map_err(|e| format!("Error writing data: {:?}", e))?;
 
             downloaded += chunk.len() as u64;
             if total_size > 0 {
@@ -326,20 +326,20 @@ pub async fn download_and_install_update(
         }
 
         tokio::io::AsyncWriteExt::flush(&mut file).await
-            .map_err(|e| format!("Erro no flush do arquivo: {:?}", e))?;
+            .map_err(|e| format!("Error flushing the file: {:?}", e))?;
         drop(file);
 
         if total_size > 0 && downloaded != total_size {
             let _ = tokio::fs::remove_file(&installer_path).await;
-            return Err(format!("Download incompleto (recebidos {} de {} bytes). O instalador não foi executado.", downloaded, total_size));
+            return Err(format!("Incomplete download (received {} of {} bytes). The installer was not run.", downloaded, total_size));
         }
         if downloaded < 500_000 {
             let _ = tokio::fs::remove_file(&installer_path).await;
-            return Err(format!("Download truncado ou corrompido (apenas {} bytes recebidos).", downloaded));
+            return Err(format!("Download truncated or corrupted (only {} bytes received).", downloaded));
         }
 
         let _ = progress_tx.try_send(1.0);
-        info!("Download concluído e validado ({} bytes)! Executando instalador: {:?}", downloaded, installer_path);
+        info!("Download complete and validated ({} bytes)! Running installer: {:?}", downloaded, installer_path);
 
         // Run installer and terminate current application cleanly
         #[cfg(target_os = "windows")]
@@ -369,7 +369,7 @@ pub async fn download_and_install_update(
 
             match res {
                 Ok(_) => {
-                    info!("Instalador agendado com sucesso. Encerrando processo do Litecord para atualização...");
+                    info!("Installer scheduled successfully. Closing the Litecord process for the update...");
                     unsafe {
                         windows_sys::Win32::System::Threading::TerminateProcess(
                             windows_sys::Win32::System::Threading::GetCurrentProcess(),
@@ -395,13 +395,13 @@ pub async fn download_and_install_update(
         // Linux: Download .tar.gz and extract binary to ~/.local/bin/litecord
         let tar_path = temp_dir.join("litecord-update.tar.gz");
         let mut file = tokio::fs::File::create(&tar_path).await
-            .map_err(|e| format!("Falha ao criar arquivo temporário: {:?}", e))?;
+            .map_err(|e| format!("Failed to create temporary file: {:?}", e))?;
 
         let mut downloaded: u64 = 0;
 
         while let Some(chunk) = response.chunk().await.map_err(|e| format!("Erro no download: {:?}", e))? {
             tokio::io::AsyncWriteExt::write_all(&mut file, &chunk).await
-                .map_err(|e| format!("Erro ao gravar dados: {:?}", e))?;
+                .map_err(|e| format!("Error writing data: {:?}", e))?;
 
             downloaded += chunk.len() as u64;
             if total_size > 0 {
@@ -411,20 +411,20 @@ pub async fn download_and_install_update(
         }
 
         tokio::io::AsyncWriteExt::flush(&mut file).await
-            .map_err(|e| format!("Erro no flush do arquivo: {:?}", e))?;
+            .map_err(|e| format!("Error flushing the file: {:?}", e))?;
         drop(file);
 
         if total_size > 0 && downloaded != total_size {
             let _ = tokio::fs::remove_file(&tar_path).await;
-            return Err(format!("Download incompleto (recebidos {} de {} bytes). A extração foi cancelada.", downloaded, total_size));
+            return Err(format!("Incomplete download (received {} of {} bytes). Extraction was cancelled.", downloaded, total_size));
         }
         if downloaded < 500_000 {
             let _ = tokio::fs::remove_file(&tar_path).await;
-            return Err(format!("Download truncado ou corrompido (apenas {} bytes recebidos).", downloaded));
+            return Err(format!("Download truncated or corrupted (only {} bytes received).", downloaded));
         }
 
         let _ = progress_tx.try_send(1.0);
-        info!("Download concluído e validado ({} bytes)! Atualizando binário Linux...", downloaded);
+        info!("Download complete and validated ({} bytes)! Updating the Linux binary...", downloaded);
 
         let home = std::env::var("HOME").unwrap_or_else(|_| ".".to_string());
         let install_bin_dir = PathBuf::from(&home).join(".local/bin");
@@ -515,13 +515,13 @@ pub async fn download_and_install_update(
                         let _ = std::fs::copy(&new_icon, &icon_pix);
                     }
 
-                    info!("✅ Litecord atualizado com sucesso em {:?}! Reiniciando...", bin_to_spawn);
+                    info!("✅ Litecord updated successfully at {:?}! Restarting...", bin_to_spawn);
                     let _ = std::process::Command::new(&bin_to_spawn).spawn();
                     std::process::exit(0);
                 }
             }
         }
-        Err("Falha ao descompactar e instalar a atualização no Linux.".to_string())
+        Err("Failed to extract and install the update on Linux.".to_string())
     }
 }
 

@@ -102,7 +102,7 @@ pub fn start_thread_cpu_profiler() {
                 }
                 unsafe { CloseHandle(snapshot) };
 
-                // Calcula % de CPU por thread
+                // Compute CPU % per thread
                 let mut report = Vec::new();
                 let mut total_proc_cpu = 0.0;
 
@@ -123,7 +123,7 @@ pub fn start_thread_cpu_profiler() {
 
                 if !report.is_empty() {
                     report.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
-                    let mut line = format!("🔥 [PROFILER DE CPU DO PROCESSO: {:.1}% Total]:", total_proc_cpu);
+                    let mut line = format!("🔥 [PROCESS CPU PROFILER: {:.1}% Total]:", total_proc_cpu);
                     for (name, sys_pct, core_pct) in report {
                         line.push_str(&format!(" [{} -> {:.1}% sys ({:.1}% core)]", name, sys_pct, core_pct));
                     }

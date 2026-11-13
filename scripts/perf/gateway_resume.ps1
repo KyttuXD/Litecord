@@ -56,7 +56,7 @@ try {
     if ($shown -lt 150) { $failures += "stream stalled after the drop ($shown pictures in 5 s)" }
     foreach ($side in "sender", "receiver") {
         $log = Get-Content (Join-Path $OutDir "$side\litecord_app.log") -Raw
-        if ($log -notmatch "retomada; chamada de voz") { $failures += "$side did not resume its gateway session" }
+        if ($log -notmatch "Session resumed; the voice call") { $failures += "$side did not resume its gateway session" }
     }
     if ($failures.Count) { "RESULT: FAIL - " + ($failures -join "; ") } else { "RESULT: PASS; logs: $OutDir" }
 } finally {

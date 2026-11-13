@@ -29,7 +29,7 @@ pub fn init_sound_effects() {
     std::thread::Builder::new()
         .name("ui-sound-player".to_string())
         .spawn(move || {
-            info!("🔊 [SOUND EFFECTS] Motor de áudio tátil iniciado com sucesso via CPAL");
+            info!("🔊 [SOUND EFFECTS] Tactile audio engine started successfully via CPAL");
 
             while let Ok(sound) = rx.recv() {
                 // Drain any excessive queued sounds to only play the latest if flooded
@@ -39,12 +39,12 @@ pub fn init_sound_effects() {
                 }
 
                 if let Err(e) = play_sound_cpal(current_sound) {
-                    warn!("⚠️ [SOUND EFFECTS] Falha na reprodução CPAL ({:?}), tentando fallback nativo...", e);
+                    warn!("⚠️ [SOUND EFFECTS] CPAL playback failed ({:?}), trying native fallback...", e);
                     play_sound_fallback(current_sound);
                 }
             }
         })
-        .expect("Falha ao iniciar thread de áudio de efeitos sonoros");
+        .expect("Failed to start the sound effects audio thread");
 }
 
 /// Plays a tactile UI sound effect immediately.
@@ -230,12 +230,12 @@ fn play_sound_cpal(sound: UiSound) -> Result<(), Box<dyn std::error::Error + Sen
     } else {
         String::new()
     };
-    let device = if !target_dev_name.is_empty() && !target_dev_name.contains("Padrão") {
+    let device = if !target_dev_name.is_empty() && !crate::audio::engine::is_default_device_name(&target_dev_name) {
         host.output_devices().ok().and_then(|mut devs| devs.find(|d| d.name().map_or(false, |n| n == target_dev_name)))
             .or_else(|| host.default_output_device())
     } else {
         host.default_output_device()
-    }.ok_or_else(|| "Nenhum dispositivo de áudio de saída encontrado")?;
+    }.ok_or_else(|| "No audio output device found")?;
 
     let config = device.default_output_config()?;
     let sample_rate = config.sample_rate().0;
@@ -269,7 +269,7 @@ fn play_sound_cpal(sound: UiSound) -> Result<(), Box<dyn std::error::Error + Sen
                     }
                 }
             },
-            |err| warn!("Erro no stream de som CPAL: {}", err),
+            |err| warn!("CPAL sound stream error: {}", err),
             None,
         )?,
         cpal::SampleFormat::I16 => device.build_output_stream(
@@ -289,10 +289,10 @@ fn play_sound_cpal(sound: UiSound) -> Result<(), Box<dyn std::error::Error + Sen
                     }
                 }
             },
-            |err| warn!("Erro no stream de som CPAL: {}", err),
+            |err| warn!("CPAL sound stream error: {}", err),
             None,
         )?,
-        _ => return Err("Formato de áudio não suportado para UI sounds".into()),
+        _ => return Err("Unsupported audio format for UI sounds".into()),
     };
 
     stream.play()?;

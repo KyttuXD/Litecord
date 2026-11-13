@@ -299,7 +299,7 @@ impl KeybindManager {
             std::thread::Builder::new()
                 .name("global-keybinds-listener".to_string())
                 .spawn(move || {
-                    info!("⌨️ [KEYBINDS] Listener global de atalhos iniciado com sucesso");
+                    info!("⌨️ [KEYBINDS] Global shortcut listener started successfully");
                     let mut mute_was_pressed = false;
                     let mut deafen_was_pressed = false;
 
@@ -319,7 +319,7 @@ impl KeybindManager {
                     // GetMessageW instead of polling the keyboard every 20 ms.
                     let sink = unsafe { create_raw_keyboard_sink() };
                     if sink.is_null() {
-                        log::warn!("⌨️ [KEYBINDS] Não foi possível registrar a entrada de teclado; atalhos globais desativados.");
+                        log::warn!("⌨️ [KEYBINDS] Could not register keyboard input; global shortcuts disabled.");
                         return;
                     }
                     let mut msg: windows_sys::Win32::UI::WindowsAndMessaging::MSG = unsafe { std::mem::zeroed() };
@@ -403,7 +403,7 @@ impl KeybindManager {
                                     // Escape cancels recording
                                     if vk == 0x1B && !ctrl && !shift && !alt {
                                         RECORDING_TARGET.store(0, Ordering::Relaxed);
-                                        info!("⌨️ [KEYBINDS] Gravação cancelada via ESC");
+                                        info!("⌨️ [KEYBINDS] Recording cancelled via ESC");
                                         on_recorded(rec_target, String::new());
                                         // Wait until release
                                         while key_now(0x1B) {
@@ -415,7 +415,7 @@ impl KeybindManager {
 
                                     let key_name = vkey_to_name(vk);
                                     let combo_str = format_combo_display(ctrl, shift, alt, key_name);
-                                    info!("⌨️ [KEYBINDS] Gravado com sucesso para target {}: {}", rec_target, combo_str);
+                                    info!("⌨️ [KEYBINDS] Recorded successfully for target {}: {}", rec_target, combo_str);
 
                                     // Save new combo
                                     {
@@ -468,7 +468,7 @@ impl KeybindManager {
                             let is_pressed = match_modifiers && is_key_down(combo.vkey);
 
                             if is_pressed && !mute_was_pressed {
-                                info!("🎙️ [KEYBINDS] Atalho Global de Mutar disparado: {}", combo.display);
+                                info!("🎙️ [KEYBINDS] Global Mute shortcut triggered: {}", combo.display);
                                 on_mute_trigger();
                             }
                             mute_was_pressed = is_pressed;
@@ -488,7 +488,7 @@ impl KeybindManager {
                             let is_pressed = match_modifiers && is_key_down(combo.vkey);
 
                             if is_pressed && !deafen_was_pressed {
-                                info!("🎧 [KEYBINDS] Atalho Global de Ensurdecer disparado: {}", combo.display);
+                                info!("🎧 [KEYBINDS] Global Deafen shortcut triggered: {}", combo.display);
                                 on_deafen_trigger();
                             }
                             deafen_was_pressed = is_pressed;
@@ -497,7 +497,7 @@ impl KeybindManager {
                         }
                     }
                 })
-                .expect("Falha ao iniciar thread de keybinds global");
+                .expect("Failed to start the global keybinds thread");
         }
 
         #[cfg(target_os = "linux")]
@@ -508,7 +508,7 @@ impl KeybindManager {
             std::thread::Builder::new()
                 .name("global-keybinds-listener".to_string())
                 .spawn(move || {
-                    info!("⌨️ [KEYBINDS] Listener global de atalhos (Linux evdev) iniciado com sucesso");
+                    info!("⌨️ [KEYBINDS] Global shortcut listener (Linux evdev) started successfully");
                     let mut mute_was_pressed = false;
                     let mut deafen_was_pressed = false;
                     let mut last_scan = Instant::now() - Duration::from_secs(10);
@@ -538,7 +538,7 @@ impl KeybindManager {
                             if kbd_fds.is_empty() {
                                 static WARNED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
                                 if !WARNED.swap(true, Ordering::Relaxed) {
-                                    log::warn!("⚠️ [KEYBINDS] Nenhum teclado com permissão de leitura em /dev/input/. Atalhos globais requerem acesso aos dispositivos de entrada: sudo usermod -aG input $USER (e entre na sessão de novo).");
+                                    log::warn!("⚠️ [KEYBINDS] No keyboard with read permission in /dev/input/. Global shortcuts require access to the input devices: sudo usermod -aG input $USER (and log in again).");
                                 }
                             }
                         }
@@ -584,7 +584,7 @@ impl KeybindManager {
                                 if is_key_down(evdev_code) {
                                     if evdev_code == 1 && !ctrl_down && !shift_down && !alt_down {
                                         RECORDING_TARGET.store(0, Ordering::Relaxed);
-                                        info!("⌨️ [KEYBINDS] Gravação cancelada via ESC");
+                                        info!("⌨️ [KEYBINDS] Recording cancelled via ESC");
                                         on_recorded(rec_target, String::new());
                                         loop {
                                             std::thread::sleep(Duration::from_millis(30));
@@ -606,7 +606,7 @@ impl KeybindManager {
                                     if let Some(vk) = evdev_code_to_vk(evdev_code) {
                                         let key_name = vkey_to_name(vk);
                                         let combo_str = format_combo_display(ctrl_down, shift_down, alt_down, key_name);
-                                        info!("⌨️ [KEYBINDS] Gravado com sucesso para target {}: {}", rec_target, combo_str);
+                                        info!("⌨️ [KEYBINDS] Recorded successfully for target {}: {}", rec_target, combo_str);
 
                                         {
                                             let mut cfg = config_arc.lock().unwrap_or_else(|e| e.into_inner());
@@ -674,7 +674,7 @@ impl KeybindManager {
                             let is_pressed = match_modifiers && key_pressed;
 
                             if is_pressed && !mute_was_pressed {
-                                info!("🎙️ [KEYBINDS] Atalho Global de Mutar disparado: {}", combo.display);
+                                info!("🎙️ [KEYBINDS] Global Mute shortcut triggered: {}", combo.display);
                                 on_mute_trigger();
                             }
                             mute_was_pressed = is_pressed;
@@ -695,7 +695,7 @@ impl KeybindManager {
                             let is_pressed = match_modifiers && key_pressed;
 
                             if is_pressed && !deafen_was_pressed {
-                                info!("🎧 [KEYBINDS] Atalho Global de Ensurdecer disparado: {}", combo.display);
+                                info!("🎧 [KEYBINDS] Global Deafen shortcut triggered: {}", combo.display);
                                 on_deafen_trigger();
                             }
                             deafen_was_pressed = is_pressed;
@@ -708,7 +708,7 @@ impl KeybindManager {
                         unsafe { libc::close(fd); }
                     }
                 })
-                .expect("Falha ao iniciar thread de keybinds global no Linux");
+                .expect("Failed to start the global keybinds thread on Linux");
         }
 
         #[cfg(not(any(target_os = "windows", target_os = "linux")))]
@@ -716,7 +716,7 @@ impl KeybindManager {
             let _ = on_mute_trigger;
             let _ = on_deafen_trigger;
             let _ = on_recorded;
-            info!("⌨️ [KEYBINDS] Atalhos globais não suportados nativamente nesta plataforma.");
+            info!("⌨️ [KEYBINDS] Global shortcuts are not natively supported on this platform.");
         }
     }
 }

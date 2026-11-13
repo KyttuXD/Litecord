@@ -73,7 +73,7 @@ impl<T: Send + 'static> LatestWorker<T> {
                         if report.elapsed() >= REPORT_EVERY {
                             let dropped = shared.dropped.swap(0, Ordering::Relaxed);
                             if slowest >= SLOW_TURN || dropped > 0 {
-                                warn!("🐢 [GPU ENCODE] Último segundo: {} quadros codificados, {} descartados por o codificador não acompanhar, mais lento {:.1} ms",
+                                warn!("🐢 [GPU ENCODE] Last second: {} frames encoded, {} dropped because the encoder could not keep up, slowest {:.1} ms",
                                     turns, dropped, slowest.as_secs_f64() * 1e3);
                             }
                             report = Instant::now();
@@ -90,7 +90,7 @@ impl<T: Send + 'static> LatestWorker<T> {
                         }
                     }
                 })
-                .expect("Falha ao iniciar thread do codificador")
+                .expect("Failed to start encoder thread")
         };
         Self { shared, done, thread: Some(thread) }
     }
@@ -110,7 +110,7 @@ impl<T: Send + 'static> LatestWorker<T> {
         match self.done.recv_timeout(wait) {
             Ok(r) => Some(r),
             Err(RecvTimeoutError::Timeout) => None,
-            Err(RecvTimeoutError::Disconnected) => Some(Err("a thread do codificador terminou".into())),
+            Err(RecvTimeoutError::Disconnected) => Some(Err("the encoder thread ended".into())),
         }
     }
 }

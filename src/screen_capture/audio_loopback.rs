@@ -76,7 +76,7 @@ pub fn ensure_stream_audio_playback_started() {
                 let host = cpal::default_host();
                 let queue = get_stream_audio_queue();
 
-                info!("🔊 [STREAM PLAYBACK] Inicializando subsistema de saída de áudio para stream...");
+                info!("🔊 [STREAM PLAYBACK] Initializing the audio output subsystem for the stream...");
 
                 loop {
                     // The output device is only opened on demand: while idle (no stream audio
@@ -127,7 +127,7 @@ pub fn ensure_stream_audio_playback_started() {
                     }
 
                     if devices_to_try.is_empty() {
-                        warn!("⚠️ [STREAM PLAYBACK] Nenhum dispositivo de saída encontrado!");
+                        warn!("⚠️ [STREAM PLAYBACK] No output device found!");
                         std::thread::sleep(Duration::from_secs(3));
                         continue;
                     }
@@ -135,11 +135,11 @@ pub fn ensure_stream_audio_playback_started() {
                     let mut active_stream = None;
 
                     for dev in devices_to_try {
-                        let dev_name = dev.name().unwrap_or_else(|_| "Dispositivo Desconhecido".to_string());
+                        let dev_name = dev.name().unwrap_or_else(|_| "Unknown Device".to_string());
                         let config = match dev.default_output_config() {
                             Ok(c) => c,
                             Err(e) => {
-                                warn!("⚠️ [STREAM PLAYBACK] Falha ao obter default_output_config de '{}': {:?}", dev_name, e);
+                                warn!("⚠️ [STREAM PLAYBACK] Failed to get default_output_config of '{}': {:?}", dev_name, e);
                                 continue;
                             }
                         };
@@ -153,7 +153,7 @@ pub fn ensure_stream_audio_playback_started() {
                             if let Ok(mut guard) = last_err_c.lock() {
                                 if guard.map_or(true, |t| t.elapsed() >= Duration::from_secs(5)) {
                                     *guard = Some(Instant::now());
-                                    warn!("Erro no playback de áudio do stream ({}): {}", dev_name_err, err);
+                                    warn!("Stream audio playback error ({}): {}", dev_name_err, err);
                                 }
                             }
                         };
@@ -228,7 +228,7 @@ pub fn ensure_stream_audio_playback_started() {
 
                         if let Ok(stream) = stream_res {
                             if stream.play().is_ok() {
-                                info!("🔊 [STREAM PLAYBACK] Saída de áudio ATIVA no dispositivo '{}' ({}Hz, {} canais, formato={:?})!", dev_name, sample_rate, channels, sample_format);
+                                info!("🔊 [STREAM PLAYBACK] Audio output ACTIVE on device '{}' ({}Hz, {} channels, format={:?})!", dev_name, sample_rate, channels, sample_format);
                                 active_stream = Some(stream);
                                 break;
                             }
@@ -245,14 +245,14 @@ pub fn ensure_stream_audio_playback_started() {
                             }
                         }
                         drop(stream);
-                        info!("🔊 [STREAM PLAYBACK] Saída de áudio da stream liberada (ociosa).");
+                        info!("🔊 [STREAM PLAYBACK] Stream audio output released (idle).");
                     } else {
-                        warn!("⚠️ [STREAM PLAYBACK] Falha ao iniciar playback em todos os dispositivos. Tentando novamente em 3 segundos...");
+                        warn!("⚠️ [STREAM PLAYBACK] Failed to start playback on all devices. Retrying in 3 seconds...");
                         std::thread::sleep(Duration::from_secs(3));
                     }
                 }
             })
-            .expect("Falha ao iniciar thread de playback de áudio do stream");
+            .expect("Failed to start stream audio playback thread");
     });
 }
 
@@ -326,7 +326,7 @@ impl LinuxLoopbackSinkGuard {
     }
 
     fn setup() -> Self {
-        // Limpa módulos anteriores que possam ter sobrado de uma execução anterior
+        // Clean up earlier modules that may have been left over from a previous run
         Self::unload_previous_litecord_modules();
 
         let orig = std::process::Command::new("pactl")
@@ -369,9 +369,9 @@ impl LinuxLoopbackSinkGuard {
             let _ = std::process::Command::new("pactl")
                 .args(["set-default-sink", "LitecordDesktopSink"])
                 .status();
-            info!("🛡️ [LOOPBACK TX] Sink virtual isolado 'LitecordDesktopSink' criado (áudio do Litecord excluído da transmissão de tela)!");
+            info!("🛡️ [LOOPBACK TX] Isolated virtual sink 'LitecordDesktopSink' created (Litecord audio excluded from the screen stream)!");
 
-            // Move imediatamente qualquer stream já aberta do Litecord de volta para o hardware físico
+            // Immediately move any already-open Litecord stream back to the physical hardware
             Self::move_litecord_sink_inputs(&orig);
         }
 
@@ -411,7 +411,7 @@ impl Drop for LinuxLoopbackSinkGuard {
             let _ = std::process::Command::new("pactl")
                 .args(["set-default-sink", &self.original_sink])
                 .status();
-            info!("🛡️ [LOOPBACK TX] Sink padrão restaurado para '{}'", self.original_sink);
+            info!("🛡️ [LOOPBACK TX] Default sink restored to '{}'", self.original_sink);
         }
         if let Some(ref m) = self.mod_loopback {
             let _ = std::process::Command::new("pactl")
@@ -441,7 +441,7 @@ pub fn start_audio_loopback_tx(
             // macOS and other systems: no way to capture what the system plays (no
             // loopback device), so the stream goes out with picture only.
             if cfg!(not(any(target_os = "windows", target_os = "linux"))) {
-                info!("🔇 [LOOPBACK TX] Captura do áudio do sistema não disponível nesta plataforma: transmissão sem áudio.");
+                info!("🔇 [LOOPBACK TX] System audio capture is not available on this platform: stream without audio.");
                 return;
             }
 
@@ -480,7 +480,7 @@ pub fn start_audio_loopback_tx(
                     "@DEFAULT_SINK@.monitor"
                 };
 
-                info!("🎙️ [LOOPBACK TX] Inicializando captura de áudio da transmissão (Linux PulseAudio/PipeWire no dispositivo '{}')...", monitor_device);
+                info!("🎙️ [LOOPBACK TX] Initializing stream audio capture (Linux PulseAudio/PipeWire on device '{}')...", monitor_device);
                 let mut cmd = std::process::Command::new("gst-launch-1.0");
                 cmd.env_remove("PIPEWIRE_NODE");
                 cmd.args([
@@ -528,14 +528,14 @@ pub fn start_audio_loopback_tx(
                                 })
                                 .ok();
 
-                            info!("🔊 [LOOPBACK TX] Captura de áudio do sistema PipeWire/PulseAudio iniciada com sucesso (48000Hz, 1 canal, chunk=480 amostras/10ms)!");
+                            info!("🔊 [LOOPBACK TX] PipeWire/PulseAudio system audio capture started successfully (48000Hz, 1 channel, chunk=480 samples/10ms)!");
                             gst_child = Some(child);
                         } else {
-                            warn!("⚠️ [LOOPBACK TX] Falha ao capturar stdout do GStreamer pulsesrc!");
+                            warn!("⚠️ [LOOPBACK TX] Failed to capture stdout of GStreamer pulsesrc!");
                         }
                     }
                     Err(e) => {
-                        warn!("⚠️ [LOOPBACK TX] Falha ao iniciar gst-launch-1.0 pulsesrc: {:?}", e);
+                        warn!("⚠️ [LOOPBACK TX] Failed to start gst-launch-1.0 pulsesrc: {:?}", e);
                     }
                 }
             }
@@ -551,7 +551,7 @@ pub fn start_audio_loopback_tx(
                 let try_wasapi_isolated = loopback_backend == "auto" || loopback_backend == "wasapi_isolated";
 
                 if try_wasapi_isolated {
-                    info!("🎙️ [LOOPBACK TX] Inicializando captura de áudio nativa isolada (WASAPI Process Loopback)...");
+                    info!("🎙️ [LOOPBACK TX] Initializing isolated native audio capture (WASAPI Process Loopback)...");
                     match crate::wasapi_loopback::start_wasapi_isolated_loopback(
                         Arc::clone(&is_running),
                         Arc::clone(&pcm_buffer_cb),
@@ -559,11 +559,11 @@ pub fn start_audio_loopback_tx(
                         Ok(handle) => {
                             active_sample_rate = handle.sample_rate;
                             target_chunk_samples = ((handle.sample_rate as usize) * 10) / 1000;
-                            info!("🔊 [LOOPBACK TX] Captura de áudio ISOLADA nativa WASAPI ATIVA (excluindo Litecord) ({}Hz, {} canais, chunk={} amostras/10ms)!", handle.sample_rate, handle.channels, target_chunk_samples);
+                            info!("🔊 [LOOPBACK TX] Native ISOLATED WASAPI audio capture ACTIVE (excluding Litecord) ({}Hz, {} channels, chunk={} samples/10ms)!", handle.sample_rate, handle.channels, target_chunk_samples);
                             wasapi_isolated_handle = Some(handle);
                         }
                         Err(e) => {
-                            warn!("⚠️ [LOOPBACK TX] WASAPI Process Loopback isolado indisponível ({}), utilizando fallback CPAL...", e);
+                            warn!("⚠️ [LOOPBACK TX] Isolated WASAPI Process Loopback unavailable ({}), using CPAL fallback...", e);
                         }
                     }
                 }
@@ -609,12 +609,12 @@ pub fn start_audio_loopback_tx(
                     };
 
                     for dev in devices_to_try {
-                        let dev_name = dev.name().unwrap_or_else(|_| "Dispositivo Desconhecido".to_string());
+                        let dev_name = dev.name().unwrap_or_else(|_| "Unknown Device".to_string());
                         let config_res = dev.default_output_config();
                         let config = match config_res {
                             Ok(c) => c,
                             Err(e) => {
-                                warn!("⚠️ [LOOPBACK TX] Falha ao obter configuração para '{}': {:?}", dev_name, e);
+                                warn!("⚠️ [LOOPBACK TX] Failed to get configuration for '{}': {:?}", dev_name, e);
                                 continue;
                             }
                         };
@@ -624,7 +624,7 @@ pub fn start_audio_loopback_tx(
                         let pcm_buf = Arc::clone(&pcm_buffer_cb);
                         let dev_name_err = dev_name.clone();
                         let err_fn = move |err| {
-                            warn!("Erro na captura de áudio loopback ({}): {}", dev_name_err, err);
+                            warn!("Loopback audio capture error ({}): {}", dev_name_err, err);
                         };
 
                         let stream_res = match config.sample_format() {
@@ -669,7 +669,7 @@ pub fn start_audio_loopback_tx(
                                 )
                             }
                             _ => {
-                                warn!("Formato de áudio não suportado para '{}'", dev_name);
+                                warn!("Unsupported audio format for '{}'", dev_name);
                                 continue;
                             }
                         };
@@ -678,7 +678,7 @@ pub fn start_audio_loopback_tx(
                             if stream.play().is_ok() {
                                 active_sample_rate = sample_rate;
                                 target_chunk_samples = ((sample_rate as usize) * 10) / 1000;
-                                info!("🔊 [LOOPBACK TX] Captura de áudio ATIVA no dispositivo '{}' ({}Hz, {} canais, chunk={} amostras/10ms)!", dev_name, sample_rate, channels, target_chunk_samples);
+                                info!("🔊 [LOOPBACK TX] Audio capture ACTIVE on device '{}' ({}Hz, {} channels, chunk={} samples/10ms)!", dev_name, sample_rate, channels, target_chunk_samples);
                                 active_stream = Some(stream);
                                 break;
                             }
@@ -689,13 +689,13 @@ pub fn start_audio_loopback_tx(
 
             #[cfg(target_os = "windows")]
             if active_stream.is_none() && wasapi_isolated_handle.is_none() {
-                warn!("⚠️ [LOOPBACK TX] Falha ao ativar stream de áudio em todos os dispositivos disponíveis!");
+                warn!("⚠️ [LOOPBACK TX] Failed to activate the audio stream on all available devices!");
                 return;
             }
 
             #[cfg(target_os = "linux")]
             if gst_child.is_none() {
-                warn!("⚠️ [LOOPBACK TX] Falha ao ativar captura de áudio do sistema via GStreamer pulsesrc!");
+                warn!("⚠️ [LOOPBACK TX] Failed to activate system audio capture through GStreamer pulsesrc!");
                 return;
             }
 
@@ -785,7 +785,7 @@ pub fn start_audio_loopback_tx(
 
                     pkts_sent_count += 1;
                     if pkts_sent_count % 1000 == 1 {
-                        info!("📡 [LOOPBACK TX] Pkt #{} enviado ({} amostras @ {}Hz | Peak Amplitude: {}/32767) para {:?}", pkts_sent_count, target_chunk_samples, active_sample_rate, peak_tx, target_addrs);
+                        info!("📡 [LOOPBACK TX] Pkt #{} sent ({} samples @ {}Hz | Peak Amplitude: {}/32767) to {:?}", pkts_sent_count, target_chunk_samples, active_sample_rate, peak_tx, target_addrs);
                     }
                 }
             }
@@ -801,7 +801,7 @@ pub fn start_audio_loopback_tx(
                 let _ = child.kill();
                 let _ = child.wait();
             }
-            info!("🔊 [LOOPBACK TX] Captura de áudio da transmissão finalizada.");
+            info!("🔊 [LOOPBACK TX] Stream audio capture finished.");
         })
-        .expect("Falha ao iniciar thread de captura de áudio da transmissão");
+        .expect("Failed to start stream audio capture thread");
 }

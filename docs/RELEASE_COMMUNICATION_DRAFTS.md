@@ -1,4 +1,4 @@
-# 1. Issue para o Slint (github.com/slint-ui/slint/issues/new)
+# 1. Issue for Slint (github.com/slint-ui/slint/issues/new)
 
 **Title:** winit backend keeps waking the event loop forever when an animation runs while the window is hidden
 
@@ -42,7 +42,7 @@ Happy to open a PR with both changes and the unit test if that helps.
 
 ---
 
-# 2. Comentário na issue #27 (quando o build da v1.2.1 estiver disponível)
+# 2. Comment on issue #27 (once the v1.2.1 build is available)
 
 Thanks for the report, it led to the main change in this version.
 

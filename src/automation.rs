@@ -60,11 +60,11 @@ pub fn start(ui: &AppWindow) {
     let listener = match TcpListener::bind(("127.0.0.1", port)) {
         Ok(l) => l,
         Err(e) => {
-            warn!("🤖 [AUTOMATION] Não foi possível escutar em 127.0.0.1:{}: {:?}", port, e);
+            warn!("🤖 [AUTOMATION] Could not listen on 127.0.0.1:{}: {:?}", port, e);
             return;
         }
     };
-    warn!("🤖 [AUTOMATION] Controle remoto de TESTE ativo em 127.0.0.1:{} (build com --features automation)", port);
+    warn!("🤖 [AUTOMATION] TEST remote control active on 127.0.0.1:{} (build with --features automation)", port);
 
     // A few long-lived threads serve the connections: a thread per connection would
     // leave some heap behind on every command and skew the memory the tests measure.

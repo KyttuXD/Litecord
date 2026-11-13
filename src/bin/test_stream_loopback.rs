@@ -15,17 +15,17 @@ const OP_FEC_PARITY: u8 = 0x07;
 
 fn main() {
     println!("============================================================");
-    println!("🛡️  TESTE LOOPBACK COM FEC (FORWARD ERROR CORRECTION) & SIMULAÇÃO WI-FI");
+    println!("🛡️  LOOPBACK TEST WITH FEC (FORWARD ERROR CORRECTION) & WI-FI SIMULATION");
     println!("============================================================");
 
     let w = 1920usize;
     let h = 1080usize;
     let target_fps = 60.0;
-    let total_frames = 300; // 5 segundos completos a 60 FPS
+    let total_frames = 300; // 5 full seconds at 60 FPS
 
-    let rx_socket = UdpSocket::bind("127.0.0.1:54323").expect("Falha ao bindar socket RX");
+    let rx_socket = UdpSocket::bind("127.0.0.1:54323").expect("Failed to bind RX socket");
     rx_socket.set_nonblocking(true).unwrap();
-    let tx_socket = UdpSocket::bind("127.0.0.1:0").expect("Falha ao bindar socket TX");
+    let tx_socket = UdpSocket::bind("127.0.0.1:0").expect("Failed to bind TX socket");
     let rx_addr = "127.0.0.1:54323";
 
     let enc_config = EncoderConfig::new()
@@ -40,7 +40,7 @@ fn main() {
     let is_running = Arc::new(AtomicBool::new(true));
     let is_running_rx = Arc::clone(&is_running);
 
-    println!("⚙️  Configuração: 1080p @ 60 FPS | Simulação de Perda Wi-Fi (5%) | Proteção FEC Ativa");
+    println!("⚙️  Configuration: 1080p @ 60 FPS | Wi-Fi Loss Simulation (5%) | FEC Protection Enabled");
     println!("------------------------------------------------------------");
 
     // Receiver Thread with FEC Parity Reconstructor
@@ -335,13 +335,13 @@ fn main() {
     let avg_latency = total_lat / (recv_count as f64);
 
     println!("------------------------------------------------------------");
-    println!("🏆 RESULTADOS DO TESTE COM FEC (SIMULAÇÃO DE PERDA WI-FI):");
+    println!("🏆 FEC TEST RESULTS (WI-FI LOSS SIMULATION):");
     println!("------------------------------------------------------------");
-    println!("  📦 Quadros Enviados:            {}", total_frames);
-    println!("  ✅ Quadros Entregues com Sucesso: {} ({:.1}% Taxa de Entrega)", recv_count, (recv_count as f64 / total_frames as f64) * 100.0);
-    println!("  🛡️  Pacotes Salvos pelo FEC:     {} quadros reconstruídos perfeitamente!", fec_count);
-    println!("  ⏱️  Latência Média:              {:.2} ms (Glass-to-Glass)", avg_latency);
-    println!("  ⚡ Latência Mínima:             {:.2} ms", min_lat);
-    println!("  🛑 Latência Máxima:             {:.2} ms", max_lat);
+    println!("  📦 Frames Sent:                  {}", total_frames);
+    println!("  ✅ Frames Delivered Successfully: {} ({:.1}% Delivery Rate)", recv_count, (recv_count as f64 / total_frames as f64) * 100.0);
+    println!("  🛡️  Packets Saved by FEC:       {} frames reconstructed perfectly!", fec_count);
+    println!("  ⏱️  Average Latency:             {:.2} ms (Glass-to-Glass)", avg_latency);
+    println!("  ⚡ Minimum Latency:             {:.2} ms", min_lat);
+    println!("  🛑 Maximum Latency:             {:.2} ms", max_lat);
     println!("============================================================");
 }

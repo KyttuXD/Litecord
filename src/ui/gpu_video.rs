@@ -39,7 +39,7 @@ pub fn install(app: &AppWindow, popout: &PopoutStreamWindow) {
             i_slint_backend_winit::set_layer_sink(w, Some(layers.clone() as Rc<dyn i_slint_backend_winit::LayerSink>)).then_some(layers)
         };
         let (main, popout) = (make(app.window()), make(popout.window()));
-        log::info!("🎞️ [GPU VIDEO] Camadas de vídeo pela GPU: janela principal {}, popout {}", main.is_some(), popout.is_some());
+        log::info!("🎞️ [GPU VIDEO] GPU video layers: main window {}, popout {}", main.is_some(), popout.is_some());
         LAYERS.with(|l| *l.borrow_mut() = Windows { main, popout });
     }
     #[cfg(not(windows))]
@@ -128,13 +128,13 @@ fn apply(layers: &WindowLayers, wants: bool, peer: u64, set_hole: impl Fn(bool))
     if wants && layers.usable() && layers.peer() != Some(peer) {
         match layers.start(peer) {
             Ok(()) => {
-                log::info!("🎞️ [GPU VIDEO] Transmissão do peer {} exibida direto pela GPU", peer);
+                log::info!("🎞️ [GPU VIDEO] Stream from peer {} is shown directly by the GPU", peer);
                 set_hole(true);
             }
-            Err(e) => log::warn!("🎞️ [GPU VIDEO] Não foi possível ligar as camadas de vídeo: {:?}", e),
+            Err(e) => log::warn!("🎞️ [GPU VIDEO] Could not enable the video layers: {:?}", e),
         }
     } else if !wants && layers.is_active() {
-        log::info!("🎞️ [GPU VIDEO] Transmissão volta a ser exibida pela CPU");
+        log::info!("🎞️ [GPU VIDEO] Stream is shown by the CPU again");
         layers.stop();
         set_hole(false);
     }

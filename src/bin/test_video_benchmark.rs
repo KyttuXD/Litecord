@@ -76,6 +76,6 @@ fn main() {
     let elapsed = t0.elapsed();
     let avg_ms = (elapsed.as_secs_f64() * 1000.0) / (iters as f64);
     println!("Benchmark fit_bgra_to_canvas ({}x{} -> {}x{}):", src_w, src_h, canvas_w, canvas_h);
-    println!("  ├─ Tempo Médio: {:.3} ms por frame", avg_ms);
-    println!("  └─ FPS Suportado: {:.1} FPS", 1000.0 / avg_ms);
+    println!("  ├─ Average Time: {:.3} ms per frame", avg_ms);
+    println!("  └─ Supported FPS: {:.1} FPS", 1000.0 / avg_ms);
 }

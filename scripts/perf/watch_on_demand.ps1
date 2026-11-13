@@ -82,7 +82,7 @@ try {
 
     foreach ($side in "sender", "receiver") {
         Get-Content (Join-Path $OutDir "$side\litecord_app.log") -Encoding UTF8 |
-            Select-String -Pattern "ASSISTIR SOB DEMANDA|ABR\]" | Select-Object -Last 12 | ForEach-Object { "  [$side] " + $_.Line.Substring([Math]::Min(14, $_.Line.Length)) }
+            Select-String -Pattern "WATCH ON DEMAND|ABR\]" | Select-Object -Last 12 | ForEach-Object { "  [$side] " + $_.Line.Substring([Math]::Min(14, $_.Line.Length)) }
     }
     if ($failures.Count) { "RESULT: FAIL - " + ($failures -join "; ") } else { "RESULT: PASS; logs: $OutDir" }
 } finally {

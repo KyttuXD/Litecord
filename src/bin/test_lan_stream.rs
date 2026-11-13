@@ -64,13 +64,13 @@ fn decode_yuv_to_rgba_fast(decoded_yuv: &impl YUVSource, rgba_out: &mut [u8]) {
 }
 
 fn run_receiver(port: u16, max_duration_secs: u64) {
-    println!("📡 [RECEIVER] Iniciando socket UDP em 0.0.0.0:{}...", port);
+    println!("📡 [RECEIVER] Starting UDP socket on 0.0.0.0:{}...", port);
     let socket = socket2::Socket::new(socket2::Domain::IPV4, socket2::Type::DGRAM, Some(socket2::Protocol::UDP)).unwrap();
     let _ = socket.set_reuse_address(true);
     let _ = socket.set_send_buffer_size(4 * 1024 * 1024);
     let _ = socket.set_recv_buffer_size(4 * 1024 * 1024);
     let addr: SocketAddr = format!("0.0.0.0:{}", port).parse().unwrap();
-    socket.bind(&addr.into()).expect("Falha ao fazer bind");
+    socket.bind(&addr.into()).expect("Failed to bind");
     let std_sock: UdpSocket = socket.into();
     std_sock.set_read_timeout(Some(Duration::from_millis(50))).unwrap();
 
@@ -84,7 +84,7 @@ fn run_receiver(port: u16, max_duration_secs: u64) {
     }
 
     let mut in_flight: HashMap<u32, InFlightFrame> = HashMap::new();
-    let mut decoder = Decoder::new().expect("Falha ao inicializar OpenH264 Decoder");
+    let mut decoder = Decoder::new().expect("Failed to initialize OpenH264 Decoder");
     let mut rgba_buf = vec![0u8; 1920 * 1080 * 4];
 
     let mut recv_buf = [0u8; 65535];
@@ -97,7 +97,7 @@ fn run_receiver(port: u16, max_duration_secs: u64) {
     let mut frame_intervals_us = Vec::new();
     let mut last_frame_time = Instant::now();
 
-    println!("✅ [RECEIVER] Pronto! Aguardando stream 1080p 60 FPS por {} segundos...", max_duration_secs);
+    println!("✅ [RECEIVER] Ready! Waiting for 1080p 60 FPS stream for {} seconds...", max_duration_secs);
     let start_time = Instant::now();
 
     while start_time.elapsed() < Duration::from_secs(max_duration_secs) {
@@ -176,14 +176,14 @@ fn run_receiver(port: u16, max_duration_secs: u64) {
                                 if frames_received % 60 == 0 {
                                     let avg_d_ms = (total_decode_us as f64) / (frames_received as f64) / 1000.0;
                                     let cur_fps = (frames_received as f64) / start_time.elapsed().as_secs_f64();
-                                    println!("📊 [TELEMETRIA RX] {} quadros | {:.1} FPS | Decode: {:.2}ms (Min: {:.2}ms, Max: {:.2}ms) | FEC: {} recuperados",
+                                    println!("📊 [RX TELEMETRY] {} frames | {:.1} FPS | Decode: {:.2}ms (Min: {:.2}ms, Max: {:.2}ms) | FEC: {} recovered",
                                         frames_received, cur_fps, avg_d_ms, (min_decode_us as f64) / 1000.0, (max_decode_us as f64) / 1000.0, fec_recovered);
                                 }
                             }
                             Ok(None) => {}
                             Err(e) => {
                                 decode_errors += 1;
-                                println!("❌ [DECODE ERRO] Frame {} falhou: {:?}", seq, e);
+                                println!("❌ [DECODE ERROR] Frame {} failed: {:?}", seq, e);
                             }
                         }
                     }
@@ -251,7 +251,7 @@ fn run_receiver(port: u16, max_duration_secs: u64) {
                                 Ok(None) => {}
                                 Err(e) => {
                                     decode_errors += 1;
-                                    println!("❌ [DECODE ERRO] Frame {} falhou: {:?}", seq, e);
+                                    println!("❌ [DECODE ERROR] Frame {} failed: {:?}", seq, e);
                                 }
                             }
                         }
@@ -268,19 +268,19 @@ fn run_receiver(port: u16, max_duration_secs: u64) {
     let avg_d_ms = if frames_received > 0 { (total_decode_us as f64) / (frames_received as f64) / 1000.0 } else { 0.0 };
 
     println!("============================================================");
-    println!("🏁 [RELATÓRIO FINAL RX]");
-    println!("   Duração: {:.2}s", elapsed);
-    println!("   Quadros Recebidos & Decodificados: {}", frames_received);
-    println!("   Taxa de Quadros Efetiva: {:.1} FPS (Alvo: 60 FPS)", effective_fps);
-    println!("   Tempo Médio de Decode + RGBA: {:.2} ms (Min: {:.2}ms, Max: {:.2}ms)", avg_d_ms, (min_decode_us as f64)/1000.0, (max_decode_us as f64)/1000.0);
-    println!("   Recuperações FEC (XOR Parity): {}", fec_recovered);
-    println!("   Erros de Decode: {}", decode_errors);
+    println!("🏁 [FINAL RX REPORT]");
+    println!("   Duration: {:.2}s", elapsed);
+    println!("   Frames Received & Decoded: {}", frames_received);
+    println!("   Effective Frame Rate: {:.1} FPS (Target: 60 FPS)", effective_fps);
+    println!("   Average Decode + RGBA Time: {:.2} ms (Min: {:.2}ms, Max: {:.2}ms)", avg_d_ms, (min_decode_us as f64)/1000.0, (max_decode_us as f64)/1000.0);
+    println!("   FEC Recoveries (XOR Parity): {}", fec_recovered);
+    println!("   Decode Errors: {}", decode_errors);
     println!("============================================================");
 }
 
 fn run_transmitter(target_addr_str: &str, duration_secs: u64) {
-    let target_addr: SocketAddr = target_addr_str.parse().expect("Endereço inválido");
-    let socket = UdpSocket::bind("0.0.0.0:0").expect("Falha ao criar socket TX");
+    let target_addr: SocketAddr = target_addr_str.parse().expect("Invalid address");
+    let socket = UdpSocket::bind("0.0.0.0:0").expect("Failed to create TX socket");
     let _ = socket.set_broadcast(true);
 
     let w = 1920usize;
@@ -298,8 +298,8 @@ fn run_transmitter(target_addr_str: &str, duration_secs: u64) {
 
     let mut encoder = Encoder::with_api_config(openh264::OpenH264API::from_source(), enc_config).unwrap();
 
-    println!("🚀 [TRANSMITTER] Iniciando transmissão H.264 para {}...", target_addr);
-    println!("   Config: 1080p @ 60 FPS | Bitrate: 6.00 Mbps | Total: {} quadros ({:.1}s)", total_frames, duration_secs as f64);
+    println!("🚀 [TRANSMITTER] Starting H.264 transmission to {}...", target_addr);
+    println!("   Config: 1080p @ 60 FPS | Bitrate: 6.00 Mbps | Total: {} frames ({:.1}s)", total_frames, duration_secs as f64);
 
     let y_plane_len = w * h;
     let uv_plane_len = (w / 2) * (h / 2);
@@ -322,7 +322,7 @@ fn run_transmitter(target_addr_str: &str, duration_secs: u64) {
         }
 
         let yuv_source = YUVSlices::new((&y_plane, &u_plane, &v_plane), (w, h), (w, w/2, w/2));
-        let bitstream = encoder.encode(&yuv_source).expect("Falha ao codificar frame");
+        let bitstream = encoder.encode(&yuv_source).expect("Failed to encode frame");
         let raw_h264 = bitstream.to_vec();
 
         let seq = frame_idx as u32;
@@ -383,15 +383,15 @@ fn run_transmitter(target_addr_str: &str, duration_secs: u64) {
         }
     }
 
-    println!("✅ [TRANSMITTER] Transmissão concluída com sucesso! Enviados {} quadros.", total_frames);
+    println!("✅ [TRANSMITTER] Transmission completed successfully! Sent {} frames.", total_frames);
 }
 
 fn main() {
     let args: Vec<String> = std::env::args().collect();
     if args.len() < 2 {
-        println!("Uso:");
-        println!("  test_lan_stream rx [porta=50005] [duracao_segundos=10]");
-        println!("  test_lan_stream tx <ip_destino:porta> [duracao_segundos=10]");
+        println!("Usage:");
+        println!("  test_lan_stream rx [port=50005] [duration_seconds=10]");
+        println!("  test_lan_stream tx <dest_ip:port> [duration_seconds=10]");
         return;
     }
 
@@ -407,7 +407,7 @@ fn main() {
             run_transmitter(&target, dur);
         }
         _ => {
-            println!("Modo inválido: use 'rx' ou 'tx'");
+            println!("Invalid mode: use 'rx' or 'tx'");
         }
     }
 }

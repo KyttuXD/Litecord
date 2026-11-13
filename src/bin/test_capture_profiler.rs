@@ -16,7 +16,7 @@ fn main() {
     };
 
     println!("=======================================================");
-    println!("🔍 DIAGNÓSTICO PROFUNDO DE CAPTURA DE TELA DO WINDOWS");
+    println!("🔍 DEEP WINDOWS SCREEN CAPTURE DIAGNOSTICS");
     println!("=======================================================\n");
 
     let screen_w = unsafe { GetSystemMetrics(SM_CXSCREEN) };
@@ -31,16 +31,16 @@ fn main() {
 
     let target_w = 1920i32;
     let target_h = 1080i32;
-    println!("🖥️ Resolução Lógica (GetSystemMetrics): {}x{}", screen_w, screen_h);
-    println!("🖥️ Resolução Física Real (DESKTOPHORZRES): {}x{}", real_w, real_h);
-    println!("🎯 Resolução Alvo de Transmissão: {}x{}\n", target_w, target_h);
+    println!("🖥️ Logical Resolution (GetSystemMetrics): {}x{}", screen_w, screen_h);
+    println!("🖥️ Actual Physical Resolution (DESKTOPHORZRES): {}x{}", real_w, real_h);
+    println!("🎯 Target Transmission Resolution: {}x{}\n", target_w, target_h);
 
     let num_frames = 60;
 
     // -------------------------------------------------------------
-    // Teste 1: Método com CreateCompatibleBitmap + GetDIBits
+    // Test 1: Method with CreateCompatibleBitmap + GetDIBits
     // -------------------------------------------------------------
-    println!("--- Teste 1: Método GetDIBits (DDB -> CPU Readback) ---");
+    println!("--- Test 1: GetDIBits Method (DDB -> CPU Readback) ---");
     unsafe {
         let hwnd_desktop = GetDesktopWindow();
         let hdc_desktop = GetDC(hwnd_desktop);
@@ -79,9 +79,9 @@ fn main() {
         let avg_blt_ms = (total_blt.as_secs_f64() * 1000.0) / (num_frames as f64);
         let avg_dib_ms = (total_dib.as_secs_f64() * 1000.0) / (num_frames as f64);
         let total_ms = avg_blt_ms + avg_dib_ms;
-        println!("  ├─ Tempo Blt (BitBlt/StretchBlt): {:.2} ms/frame", avg_blt_ms);
-        println!("  ├─ Tempo GetDIBits (GPU Readback): {:.2} ms/frame", avg_dib_ms);
-        println!("  └─ ⏱️ TOTAL Método 1: {:.2} ms/frame ({:.1} FPS)\n", total_ms, 1000.0 / total_ms);
+        println!("  ├─ Blt Time (BitBlt/StretchBlt): {:.2} ms/frame", avg_blt_ms);
+        println!("  ├─ GetDIBits Time (GPU Readback): {:.2} ms/frame", avg_dib_ms);
+        println!("  └─ ⏱️ TOTAL Method 1: {:.2} ms/frame ({:.1} FPS)\n", total_ms, 1000.0 / total_ms);
 
         DeleteObject(hbm_screen);
         DeleteDC(hdc_mem);
@@ -89,9 +89,9 @@ fn main() {
     }
 
     // -------------------------------------------------------------
-    // Teste 2: Método CreateDIBSection (Direct Memory Ptr, Zero Readback)
+    // Test 2: CreateDIBSection Method (Direct Memory Ptr, Zero Readback)
     // -------------------------------------------------------------
-    println!("--- Teste 2: Método CreateDIBSection (Ponteiro Direto em RAM) ---");
+    println!("--- Test 2: CreateDIBSection Method (Direct Pointer in RAM) ---");
     unsafe {
         let hwnd_desktop = GetDesktopWindow();
         let hdc_desktop = GetDC(hwnd_desktop);
@@ -132,14 +132,14 @@ fn main() {
         }
 
         let avg_dibsec_ms = (total_dibsec.as_secs_f64() * 1000.0) / (num_frames as f64);
-        println!("  ├─ Tempo Blt direto para memória: {:.2} ms/frame", avg_dibsec_ms);
-        println!("  ├─ Tempo GetDIBits necessário: 0.00 ms (Eliminado completamente!)");
-        println!("  └─ 🚀 TOTAL Método 2 (DIB Section): {:.2} ms/frame ({:.1} FPS)\n", avg_dibsec_ms, 1000.0 / avg_dibsec_ms);
+        println!("  ├─ Direct Blt time to memory: {:.2} ms/frame", avg_dibsec_ms);
+        println!("  ├─ GetDIBits time required: 0.00 ms (Completely eliminated!)");
+        println!("  └─ 🚀 TOTAL Method 2 (DIB Section): {:.2} ms/frame ({:.1} FPS)\n", avg_dibsec_ms, 1000.0 / avg_dibsec_ms);
 
         // -------------------------------------------------------------
-        // Teste 3: Captura DIBSection + Conversão BT.601 + Encode H.264
+        // Test 3: DIBSection Capture + BT.601 Conversion + H.264 Encode
         // -------------------------------------------------------------
-        println!("--- Teste 3: Pipeline Completo (Captura DIBSection + Encode H.264 1080p 60 FPS) ---");
+        println!("--- Test 3: Full Pipeline (DIBSection Capture + Encode H.264 1080p 60 FPS) ---");
         use openh264::OpenH264API;
         use openh264::encoder::{Encoder, EncoderConfig, UsageType, RateControlMode};
         use openh264::formats::YUVSlices;
@@ -217,23 +217,23 @@ fn main() {
         let full_total_ms = full_cap_ms + full_enc_ms;
         let full_fps = 1000.0 / full_total_ms;
 
-        println!("  ├─ ⏱️ Tempo de Captura (DIB Section): {:.2} ms/frame", full_cap_ms);
-        println!("  ├─ ⏱️ Tempo de Conversão + Encode H.264: {:.2} ms/frame", full_enc_ms);
-        println!("  ├─ 🎯 TEMPO TOTAL DO LOOP REAL: {:.2} ms/frame", full_total_ms);
-        println!("  └─ 🏆 TAXA MÁXIMA REAL ALCANÇADA: {:.1} FPS! (Meta: 60 FPS)\n", full_fps);
+        println!("  ├─ ⏱️ Capture Time (DIB Section): {:.2} ms/frame", full_cap_ms);
+        println!("  ├─ ⏱️ Conversion + H.264 Encode Time: {:.2} ms/frame", full_enc_ms);
+        println!("  ├─ 🎯 TOTAL REAL LOOP TIME: {:.2} ms/frame", full_total_ms);
+        println!("  └─ 🏆 MAXIMUM REAL RATE ACHIEVED: {:.1} FPS! (Goal: 60 FPS)\n", full_fps);
 
         // -------------------------------------------------------------
-        // Teste 5: Pacing Híbrido de 60 FPS Reais (Zero Oversleep)
+        // Test 5: Hybrid Pacing at Real 60 FPS (Zero Oversleep)
         // -------------------------------------------------------------
-        println!("--- Teste 5: Pacing de 60 FPS Reais com Hybrid Spin-Wait ---");
+        println!("--- Test 5: Pacing at Real 60 FPS with Hybrid Spin-Wait ---");
         let target_fps = 60u64;
         let frame_interval = Duration::from_nanos(1_000_000_000 / target_fps);
         let mut loop_frames = 0u64;
         let test_start = Instant::now();
         let mut next_frame_time = Instant::now() + frame_interval;
 
-        for _ in 0..120 { // 2 segundos a 60 FPS = 120 frames
-            // Simula captura + encode real (9.5 ms)
+        for _ in 0..120 { // 2 seconds at 60 FPS = 120 frames
+            // Simulates real capture + encode (9.5 ms)
             let t_work = Instant::now();
             BitBlt(hdc_mem, 0, 0, target_w, target_h, hdc_desktop, 0, 0, SRCCOPY);
             let bgra_slice = std::slice::from_raw_parts(p_bits as *const u8, (target_w * target_h * 4) as usize);
@@ -288,7 +288,7 @@ fn main() {
 
         let total_time_s = test_start.elapsed().as_secs_f64();
         let delivered_fps = (loop_frames as f64) / total_time_s;
-        println!("  └─ 🚀 TAXA REAL DE ENTREGA NO RELÓGIO: {:.1} FPS! (Alvo: 60.0 FPS)\n", delivered_fps);
+        println!("  └─ 🚀 REAL DELIVERY RATE ON THE CLOCK: {:.1} FPS! (Target: 60.0 FPS)\n", delivered_fps);
 
         DeleteObject(hbm_dib);
         DeleteDC(hdc_mem);
@@ -298,5 +298,5 @@ fn main() {
 
 #[cfg(not(windows))]
 fn main() {
-    println!("Diagnóstico Windows apenas.");
+    println!("Windows diagnostics only.");
 }

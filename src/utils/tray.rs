@@ -54,7 +54,7 @@ fn create_default_icon() -> Icon {
         }
     }
 
-    Icon::from_rgba(rgba, width, height).expect("Falha ao gerar ícone do tray")
+    Icon::from_rgba(rgba, width, height).expect("Failed to generate the tray icon")
 }
 
 /// The application menu next to the Apple menu (Hide, Quit and their shortcuts). Built
@@ -82,7 +82,7 @@ fn install_macos_app_menu() {
             // The menu must outlive this function: it is the app's menu bar from now on.
             std::mem::forget(menu_bar);
         }
-        Err(e) => warn!("Não foi possível criar o menu do aplicativo no macOS: {:?}", e),
+        Err(e) => warn!("Could not create the application menu on macOS: {:?}", e),
     }
 }
 
@@ -98,8 +98,8 @@ impl SystemTrayManager {
         install_macos_app_menu();
 
         let tray_menu = Menu::new();
-        let show_item = MenuItem::new("Exibir Litecord", true, None);
-        let quit_item = MenuItem::new("Sair", true, None);
+        let show_item = MenuItem::new("Show Litecord", true, None);
+        let quit_item = MenuItem::new("Quit", true, None);
 
         let show_id = show_item.id().clone();
         let quit_id = quit_item.id().clone();
@@ -113,15 +113,15 @@ impl SystemTrayManager {
             .with_icon(icon)
             .with_menu(Box::new(tray_menu))
             .with_menu_on_left_click(true)
-            .with_tooltip("Litecord - Discord Client Ultra-Leve")
+            .with_tooltip("Litecord - Ultra-Light Discord Client")
             .build()
         {
             Ok(icon) => {
-                info!("Ícone roxo ativado na bandeja do sistema (System Tray).");
+                info!("Purple icon enabled in the system tray.");
                 Some(icon)
             }
             Err(e) => {
-                warn!("Não foi possível inicializar o ícone do System Tray ({:?}), continuando modo janela.", e);
+                warn!("Could not initialize the System Tray icon ({:?}), continuing in window mode.", e);
                 None
             }
         };

@@ -69,10 +69,10 @@ fn use_winit_backend_without_slint_menu_bar() {
     match builder.build() {
         Ok(backend) => {
             if let Err(e) = slint::platform::set_platform(Box::new(backend)) {
-                log::warn!("⚠️ Não foi possível instalar o backend winit sem barra de menus: {:?}", e);
+                log::warn!("⚠️ Could not install the winit backend without a menu bar: {:?}", e);
             }
         }
-        Err(e) => log::warn!("⚠️ Não foi possível criar o backend winit sem barra de menus: {:?}", e),
+        Err(e) => log::warn!("⚠️ Could not create the winit backend without a menu bar: {:?}", e),
     }
 }
 
@@ -131,10 +131,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         } else if let Some(s) = info.payload().downcast_ref::<String>() {
             s.clone()
         } else {
-            "desconhecido".to_string()
+            "unknown".to_string()
         };
         let location = info.location().map(|l| format!("{}:{}:{}", l.file(), l.line(), l.column())).unwrap_or_default();
-        let msg = format!("💥 PANIC DETECTADO: {}\nLocation: {}\n", payload, location);
+        let msg = format!("💥 PANIC DETECTED: {}\nLocation: {}\n", payload, location);
         eprintln!("{}", msg);
         if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open("panic_log.txt") {
             use std::io::Write;
@@ -154,7 +154,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     utils::timer_resolution::start_timer_resolution_governor();
 
     info!("==================================================================");
-    info!("🚀 LITECORD INICIADO | VERSÃO: v{} ({})", env!("CARGO_PKG_VERSION"), env!("LITECORD_GIT_HASH"));
+    info!("🚀 LITECORD STARTED | VERSION: v{} ({})", env!("CARGO_PKG_VERSION"), env!("LITECORD_GIT_HASH"));
     info!("==================================================================");
 
     // Renderer: software unless the user turned on GPU rendering (an explicit
@@ -164,36 +164,36 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
     #[cfg(target_os = "macos")]
     use_winit_backend_without_slint_menu_bar();
-    info!("🖥️ Inicializando Slint AppWindow (renderizador: {})...",
+    info!("🖥️ Initializing Slint AppWindow (renderer: {})...",
         std::env::var("SLINT_BACKEND").unwrap_or_else(|_| "GPU".to_string()));
     let app = match AppWindow::new() {
         Ok(app) => {
-            info!("🖥️ Exibindo janela principal (app.show())...");
+            info!("🖥️ Showing main window (app.show())...");
             if let Err(e) = app.show() {
-                log::warn!("⚠️ Falha ao exibir janela com GPU ({:?}). Ativando fallback automático para Software Renderer...", e);
+                log::warn!("⚠️ Failed to show window with GPU ({:?}). Enabling automatic fallback to Software Renderer...", e);
                 std::env::set_var("SLINT_BACKEND", "software");
                 let sw_app = AppWindow::new()?;
                 sw_app.show()?;
-                info!("🖥️ Janela Slint exibida com sucesso via Software Renderer!");
+                info!("🖥️ Slint window shown successfully via Software Renderer!");
                 sw_app
             } else {
-                info!("🖥️ Janela Slint exibida com sucesso!");
+                info!("🖥️ Slint window shown successfully!");
                 app
             }
         }
         Err(e) => {
-            log::warn!("⚠️ Falha ao inicializar backend gráfico ({:?}). Ativando fallback automático para Software Renderer...", e);
+            log::warn!("⚠️ Failed to initialize graphics backend ({:?}). Enabling automatic fallback to Software Renderer...", e);
             std::env::set_var("SLINT_BACKEND", "software");
             let sw_app = AppWindow::new()?;
             sw_app.show()?;
-            info!("🖥️ Janela Slint exibida com sucesso via Software Renderer!");
+            info!("🖥️ Slint window shown successfully via Software Renderer!");
             sw_app
         }
     };
 
     let initial_lang = i18n::load_persisted_language_config();
     apply_i18n_translations(&app, initial_lang);
-    info!("🌐 Idioma inicial configurado: {:?}", initial_lang);
+    info!("🌐 Initial language set: {:?}", initial_lang);
     #[cfg(feature = "automation")]
     automation::start(&app);
 
@@ -324,7 +324,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let _ = slint::invoke_from_event_loop(move || {
         if let Some(ui) = app_weak_init.upgrade() {
             ui.window().with_winit_window(|winit_win| {
-                info!("🖥️ [EVENT LOOP] Configurando janela Winit no evento inicial...");
+                info!("🖥️ [EVENT LOOP] Configuring Winit window on the initial event...");
                 if crate::ui::window_place::restore(winit_win) {
                     ui.set_is_maximized(true);
                 }
@@ -447,7 +447,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let (tray_action_tx, tray_action_rx) = std::sync::mpsc::channel::<bool>();
     let menu_action_tx = tray_action_tx.clone();
     MenuEvent::set_event_handler(Some(move |event: MenuEvent| {
-        info!("Tray MenuEvent recebido: {:?}", event);
+        info!("Tray MenuEvent received: {:?}", event);
         let action = if event.id == show_id_c {
             true
         } else if event.id == quit_id_c {
@@ -460,7 +460,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let icon_action_tx = tray_action_tx;
     TrayIconEvent::set_event_handler(Some(move |event: TrayIconEvent| {
         if matches!(event, TrayIconEvent::DoubleClick { button: MouseButton::Left, .. } | TrayIconEvent::Click { button: MouseButton::Left, .. }) {
-            info!("TrayIconEvent recebido: {:?}", event);
+            info!("TrayIconEvent received: {:?}", event);
             let _ = icon_action_tx.send(true);
         }
     }));
@@ -480,7 +480,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 NEED_UI_REFRESH.store(true, Ordering::Relaxed);
                 utils::wake_hardware_monitor();
                 wake_ui_loops();
-                info!("[DeepSleep] Restauração acionada via Tray — acordando UI.");
+                info!("[DeepSleep] Restore triggered via Tray — waking UI.");
 
                 let app_weak_inner = app_weak_tray.clone();
                 let _hwnd_store_inner = Arc::clone(&hwnd_store_tray);
@@ -588,11 +588,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
         // Strict URL protocol validation: only allow HTTP and HTTPS
         if !url.starts_with("http://") && !url.starts_with("https://") {
-            log::warn!("Tentativa de abrir link não-HTTP rejeitada por segurança: {}", url);
+            log::warn!("Attempt to open a non-HTTP link rejected for security: {}", url);
             return;
         }
 
-        info!("Abrindo link seguro no navegador padrão: {}", url);
+        info!("Opening safe link in the default browser: {}", url);
         #[cfg(target_os = "windows")]
         unsafe {
             let op: Vec<u16> = "open\0".encode_utf16().collect();
@@ -637,7 +637,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     app.on_popout_stream_window(move |uid_str: slint::SharedString, uname_str: slint::SharedString| {
         let uid = uid_str.to_string();
         let uname = uname_str.to_string();
-        info!("📺 Desanexando transmissão de vídeo para janela Popout! User ID: {}, Nome: {}", uid, uname);
+        info!("📺 Detaching video stream to Popout window! User ID: {}, Name: {}", uid, uname);
         if let Some(ui) = app_weak_pop.upgrade() {
             ui.set_popped_out_stream_uid(uid.clone().into());
             let my_uid = gateway::get_my_user_id().to_string();
@@ -699,7 +699,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             if let Some(pop) = pop_w_pin.upgrade() {
                 let new_pinned = !pop.get_is_pinned();
                 pop.set_is_pinned(new_pinned);
-                info!("📌 Janela Popout Always-on-Top alterado para: {}", new_pinned);
+                info!("📌 Popout window Always-on-Top changed to: {}", new_pinned);
                 #[cfg(target_os = "windows")]
                 if let Some(hwnd) = *pop_hwnd_pin.lock().unwrap() {
                     unsafe {
@@ -840,9 +840,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 let _ = w.set_cursor_hittest(hittest);
             });
             if new_state {
-                info!("👻 Modo Intangível ATIVADO no popup (cliques atravessam para os jogos/apps)!");
+                info!("👻 Intangible Mode ENABLED on the popup (clicks pass through to games/apps)!");
             } else {
-                info!("🖱️ Modo Intangível DESATIVADO no popup (janela volta a receber cliques).");
+                info!("🖱️ Intangible Mode DISABLED on the popup (window receives clicks again).");
             }
         }
         if let Some(ui) = app_weak_ghost.upgrade() {
@@ -883,7 +883,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let app_weak_pop_close = app_weak.clone();
     if let Some(pop_win) = popout_weak.upgrade() {
         pop_win.on_close_popout(move || {
-            info!("📺 Fechando janela Popout e reanexando transmissão à sala principal!");
+            info!("📺 Closing Popout window and reattaching the stream to the main room!");
             #[cfg(target_os = "windows")]
             if let Some(hwnd) = *pop_hwnd_close.lock().unwrap() {
                 unsafe {
@@ -1010,7 +1010,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     crate::ui::gpu_video::refresh(&ui, &pop);
                                 }
 
-                                // Garantir que o participante na lista de voz esteja marcado como streaming
+                                // Make sure the participant in the voice list is marked as streaming
                                 let cur_model = ui.get_voice_participants();
                                 for i in 0..cur_model.row_count() {
                                     if let Some(mut p) = cur_model.row_data(i) {
@@ -1118,7 +1118,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         if let Some(ui) = app_weak_ss.upgrade() {
             let active = sm.is_active();
             if active {
-                info!("🛑 Encerrando transmissão de tela P2P...");
+                info!("🛑 Stopping P2P screen share...");
                 sm.stop();
                 ui.set_is_screen_sharing(false);
                 ui.set_web_share_active(false);
@@ -1179,7 +1179,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 #[cfg(target_os = "linux")]
                 screen_capture::reset_wayland_portal_cancelled();
 
-                info!("▶️ Iniciando transmissão P2P (tab={}, screen_idx={}, {} @ {} FPS, hwnd={}, cam={:?}, audio={})...", source_tab, screen_index, res_str, target_fps, target_hwnd, camera_index, include_audio);
+                info!("▶️ Starting P2P stream (tab={}, screen_idx={}, {} @ {} FPS, hwnd={}, cam={:?}, audio={})...", source_tab, screen_index, res_str, target_fps, target_hwnd, camera_index, include_audio);
                 ui.set_tr_stream_quality(format!("{} {}fps", res_str, target_fps).into());
 
                 let app_weak_frame = app_weak_ss.clone();
@@ -1309,7 +1309,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     #[cfg_attr(not(target_os = "windows"), allow(unused_variables))]
     let app_weak_browser = app_weak.clone();
     app.on_launch_stream_browser(move || {
-        info!("🌐 Abrindo navegador em modo de transmissão (sem travas DRM)...");
+        info!("🌐 Opening browser in streaming mode (no DRM locks)...");
         #[cfg(target_os = "windows")]
         {
             let local_app_data = std::env::var("LOCALAPPDATA").unwrap_or_else(|_| "C:\\".to_string());
@@ -1335,7 +1335,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         .arg("https://www.google.com")
                         .spawn();
                     if res.is_ok() {
-                        info!("🚀 Navegador para transmissão iniciado com sucesso via {}", exe);
+                        info!("🚀 Streaming browser started successfully via {}", exe);
                         launched = true;
                         break;
                     }
@@ -1463,7 +1463,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let hidden_streams_hide = Arc::clone(&hidden_streams);
     app.on_hide_stream(move |uid_str: SharedString| {
         let uid = uid_str.to_string();
-        info!("👁️ Ocultando stream de vídeo do usuário {}", uid);
+        info!("👁️ Hiding video stream of user {}", uid);
         hidden_streams_hide.lock().unwrap().insert(uid.clone());
         // Hiding someone's stream stops receiving it (the sender stops sending to us).
         screen_capture::watch::set_wanted(uid.parse().unwrap_or(0), false);
@@ -1492,7 +1492,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let pop_hwnd_unhide = Arc::clone(&popout_hwnd_store);
     app.on_unhide_stream(move |uid_str: SharedString| {
         let uid = uid_str.to_string();
-        info!("👁️ Reexibindo stream de vídeo do usuário {}", uid);
+        info!("👁️ Showing video stream of user again: {}", uid);
         hidden_streams_unhide.lock().unwrap().remove(uid.as_str());
         // Watch: ask the sender for the stream.
         screen_capture::watch::set_wanted(uid.parse().unwrap_or(0), true);
@@ -1539,7 +1539,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let (is_m, _vol) = gateway::get_user_mute_volume(&uid);
         let new_m = !is_m;
         gateway::set_user_mute(&uid, new_m);
-        info!("🎙️ Mute do participante {} alterado para: {}", uid, new_m);
+        info!("🎙️ Mute of participant {} changed to: {}", uid, new_m);
         if let Some(ui) = app_weak_mute.upgrade() {
             let cur_model = ui.get_voice_participants();
             for i in 0..cur_model.row_count() {
@@ -1586,7 +1586,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let app_weak_prio = app_weak.clone();
     app.on_set_user_priority(move |uid_str: SharedString, prio: i32| {
         let uid = uid_str.to_string();
-        info!("👑 Prioridade de fala do participante {} alterada para: P:{}", uid, prio);
+        info!("👑 Speaking priority of participant {} changed to: P:{}", uid, prio);
         gateway::set_user_priority(&uid, prio);
         if let Some(ui) = app_weak_prio.upgrade() {
             let cur_model = ui.get_voice_participants();
@@ -1726,14 +1726,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
                     let username = if is_self {
                         let resolved = if my_user_id != 0 { gateway::get_user_name(my_user_id) } else { String::new() };
-                        if resolved.is_empty() || resolved.starts_with("Participante #") {
-                            "Você".to_string()
+                        if resolved.is_empty() || resolved.starts_with("Participant #") {
+                            "You".to_string()
                         } else {
                             resolved
                         }
                     } else {
                         let uname = gateway::get_user_name(user_id);
-                        if uname.starts_with("Participante #") {
+                        if uname.starts_with("Participant #") {
                             if let Ok(http_opt) = http_client_voice_loop_inner.try_lock() {
                                 if let Some(http) = http_opt.clone() {
                                     static FETCHING_USERS: std::sync::OnceLock<Arc<Mutex<std::collections::HashSet<u64>>>> = std::sync::OnceLock::new();
@@ -1780,7 +1780,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
                                                 if !resolved_name.is_empty() {
                                                     gateway::register_user_name(user_id, resolved_name.clone());
-                                                    info!("✅ Nome de usuário/bot resolvido via REST API: {} -> {}", user_id, resolved_name);
+                                                    info!("✅ User/bot name resolved via REST API: {} -> {}", user_id, resolved_name);
                                                 } else {
                                                     if let Ok(mut set) = store_arc.lock() {
                                                         set.remove(&user_id);
@@ -1921,7 +1921,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 let ch_id = active_channel_restore.lock().unwrap().clone();
                 let http_opt = http_client_restore.lock().unwrap().clone();
                 if let (false, Some(http)) = (ch_id.is_empty(), http_opt) {
-                    info!("[DeepSleep] Restaurado - re-sincronizando {} mensagem(s) pendente(s) do canal {}.", pending, ch_id);
+                    info!("[DeepSleep] Restored - re-syncing {} pending message(s) of channel {}.", pending, ch_id);
                     let app_w = app_weak_restore.clone();
                     let ch = ch_id.clone();
                     tokio::spawn(async move {
@@ -2161,7 +2161,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     app.on_select_input_device(move |dev_name: SharedString| {
         let name_str = dev_name.to_string();
-        info!("Microfone selecionado: {}", name_str);
+        info!("Microphone selected: {}", name_str);
         *selected_input_store.lock().unwrap() = name_str.clone();
         gateway::set_persisted_input_device(name_str.clone());
 
@@ -2183,7 +2183,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let active_loopback_output = Arc::clone(&active_loopback_stream);
     app.on_select_output_device(move |dev_name: SharedString| {
         let name_str = dev_name.to_string();
-        info!("Alto-falante selecionado: {}", name_str);
+        info!("Speaker selected: {}", name_str);
         *selected_output_store.lock().unwrap() = name_str.clone();
         gateway::set_persisted_output_device(name_str.clone());
 
@@ -2221,7 +2221,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     app.on_toggle_test_mic(move || {
         let now_testing = !gateway::is_testing_mic();
-        info!("🧪 [TEST MIC] Botão 'Se Ouvir' alternado para: {}", now_testing);
+        info!("🧪 [TEST MIC] 'Hear Myself' button toggled to: {}", now_testing);
         gateway::set_testing_mic(now_testing);
         if let Some(ui) = app_weak_test_mic.upgrade() {
             ui.set_is_testing_mic(now_testing);
@@ -2234,17 +2234,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             // Ensure hardware mic capture is active so loopback buffer is fed
             if active_stream_test.lock().unwrap().is_none() {
                 let cur_input = selected_input_test.lock().unwrap().clone();
-                info!("🎙️ [TEST MIC] Microfone inativo, iniciando captura para: '{}'", cur_input);
+                info!("🎙️ [TEST MIC] Microphone inactive, starting capture for: '{}'", cur_input);
                 *active_stream_test.lock().unwrap() = Some(start_mic_capture(cur_input, level_tx_test.clone()));
             }
 
             let cur_output = selected_output_test.lock().unwrap().clone();
-            info!("🎧 [TEST MIC] Iniciando saída de loopback para: '{}'", cur_output);
+            info!("🎧 [TEST MIC] Starting loopback output for: '{}'", cur_output);
             if let Some(stream) = start_mic_loopback_stream(cur_output) {
-                info!("🎧 [TEST MIC] Stream de saída criado com sucesso!");
+                info!("🎧 [TEST MIC] Output stream created successfully!");
                 *active_loopback_test.lock().unwrap() = Some(stream);
             } else {
-                log::error!("❌ [TEST MIC] Falha ao criar stream de loopback!");
+                log::error!("❌ [TEST MIC] Failed to create loopback stream!");
             }
         } else {
             *active_loopback_test.lock().unwrap() = None;
@@ -2261,7 +2261,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         if let Some(ui) = app_weak_lang.upgrade() {
             apply_i18n_translations(&ui, selected);
         }
-        info!("🌐 Idioma alterado para: {:?} (código: {})", selected, code.as_str());
+        info!("🌐 Language changed to: {:?} (code: {})", selected, code.as_str());
     });
 
     let app_weak_rec = app_weak.clone();
@@ -2270,7 +2270,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         if let Some(ui) = app_weak_rec.upgrade() {
             ui.set_recording_keybind_for(target);
         }
-        info!("⌨️ [KEYBINDS] Modo gravação alterado para target: {}", target);
+        info!("⌨️ [KEYBINDS] Recording mode changed for target: {}", target);
     });
 
     let keybind_mgr_reset = Arc::clone(&keybind_mgr);
@@ -2292,7 +2292,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
         keybinds::RECORDING_TARGET.store(0, Ordering::Relaxed);
         keybind_mgr_reset.update_config(cfg);
-        info!("⌨️ [KEYBINDS] Atalho desativado para target: {}", target);
+        info!("⌨️ [KEYBINDS] Shortcut disabled for target: {}", target);
     });
 
     let keybind_mgr_custom = Arc::clone(&keybind_mgr);
@@ -2369,7 +2369,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let report_slot = Arc::clone(&net_diag_report_run);
         let _ = std::thread::Builder::new().name("network-diagnostics".into()).spawn(move || {
             let diag = screen_capture::net_diagnostics::run();
-            info!("🩺 [DIAGNÓSTICO DE REDE]\n{}", diag.report);
+            info!("🩺 [NETWORK DIAGNOSTICS]\n{}", diag.report);
             *report_slot.lock().unwrap() = diag.report;
             let verdict = diag.verdict as i32;
             let signaling_ok = diag.signaling_ms.is_some();
@@ -2549,18 +2549,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 Ok(resp) => {
                     let ms = start.elapsed().as_millis();
                     if resp.status().is_success() {
-                        (format!("Sucesso! Conectado ao Discord via proxy em {}ms (Status {})", ms, resp.status()), true)
+                        (format!("Success! Connected to Discord via proxy in {}ms (Status {})", ms, resp.status()), true)
                     } else {
-                        (format!("Proxy respondeu em {}ms, mas retornou status HTTP {}", ms, resp.status()), false)
+                        (format!("Proxy responded in {}ms, but returned HTTP status {}", ms, resp.status()), false)
                     }
                 }
                 Err(e) => {
                     let friendly = if e.is_connect() {
-                        "Falha de conexão: o proxy recusou a conexão ou está offline.".to_string()
+                        "Connection failed: the proxy refused the connection or is offline.".to_string()
                     } else if e.is_timeout() {
-                        "Tempo esgotado: o servidor proxy demorou para responder.".to_string()
+                        "Timed out: the proxy server took too long to respond.".to_string()
                     } else {
-                        format!("Erro ao conectar via proxy: {}", e)
+                        format!("Error connecting via proxy: {}", e)
                     };
                     (friendly, false)
                 }
@@ -2588,7 +2588,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let active_mic_leave = Arc::clone(&active_mic_stream);
 
     app.on_leave_voice(move || {
-        info!("Usuário solicitou desconexão da sala de voz...");
+        info!("User requested disconnect from the voice room...");
         sound_effects::play_ui_sound(sound_effects::UiSound::LeaveChannel);
         // Close the microphone: it was opened on join and kept capturing after leaving.
         *active_mic_leave.lock().unwrap() = None;
@@ -2609,7 +2609,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             ui.set_is_voice_connecting(false);
             ui.set_is_voice_focused(false);
             ui.set_current_voice_channel("".into());
-            ui.set_is_in_dm_call(false); // também encerra chamada DM se estava ativa
+            ui.set_is_in_dm_call(false); // also ends the DM call if it was active
             ui.set_is_screen_sharing(false);
             ui.set_show_self_preview_notice(false);
             ui.set_web_share_active(false);
@@ -2665,7 +2665,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 current_msgs.push(ChatMessage {
                     id: "".into(),
                     author: "Litecord Voice".into(),
-                    content: "🔴 Desconectado da sala de voz.".into(),
+                    content: "🔴 Disconnected from the voice room.".into(),
                     commands: slint::ModelRc::default(),
                     content_lines: slint::ModelRc::default(),
                     embed_content: "".into(),
@@ -2705,9 +2705,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             return;
         }
 
-        // ── Passo 1: Abrir interface de voz imediatamente (mesmo fluxo que canais de voz) ──
+        // ── Step 1: Open the voice interface immediately (same flow as voice channels) ──
         if let Some(ui) = app_weak_call.upgrade() {
-            // Nome da conversa já está no active_channel_name da UI
+            // The conversation name is already in the UI's active_channel_name
             let call_name = ui.get_active_channel_name().to_string();
             ui.set_is_in_voice(true);
             ui.set_is_voice_connecting(true);
@@ -2717,17 +2717,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             sound_effects::play_ui_sound(sound_effects::UiSound::JoinChannel);
         }
 
-        // ── Passo 2: Iniciar captura de microfone (igual a canais de voz normais) ──
+        // ── Step 2: Start microphone capture (same as regular voice channels) ──
         let mic_name = selected_input_call.lock().unwrap().clone();
         *active_mic_call.lock().unwrap() = Some(start_mic_capture(mic_name, level_tx_call.clone()));
-        info!("Abrindo o microfone para a chamada de DM...");
+        info!("Opening the microphone for the DM call...");
 
-        // ── Passo 3: Async — REST ring + OP4 VoiceStateUpdate ──
+        // ── Step 3: Async — REST ring + OP4 VoiceStateUpdate ──
         let http_opt = http_call_dm.lock().unwrap().as_ref().cloned();
         let ch_id = channel_id.clone();
         let cmd_tx_for_ring = Arc::clone(&cmd_tx_call);
         tokio::spawn(async move {
-            // 1. Entrar na sala de voz da DM via Gateway OP4 primeiro
+            // 1. Join the DM voice room via Gateway OP4 first
             if let Some(cmd_tx_guard) = cmd_tx_for_ring.lock().unwrap().as_ref() {
                 let _ = cmd_tx_guard.try_send(GatewayCommand::UpdateVoiceState {
                     guild_id: "@me".to_string(),
@@ -2737,15 +2737,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 });
             }
 
-            // Aguarda 150ms para que o Gateway registre o VoiceState antes de disparar o toque
+            // Wait 150ms so the Gateway registers the VoiceState before triggering the ring
             tokio::time::sleep(tokio::time::Duration::from_millis(150)).await;
 
-            // 2. Disparar o toque (ring) para os membros da conversa
+            // 2. Trigger the ring for the conversation members
             if let Some(http) = http_opt {
                 if let Err(e) = http.ring_dm_call(&ch_id).await {
-                    warn!("Aviso ao disparar ring na DM {}: {:?} (a chamada de voz continua ativa)", ch_id, e);
+                    warn!("Warning when triggering ring in DM {}: {:?} (the voice call remains active)", ch_id, e);
                 } else {
-                    info!("🔔 DM ring iniciado com sucesso no canal {}", ch_id);
+                    info!("🔔 DM ring started successfully in channel {}", ch_id);
                 }
             }
         });
@@ -2764,7 +2764,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             return;
         }
 
-        // Para o microfone imediatamente
+        // Stop the microphone immediately
         *active_mic_hangup.lock().unwrap() = None;
         sound_effects::play_ui_sound(sound_effects::UiSound::LeaveChannel);
 
@@ -2776,13 +2776,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         tokio::spawn(async move {
             if let Some(http) = http_opt {
                 if let Err(e) = http.stop_ringing_dm_call(&ch_id2).await {
-                    warn!("Falha ao parar ring na DM {}: {:?}", ch_id2, e);
+                    warn!("Failed to stop ring in DM {}: {:?}", ch_id2, e);
                 } else {
-                    info!("🔕 DM ring parado no canal {}", ch_id2);
+                    info!("🔕 DM ring stopped in channel {}", ch_id2);
                 }
             }
         });
-        // OP4: desconectar do voice
+        // OP4: disconnect from voice
         let gid = active_guild_hangup.lock().unwrap().clone();
         if let Some(cmd_tx_guard) = cmd_tx_hangup.lock().unwrap().as_ref() {
             let _ = cmd_tx_guard.try_send(GatewayCommand::UpdateVoiceState {
@@ -2816,7 +2816,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             let caller = ui.get_incoming_call_caller_name().to_string();
             if ch_id.is_empty() { return; }
 
-            // Fechar painel + abrir interface de voz
+            // Close panel + open voice interface
             ui.set_has_incoming_call(false);
             ui.set_incoming_call_channel_id("".into());
             ui.set_is_in_voice(true);
@@ -2826,11 +2826,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             ui.set_current_voice_channel(caller.into());
             sound_effects::play_ui_sound(sound_effects::UiSound::JoinChannel);
 
-            // Iniciar mic
+            // Start mic
             let mic_name = selected_input_accept.lock().unwrap().clone();
             *active_mic_accept.lock().unwrap() = Some(start_mic_capture(mic_name, level_tx_accept.clone()));
 
-            // OP4: entrar no canal de voz da DM
+            // OP4: join the DM voice channel
             if let Some(cmd_tx_guard) = cmd_tx_accept.lock().unwrap().as_ref() {
                 let _ = cmd_tx_guard.try_send(GatewayCommand::UpdateVoiceState {
                     guild_id: "@me".to_string(),
@@ -2840,7 +2840,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 });
             }
 
-            // REST: stop-ringing para parar o toque no chamador
+            // REST: stop-ringing to stop the ring on the caller's side
             let http_opt = http_accept.lock().unwrap().as_ref().cloned();
             tokio::spawn(async move {
                 if let Some(http) = http_opt {
@@ -2861,7 +2861,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             ui.set_incoming_call_channel_id("".into());
             ui.set_incoming_call_caller_name("".into());
 
-            // REST: stop-ringing para parar o toque
+            // REST: stop-ringing to stop the ring
             if !ch_id.is_empty() {
                 let http_opt = http_reject.lock().unwrap().as_ref().cloned();
                 tokio::spawn(async move {
@@ -2900,10 +2900,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             let app_w_fail = app_weak_update_acc.clone();
             tokio::spawn(async move {
                 if let Err(e) = updater::download_and_install_update(rel.download_url, prog_tx).await {
-                    error!("Erro ao atualizar Litecord: {}", e);
+                    error!("Error updating Litecord: {}", e);
                     let app_w = app_w_fail.clone();
                     // macOS hands the download to the browser: that is a notice, not a failure.
-                    let err_msg = if cfg!(target_os = "macos") { e.clone() } else { format!("Falha na atualização: {}", e) };
+                    let err_msg = if cfg!(target_os = "macos") { e.clone() } else { format!("Update failed: {}", e) };
                     let _ = slint::invoke_from_event_loop(move || {
                         if let Some(ui) = app_w.upgrade() {
                             ui.set_is_updating(false);
@@ -2967,7 +2967,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             }
                         }
                         Err(e) => {
-                            ui.set_update_check_feedback(format!("Erro: {}", e).into());
+                            ui.set_update_check_feedback(format!("Error: {}", e).into());
                         }
                     }
                 }
@@ -3047,7 +3047,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                         links: slint::ModelRc::from(links_model),
                                         buttons: map_message_buttons(&buttons, &ch_id_clone, &app_w_inner),
                                         attachments: map_message_attachments(&attachments, &app_w_inner),
-                                        timestamp: "Anterior".into(),
+                                        timestamp: "Previous".into(),
                                         ..Default::default()
                                     };
                                     apply_message_metadata(&mut message, m);
@@ -3066,7 +3066,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         });
                     }
                     Err(e) => {
-                        error!("Erro ao carregar mensagens anteriores: {}", e);
+                        error!("Error loading previous messages: {}", e);
                         let _ = slint::invoke_from_event_loop(move || {
                             if let Some(ui) = app_w_inner.upgrade() {
                                 ui.set_is_loading_older_messages(false);
@@ -3086,7 +3086,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let active_qr_refresh = Arc::clone(&active_qr_session);
     let app_weak_refresh = app_weak.clone();
     app.on_refresh_qr_code(move || {
-        info!("🔄 Atualizando / reiniciando QR Code de login...");
+        info!("🔄 Refreshing / restarting login QR Code...");
         if let Some(ui) = app_weak_refresh.upgrade() {
             ui.set_has_qr_code(false);
             ui.set_qr_scanned_user("".into());
@@ -3134,14 +3134,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     });
                 }
                 RemoteAuthEvent::TokenReceived(token) => {
-                    info!("🎉 Token de acesso recebido via QR Code com sucesso! Conectando...");
+                    info!("🎉 Access token received via QR Code successfully! Connecting...");
                     let app_w = app_weak_qr.clone();
                     let _ = slint::invoke_from_event_loop(move || {
                         if let Some(ui) = app_w.upgrade() {
                             ui.set_has_qr_code(false);
                             ui.set_qr_scanned_user("".into());
                             ui.set_login_alert_message("".into());
-                            ui.set_connection_status("Conectando via QR Code...".into());
+                            ui.set_connection_status("Connecting via QR Code...".into());
                         }
                     });
                     if let Some(old) = active_qr_session_qr.lock().unwrap().take() {
@@ -3171,7 +3171,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     });
                 }
                 RemoteAuthEvent::Error(err) => {
-                    warn!("⚠️ Erro na sessão de QR Auth: {}", err);
+                    warn!("⚠️ Error in QR Auth session: {}", err);
                     let app_w = app_weak_qr.clone();
                     let err_clone = err.clone();
                     let _ = slint::invoke_from_event_loop(move || {
@@ -3184,7 +3184,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 ui.set_login_alert_message(crate::utils::i18n_ui::ui_text().qr_captcha.into());
                                 ui.set_login_alert_is_error(true);
                             } else {
-                                ui.set_login_alert_message(format!("Falha no QR Code: {}", err_clone).into());
+                                ui.set_login_alert_message(format!("QR Code failure: {}", err_clone).into());
                                 ui.set_login_alert_is_error(true);
                             }
                         }
@@ -3208,7 +3208,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let active_qr_logout = Arc::clone(&active_qr_session);
 
     app.on_logout(move || {
-        info!("Usuário solicitou Logout completo de todas as contas...");
+        info!("User requested full Logout of all accounts...");
         // 1. Remove saved vault file so all saved tokens are wiped
         delete_secure_token();
 
@@ -3290,7 +3290,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     app.on_switch_account(move |account_id: SharedString| {
         let acc_id_str = account_id.to_string();
-        info!("🔄 Alternando para a conta com identificador {}...", acc_id_str);
+        info!("🔄 Switching to the account with identifier {}...", acc_id_str);
 
         let mut vault = load_account_vault();
         let mut target_token = String::new();
@@ -3305,7 +3305,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
         }
         if !found {
-            warn!("Conta {} não encontrada no cofre.", acc_id_str);
+            warn!("Account {} not found in the vault.", acc_id_str);
             return;
         }
         save_account_vault(&vault);
@@ -3348,7 +3348,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         if let Some(ui) = app_weak_sw.upgrade() {
             ui.set_is_logged_in(false);
-            ui.set_connection_status("Alternando conta e conectando ao Discord...".into());
+            ui.set_connection_status("Switching account and connecting to Discord...".into());
             ui.set_is_in_voice(false);
             ui.set_current_voice_channel("".into());
             ui.set_show_user_menu(false);
@@ -3398,7 +3398,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let active_qr_add = Arc::clone(&active_qr_session);
 
     app.on_add_new_account(move || {
-        info!("➕ Usuário solicitou adicionar nova conta...");
+        info!("➕ User requested to add a new account...");
         // Disconnect voice session if active
         gateway::clear_voice_participants();
         gateway::CURRENT_VOICE_SESSION_ID.store(0, std::sync::atomic::Ordering::SeqCst);
@@ -3439,7 +3439,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             ui.set_user_avatar_has_image(false);
             ui.set_user_avatar_img(slint::Image::default());
             ui.set_user_avatar_url("".into());
-            ui.set_connection_status("Conecte a nova conta escaneando o QR Code ou inserindo o Token.".into());
+            ui.set_connection_status("Connect the new account by scanning the QR Code or entering the Token.".into());
             ui.set_is_in_voice(false);
             ui.set_current_voice_channel("".into());
             ui.set_show_user_menu(false);
@@ -3465,7 +3465,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let app_weak_rem = app_weak.clone();
     app.on_remove_account(move |account_id: SharedString| {
         let acc_id_str = account_id.to_string();
-        info!("🗑️ Removendo conta {} do cofre...", acc_id_str);
+        info!("🗑️ Removing account {} from the vault...", acc_id_str);
         let vault = remove_single_account(&acc_id_str);
         sync_ui_saved_accounts(&app_weak_rem, &vault);
     });
@@ -3483,7 +3483,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     app.on_login(move |token: SharedString| {
         let token_str = token.to_string().chars().filter(|c| !c.is_whitespace() && *c != '"' && *c != '\'').collect::<String>();
-        info!("Token fornecido. Validando via API HTTP...");
+        info!("Token provided. Validating via HTTP API...");
         *last_token_login.lock().unwrap() = token_str.clone();
 
         if let Some(old) = active_qr_login.lock().unwrap().take() {
@@ -3494,7 +3494,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         *http_client_clone.lock().unwrap() = Some(http.clone());
 
         if let Some(ui) = app_weak_login.upgrade() {
-            ui.set_connection_status("Validando Token na API do Discord...".into());
+            ui.set_connection_status("Validating Token with the Discord API...".into());
         }
 
         let event_tx_gw = event_tx_clone.clone();
@@ -3524,7 +3524,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     } else {
                         tag.clone()
                     };
-                    info!("Token VÁLIDO! Usuário autenticado: {} ({})", username, user_id);
+                    info!("Token VALID! Authenticated user: {} ({})", username, user_id);
 
                     let vault = save_or_update_account(&token_str, user_id, global_name, &tag);
                     sync_ui_saved_accounts(&app_weak_inner, &vault);
@@ -3560,7 +3560,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 ui.set_user_avatar_has_image(true);
                                 }
                             }
-                            ui.set_connection_status("Conectado com sucesso!".into());
+                            ui.set_connection_status("Connected successfully!".into());
                             ui.set_login_alert_message("".into());
                             ui.set_titlebar_error("".into());
                         }
@@ -3584,7 +3584,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     gw.start(cmd_rx).await;
                 }
                 Err(err_msg) => {
-                    error!("Falha na validação do Token: {}", err_msg);
+                    error!("Token validation failed: {}", err_msg);
                     let app_w = app_weak_inner.clone();
                     let err_clone = err_msg.clone();
                     let _ = slint::invoke_from_event_loop(move || {
@@ -3594,7 +3594,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 ui.set_login_alert_message(crate::utils::format_proxy_alert_message().into());
                             } else {
                                 ui.set_connection_status(format!("❌ {}", err_clone).into());
-                                ui.set_login_alert_message(format!("Token recusado pelo Discord: {}", err_clone).into());
+                                ui.set_login_alert_message(format!("Token rejected by Discord: {}", err_clone).into());
                             }
                             ui.set_login_alert_is_error(true);
                         }
@@ -3632,7 +3632,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let app_w_status = app_w.clone();
         let _ = slint::invoke_from_event_loop(move || {
             if let Some(ui) = app_w_status.upgrade() {
-                ui.set_connection_status("Detectando token do Discord no sistema...".into());
+                ui.set_connection_status("Detecting Discord token on the system...".into());
             }
         });
 
@@ -3642,7 +3642,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 let app_w_ui = app_w.clone();
                 let _ = slint::invoke_from_event_loop(move || {
                     if let Some(ui) = app_w_ui.upgrade() {
-                        ui.set_connection_status("Nenhum token do Discord foi encontrado no sistema.".into());
+                        ui.set_connection_status("No Discord token was found on the system.".into());
                     }
                 });
             } else {
@@ -3668,7 +3668,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 ui.set_login_alert_message(crate::utils::format_proxy_alert_message().into());
                                 ui.set_login_alert_is_error(true);
                             } else {
-                                ui.set_connection_status("Nenhum dos tokens encontrados foi aceito pelo Discord.".into());
+                                ui.set_connection_status("None of the tokens found was accepted by Discord.".into());
                             }
                         }
                     });
@@ -3682,9 +3682,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     tokio::spawn(async move {
         let net = crate::utils::get_network_settings();
         if net.proxy_mode != "off" {
-            info!("🌐 Verificando conectividade do proxy configurado ({}: {}:{})...", net.proxy_mode, net.proxy_host, net.proxy_port);
+            info!("🌐 Checking connectivity of the configured proxy ({}: {}:{})...", net.proxy_mode, net.proxy_host, net.proxy_port);
             if let Err(e) = crate::utils::test_proxy_connection().await {
-                warn!("⚠️ Proxy ativo ({}) inacessível no início da aplicação: {}", net.proxy_mode, e);
+                warn!("⚠️ Active proxy ({}) unreachable at application start: {}", net.proxy_mode, e);
                 let proxy_msg = crate::utils::format_proxy_alert_message();
                 let app_w = app_weak_proxy_check.clone();
                 let _ = slint::invoke_from_event_loop(move || {
@@ -3743,7 +3743,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
         } else {
             // No saved token (e.g. fresh install or after explicit logout): start QR session immediately!
-            info!("Nenhum token salvo em disco. Iniciando sessão de QR Code...");
+            info!("No token saved on disk. Starting QR Code session...");
             let session = remote_auth::RemoteAuthSession::start(qr_tx_startup.clone());
             *active_qr_startup.lock().unwrap() = Some(session);
         }
@@ -3761,7 +3761,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     app.on_select_guild(move |guild_id: SharedString| {
         let gid = guild_id.to_string();
-        info!("Servidor selecionado pelo usuário: {}", gid);
+        info!("Server selected by the user: {}", gid);
 
         if let Some(ui) = app_weak_guild_select.upgrade() {
             ui.set_is_voice_focused(false);
@@ -3823,7 +3823,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     app.on_toggle_category(move |cat_id_str: SharedString| {
         let cat_id = cat_id_str.to_string();
-        info!("Alternando estado da categoria de canais: {}", cat_id);
+        info!("Toggling channel category state: {}", cat_id);
         let cats_store = get_collapsed_categories();
         {
             let mut cats_guard = cats_store.lock().unwrap();
@@ -3872,7 +3872,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     let _ = std::fs::write(".litecord_guild_order.json", json);
                 }
                 ui.set_guilds(std::rc::Rc::new(slint::VecModel::from(list)).into());
-                info!("🔄 Servidores reordenados de {} para {} e persistidos em .litecord_guild_order.json", from, to);
+                info!("🔄 Servers reordered from {} to {} and persisted in .litecord_guild_order.json", from, to);
             }
         }
     });
@@ -3915,7 +3915,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     if let Some(ui) = app_weak_reorder_c.upgrade() {
                         ui.set_channels(std::rc::Rc::new(slint::VecModel::from(ui_channels)).into());
                     }
-                    info!("🔄 Canais do servidor {} reordenados e persistidos localmente!", gid);
+                    info!("🔄 Channels of server {} reordered and persisted locally!", gid);
                 }
             }
         }
@@ -3925,7 +3925,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     app.on_select_channel(move |channel_id: SharedString| {
         let ch_id = channel_id.to_string();
-        info!("Canal selecionado pelo usuário: {}", ch_id);
+        info!("Channel selected by the user: {}", ch_id);
         *active_channel_chan_select.lock().unwrap() = ch_id.clone();
 
         let gid = active_guild_chan_select.lock().unwrap().clone();
@@ -3934,7 +3934,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             .and_then(|g| g.channels.iter().find(|c| c.id == ch_id).cloned());
 
         let is_voice = target_channel.as_ref().map(|c| c.is_voice).unwrap_or(false);
-        let ch_name = target_channel.as_ref().map(|c| c.name.clone()).unwrap_or_else(|| "canal".to_string());
+        let ch_name = target_channel.as_ref().map(|c| c.name.clone()).unwrap_or_else(|| "channel".to_string());
 
         if let Some(ui) = app_weak_chan_select.upgrade() {
             if is_voice {
@@ -3972,13 +3972,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 // 3. Auto-start microphone capture for voice channel (feeds PCM to gateway queue)
                 let mic_name = selected_input_voice.lock().unwrap().clone();
                 *active_mic_stream_voice.lock().unwrap() = Some(start_mic_capture(mic_name, level_tx_voice.clone()));
-                info!("Abrindo o microfone para o canal de voz...");
+                info!("Opening the microphone for the voice channel...");
                 
                 let mut current_msgs: Vec<ChatMessage> = ui.get_messages().iter().collect();
                 current_msgs.push(ChatMessage {
                     id: "".into(),
                     author: "Litecord Voice".into(),
-                    content: format!("🔊 Entrou no canal de voz: {}", ch_name).into(),
+                    content: format!("🔊 Joined voice channel: {}", ch_name).into(),
                     commands: slint::ModelRc::default(),
                     content_lines: slint::ModelRc::default(),
                     embed_content: "".into(),
@@ -4005,7 +4005,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 ui.set_is_voice_focused(false);
                 request_chat_scroll_to_bottom(app_weak_chan_select.clone());
 
-                // Zera o badge de não lidos do canal que foi aberto
+                // Reset the unread badge of the channel that was opened
                 let mut channels: Vec<ChannelItem> = ui.get_channels().iter().collect();
                 if let Some(ch) = channels.iter_mut().find(|c| c.id == ch_id.as_str()) {
                     ch.unread_count = 0;
@@ -4013,7 +4013,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 let model = std::rc::Rc::new(slint::VecModel::from(channels));
                 ui.set_channels(model.into());
 
-                // Zera o unread deste canal no mapa global de DMs e atualiza o badge do botão principal de DMs
+                // Reset the unread count of this channel in the global DM map and update the badge of the main DMs button
                 let remaining_dm_unreads = crate::ui::helpers::clear_dm_unread(&ch_id);
                 ui.set_total_dm_unread_count(remaining_dm_unreads);
 
@@ -4210,7 +4210,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 ui.set_active_command_name(found.name.clone().into());
                 ui.set_active_param_name(found.param_name.clone().into());
                 let pdesc = if found.param_desc.is_empty() {
-                    if found.param_name.is_empty() { format!("Pressione Enter para executar {}", found.name) } else { found.desc.clone() }
+                    if found.param_name.is_empty() { format!("Press Enter to run {}", found.name) } else { found.desc.clone() }
                 } else {
                     found.param_desc.clone()
                 };
@@ -4221,7 +4221,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             } else {
                 ui.set_active_command_name(clean_cmd.clone().into());
                 ui.set_active_param_name("".into());
-                ui.set_active_param_desc(format!("Pressione Enter para executar {}", clean_cmd).into());
+                ui.set_active_param_desc(format!("Press Enter to run {}", clean_cmd).into());
                 ui.set_active_command_app_id("".into());
                 ui.set_active_command_cmd_id("".into());
                 ui.set_active_command_version("".into());
@@ -4249,7 +4249,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         ui.set_active_command_name(found.name.clone().into());
                         ui.set_active_param_name(found.param_name.clone().into());
                         let pdesc = if found.param_desc.is_empty() {
-                            if found.param_name.is_empty() { format!("Pressione Enter para executar {}", found.name) } else { found.desc.clone() }
+                            if found.param_name.is_empty() { format!("Press Enter to run {}", found.name) } else { found.desc.clone() }
                         } else {
                             found.param_desc.clone()
                         };
@@ -4350,7 +4350,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         options,
                         ""
                     ).await {
-                        warn!("Falha ao enviar slash command interaction (tentando fallback): {}", e);
+                        warn!("Failed to send slash command interaction (trying fallback): {}", e);
                         let fallback_msg = if arg_val_str.is_empty() {
                             format!("/{}", clean_name)
                         } else {
@@ -4374,12 +4374,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let app_weak_tray_min = app_weak.clone();
     let hwnd_store_minimize = Arc::clone(&hwnd_store);
     app.on_minimize_to_tray(move || {
-        info!("Minimizando janela para a bandeja do sistema via Win32 SW_HIDE...");
+        info!("Minimizing window to the system tray via Win32 SW_HIDE...");
         crate::ui::window_place::save_now();
         crate::ui::invite_cards::clear();
         APP_IS_VISIBLE.store(false, Ordering::Relaxed);
         PENDING_MESSAGES.store(0, Ordering::Relaxed);
-        info!("[DeepSleep] UI loops suspensos. Apenas áudio permanece ativo.");
+        info!("[DeepSleep] UI loops suspended. Only audio remains active.");
         let app_w = app_weak_tray_min.clone();
         let hwnd_store_c = Arc::clone(&hwnd_store_minimize);
         slint::Timer::single_shot(std::time::Duration::from_millis(50), move || {
@@ -4404,7 +4404,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }
             }
             trim_process_memory();
-            info!("[DeepSleep] Memória RAM compactada e liberada (minimize to tray)!");
+            info!("[DeepSleep] RAM compacted and released (minimize to tray)!");
         });
     });
 
@@ -4465,10 +4465,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let app_weak_min = app_weak.clone();
     let hwnd_store_min = Arc::clone(&hwnd_store);
     app.on_minimize_window(move || {
-        info!("🔕 Minimizando janela para a bandeja do sistema (System Tray) & entrando em DeepSleep...");
+        info!("🔕 Minimizing window to the system tray (System Tray) & entering DeepSleep...");
         APP_IS_VISIBLE.store(false, Ordering::Relaxed);
         PENDING_MESSAGES.store(0, Ordering::Relaxed);
-        info!("[DeepSleep] UI loops suspensos. Apenas áudio permanece ativo.");
+        info!("[DeepSleep] UI loops suspended. Only audio remains active.");
         let app_w = app_weak_min.clone();
         let hwnd_store_c = Arc::clone(&hwnd_store_min);
         slint::Timer::single_shot(std::time::Duration::from_millis(50), move || {
@@ -4494,7 +4494,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }
             }
             trim_process_memory();
-            info!("[DeepSleep] Memória RAM compactada e liberada ao minimizar!");
+            info!("[DeepSleep] RAM compacted and released on minimize!");
         });
     });
 
@@ -4510,7 +4510,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let sm_for_close = Arc::clone(&screen_manager);
     app.on_close_window(move || {
-        info!("Fechar clicado na barra superior: saindo do aplicativo...");
+        info!("Close clicked on the top bar: exiting the application...");
         crate::ui::window_place::save_now();
         sm_for_close.stop();
         #[cfg(target_os = "linux")]
@@ -4545,7 +4545,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         sm_disc.set_context(0, 0, "");
                         screen_capture::clear_stream_audio_queue();
                         if let Some(ui) = app_w.upgrade() {
-                            info!("🚪 Desconectando UI do canal de voz (sessão encerrada/deslocada por outro cliente)");
+                            info!("🚪 Disconnecting UI from the voice channel (session ended/displaced by another client)");
                             ui.set_is_in_voice(false);
                             ui.set_is_voice_connecting(false);
                             ui.set_is_screen_sharing(false);
@@ -4562,7 +4562,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     tokio::spawn(async {
                         tokio::time::sleep(std::time::Duration::from_secs(8)).await;
                         trim_process_memory();
-                        info!("🧹 [MEMÓRIA] Faxina pós-login concluída.");
+                        info!("🧹 [MEMORY] Post-login cleanup finished.");
                     });
                     let _ = slint::invoke_from_event_loop(move || {
                         if let Some(ui) = app_weak_inner.upgrade() {
@@ -4578,18 +4578,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     let _ = slint::invoke_from_event_loop(move || {
                         if let Some(ui) = app_weak_inner.upgrade() {
                             let clean_reason = if reason_clone.contains("10054") || reason_clone.contains("ConnectionReset") || reason_clone.contains("reset by peer") {
-                                "Conexão reiniciada".to_string()
+                                "Connection reset".to_string()
                             } else if reason_clone.contains("timeout") || reason_clone.contains("TimedOut") {
-                                "Sem internet / Timeout".to_string()
+                                "No internet / Timeout".to_string()
                             } else {
-                                format!("Desconectado ({})", reason_clone)
+                                format!("Disconnected ({})", reason_clone)
                             };
                             ui.set_titlebar_error(clean_reason.into());
                         }
                     });
                 }
                 GatewayEvent::MessageCreated { id, channel_id, author, author_id, created_at, avatar_url, is_bot, content, commands, content_lines, embed_content, embed_lines, embed_color, embed_footer, code_block, reply_author, reply_content, reply_command, links, buttons, attachments, is_self } => {
-                    // Deduplicação: ignora se esta mensagem já foi processada anteriormente
+                    // Deduplication: ignore if this message was already processed earlier
                     if !id.is_empty() && crate::ui::helpers::mark_msg_seen(&id) {
                         continue;
                     }
@@ -4633,7 +4633,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     };
 
                     if channel_id != current_active_ch {
-                        // Se a mensagem foi enviada pelo próprio usuário (ex: pelo celular), não incrementa badge de não lido
+                        // If the message was sent by the user themselves (e.g. from their phone), do not increment the unread badge
                         if is_self {
                             if showing_dms && in_shown_list {
                                 sidebar(0);
@@ -4641,7 +4641,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             continue;
                         }
 
-                        // Mensagem de outro canal/usuário — incrementa badge de não lidos
+                        // Message from another channel/user — increment the unread badge
                         if crate::ui::helpers::is_dm_channel(&channel_id, &guilds_map_inner) {
                             show_dm_total(crate::ui::helpers::inc_dm_unread(&channel_id));
                         }
@@ -4651,7 +4651,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         continue;
                     }
 
-                    // Mensagem para o canal ativo atual: limpa o contador deste canal e, se for DM, move para o topo da lista
+                    // Message for the current active channel: clear this channel's counter and, if it is a DM, move it to the top of the list
                     show_dm_total(crate::ui::helpers::clear_dm_unread(&channel_id));
                     sidebar(0);
 
@@ -4659,7 +4659,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         // Window is hidden — count message but don't touch Slint.
                         // Messages will be re-fetched via REST when the window is restored.
                         let pending = PENDING_MESSAGES.fetch_add(1, Ordering::Relaxed) + 1;
-                        info!("[DeepSleep] Mensagem recebida em background ({} pendente(s)) — UI ignorada.", pending);
+                        info!("[DeepSleep] Message received in background ({} pending) — UI skipped.", pending);
                     } else {
                         let _ = slint::invoke_from_event_loop(move || {
                             if let Some(ui) = app_weak_inner.upgrade() {
@@ -4838,7 +4838,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     // Handled via HTTP REST instant fetching
                 }
                 GatewayEvent::IncomingCall { channel_id, caller_name } => {
-                    // Chamada de DM recebida — mostrar painel de notificação com nome do amigo
+                    // Incoming DM call — show notification panel with the friend's name
                     let app_w = app_weak_inner.clone();
                     let ch_id = channel_id.clone();
                     let caller_raw = caller_name.clone();
@@ -4846,12 +4846,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
                     let _ = slint::invoke_from_event_loop(move || {
                         if let Some(ui) = app_w.upgrade() {
-                            // Se já estivermos na chamada ou em sala de voz, não exibir modal
+                            // If we are already in the call or in a voice room, do not show the modal
                             if ui.get_is_in_dm_call() || ui.get_is_in_voice() {
                                 return;
                             }
 
-                            // 1. Busca o nome do amigo diretamente nos canais da UI
+                            // 1. Look up the friend's name directly in the UI channels
                             let mut resolved_name = String::new();
                             for ch in ui.get_channels().iter() {
                                 if ch.id == ch_id.as_str() {
@@ -4860,7 +4860,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 }
                             }
 
-                            // 2. Se não achou na UI, busca no mapa de DMs em memória
+                            // 2. If not found in the UI, look it up in the in-memory DM map
                             if resolved_name.is_empty() {
                                 if let Ok(gmap) = gmap_inc.lock() {
                                     if let Some(dm_guild) = gmap.get("@me") {
@@ -4871,12 +4871,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 }
                             }
 
-                            // 3. Fallback para o nome do evento ou "Amigo"
+                            // 3. Fall back to the event name or "Friend"
                             if resolved_name.is_empty() {
-                                resolved_name = if !caller_raw.is_empty() && caller_raw != "Alguém" {
+                                resolved_name = if !caller_raw.is_empty() && caller_raw != "Someone" {
                                     caller_raw
                                 } else {
-                                    "Amigo".to_string()
+                                    "Friend".to_string()
                                 };
                             }
 
@@ -4888,7 +4888,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     sound_effects::play_ui_sound(sound_effects::UiSound::JoinChannel);
                 }
                 GatewayEvent::CallEnded { channel_id } => {
-                    // Chamada encerrada ou cancelada — fechar modal de chamada recebida
+                    // Call ended or cancelled — close the incoming call modal
                     let app_w = app_weak_inner.clone();
                     let ch_id = channel_id.clone();
                     let _ = slint::invoke_from_event_loop(move || {

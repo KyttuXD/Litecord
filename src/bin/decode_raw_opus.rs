@@ -28,22 +28,22 @@ fn write_wav_header(f: &mut File, sample_rate: u32, channels: u16, data_size: u3
 
 fn main() {
     println!("==================================================");
-    println!("🔬 DECODIFICADOR ISOLADO DE PACOTES BRUTOS OPUS");
+    println!("🔬 ISOLATED RAW OPUS PACKET DECODER");
     println!("==================================================");
     let path = "discord_raw_opus.bin";
     let mut f = match File::open(path) {
         Ok(file) => file,
         Err(e) => {
-            println!("❌ Não foi possível abrir `discord_raw_opus.bin`: {}. Execute o app Litecord primeiro para gravar pacotes brutos!", e);
+            println!("❌ Could not open `discord_raw_opus.bin`: {}. Run the Litecord app first to record raw packets!", e);
             return;
         }
     };
 
     let mut raw_bytes = Vec::new();
     let _ = f.read_to_end(&mut raw_bytes);
-    println!("Lidos {} bytes de dados brutos Opus de `discord_raw_opus.bin`.", raw_bytes.len());
+    println!("Read {} bytes of raw Opus data from `discord_raw_opus.bin`.", raw_bytes.len());
 
-    let mut decoder = OpusDecoder::new(48000, 2).expect("Falha ao criar OpusDecoder 48kHz");
+    let mut decoder = OpusDecoder::new(48000, 2).expect("Failed to create 48kHz OpusDecoder");
     let mut pcm_out_buf = vec![0.0f32; 11520];
     let mut decoded_pcm = Vec::new();
 
@@ -72,10 +72,10 @@ fn main() {
         }
     }
 
-    println!("Decodificados {} quadros Opus ({} erros). Total de amostras: {}", pkt_count, err_count, decoded_pcm.len());
+    println!("Decoded {} Opus frames ({} errors). Total samples: {}", pkt_count, err_count, decoded_pcm.len());
 
     let out_path = "discord_raw_decoded.wav";
-    let mut out_f = File::create(out_path).expect("Falha ao criar WAV de saída");
+    let mut out_f = File::create(out_path).expect("Failed to create output WAV");
     let data_bytes = decoded_pcm.len() * 4;
     write_wav_header(&mut out_f, 48000, 2, data_bytes as u32);
     let mut pcm_bytes = Vec::with_capacity(data_bytes);
@@ -86,6 +86,6 @@ fn main() {
         pcm_bytes.extend_from_slice(&i_r.to_le_bytes());
     }
     let _ = out_f.write_all(&pcm_bytes);
-    println!("✅ Áudio decodificado e salvo em `{}`!", out_path);
-    println!("Execute `python scratch_spectral_analysis.py discord_raw_decoded.wav` para inspecionar!");
+    println!("✅ Audio decoded and saved to `{}`!", out_path);
+    println!("Run `python scratch_spectral_analysis.py discord_raw_decoded.wav` to inspect it!");
 }

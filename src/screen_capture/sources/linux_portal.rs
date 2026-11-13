@@ -62,7 +62,7 @@ pub fn init_wayland_portal_screencast(target_w: u32, target_h: u32, target_fps: 
         let rt = match tokio::runtime::Builder::new_multi_thread().worker_threads(2).enable_all().build() {
             Ok(r) => r,
             Err(e) => {
-                log::error!("Falha ao criar tokio runtime para Portal ScreenCast: {:?}", e);
+                log::error!("Failed to create tokio runtime for ScreenCast Portal: {:?}", e);
                 PORTAL_INITIALIZED.store(false, std::sync::atomic::Ordering::SeqCst);
                 return;
             }
@@ -83,18 +83,18 @@ pub fn init_wayland_portal_screencast(target_w: u32, target_h: u32, target_fps: 
             use std::process::{Command, Stdio};
             use std::io::Read;
 
-            log::info!("📡 Solicitando sessão nativa do XDG Desktop Portal ScreenCast via conexão D-Bus dedicada...");
+            log::info!("📡 Requesting a native XDG Desktop Portal ScreenCast session over a dedicated D-Bus connection...");
             let conn = match ashpd::zbus::connection::Builder::session() {
                 Ok(b) => match b.build().await {
                     Ok(c) => c,
                     Err(e) => {
-                        log::error!("Falha ao estabelecer conexão D-Bus privada para Portal: {:?}", e);
+                        log::error!("Failed to establish a private D-Bus connection for the Portal: {:?}", e);
                         PORTAL_INITIALIZED.store(false, std::sync::atomic::Ordering::SeqCst);
                         return;
                     }
                 },
                 Err(e) => {
-                    log::error!("Falha ao construir builder D-Bus para Portal: {:?}", e);
+                    log::error!("Failed to build D-Bus builder for the Portal: {:?}", e);
                     PORTAL_INITIALIZED.store(false, std::sync::atomic::Ordering::SeqCst);
                     return;
                 }
@@ -103,7 +103,7 @@ pub fn init_wayland_portal_screencast(target_w: u32, target_h: u32, target_fps: 
             let proxy = match Screencast::with_connection(conn).await {
                 Ok(p) => p,
                 Err(e) => {
-                    log::error!("Falha ao conectar no Screencast Portal: {:?}", e);
+                    log::error!("Failed to connect to the Screencast Portal: {:?}", e);
                     PORTAL_INITIALIZED.store(false, std::sync::atomic::Ordering::SeqCst);
                     return;
                 }
@@ -112,7 +112,7 @@ pub fn init_wayland_portal_screencast(target_w: u32, target_h: u32, target_fps: 
             let session = match proxy.create_session(CreateSessionOptions::default()).await {
                 Ok(s) => s,
                 Err(e) => {
-                    log::error!("Falha ao criar sessão do ScreenCast: {:?}", e);
+                    log::error!("Failed to create ScreenCast session: {:?}", e);
                     PORTAL_INITIALIZED.store(false, std::sync::atomic::Ordering::SeqCst);
                     return;
                 }
@@ -126,7 +126,7 @@ pub fn init_wayland_portal_screencast(target_w: u32, target_h: u32, target_fps: 
                 .set_persist_mode(PersistMode::DoNot);
 
             if let Err(e) = proxy.select_sources(&session, select_opts).await {
-                log::error!("Falha ao selecionar fontes de captura no Portal: {:?}", e);
+                log::error!("Failed to select capture sources in the Portal: {:?}", e);
                 let _ = session.close().await;
                 PORTAL_INITIALIZED.store(false, std::sync::atomic::Ordering::SeqCst);
                 return;
@@ -136,7 +136,7 @@ pub fn init_wayland_portal_screencast(target_w: u32, target_h: u32, target_fps: 
                 Ok(r) => match r.response() {
                     Ok(resp) => resp,
                     Err(e) => {
-                        log::error!("Resposta de erro do Portal ScreenCast: {:?}", e);
+                        log::error!("Error response from the ScreenCast Portal: {:?}", e);
                         let _ = session.close().await;
                         PORTAL_CANCELLED.store(true, std::sync::atomic::Ordering::SeqCst);
                         PORTAL_INITIALIZED.store(false, std::sync::atomic::Ordering::SeqCst);
@@ -144,7 +144,7 @@ pub fn init_wayland_portal_screencast(target_w: u32, target_h: u32, target_fps: 
                     }
                 },
                 Err(e) => {
-                    log::error!("Falha ao iniciar captura no Portal ScreenCast: {:?}", e);
+                    log::error!("Failed to start capture in the ScreenCast Portal: {:?}", e);
                     let _ = session.close().await;
                     PORTAL_CANCELLED.store(true, std::sync::atomic::Ordering::SeqCst);
                     PORTAL_INITIALIZED.store(false, std::sync::atomic::Ordering::SeqCst);
@@ -155,7 +155,7 @@ pub fn init_wayland_portal_screencast(target_w: u32, target_h: u32, target_fps: 
             let stream = match response.streams().first() {
                 Some(s) => s,
                 None => {
-                    log::error!("Nenhum stream retornado pelo Portal ScreenCast");
+                    log::error!("No stream returned by the ScreenCast Portal");
                     let _ = session.close().await;
                     PORTAL_CANCELLED.store(true, std::sync::atomic::Ordering::SeqCst);
                     PORTAL_INITIALIZED.store(false, std::sync::atomic::Ordering::SeqCst);
@@ -167,7 +167,7 @@ pub fn init_wayland_portal_screencast(target_w: u32, target_h: u32, target_fps: 
             let pw_fd = match proxy.open_pipe_wire_remote(&session, OpenPipeWireRemoteOptions::default()).await {
                 Ok(fd) => fd,
                 Err(e) => {
-                    log::error!("Falha ao abrir PipeWire Remote: {:?}", e);
+                    log::error!("Failed to open PipeWire Remote: {:?}", e);
                     let _ = session.close().await;
                     PORTAL_CANCELLED.store(true, std::sync::atomic::Ordering::SeqCst);
                     PORTAL_INITIALIZED.store(false, std::sync::atomic::Ordering::SeqCst);
@@ -183,7 +183,7 @@ pub fn init_wayland_portal_screencast(target_w: u32, target_h: u32, target_fps: 
                 }
             }
 
-            log::info!("🎉 Conectando GStreamer ao PipeWire Node ID={}, FD={} ({}x{} @ {} FPS)...", node_id, raw_fd, target_w, target_h, target_fps);
+            log::info!("🎉 Connecting GStreamer to PipeWire Node ID={}, FD={} ({}x{} @ {} FPS)...", node_id, raw_fd, target_w, target_h, target_fps);
 
             let (dst_w, dst_h) = (target_w, target_h);
             let frame_size = (dst_w * dst_h * 4) as usize;
@@ -234,7 +234,7 @@ pub fn init_wayland_portal_screencast(target_w: u32, target_h: u32, target_fps: 
             {
                 Ok(c) => c,
                 Err(e) => {
-                    log::error!("Falha ao iniciar pipeline GStreamer PipeWire: {:?}", e);
+                    log::error!("Failed to start GStreamer PipeWire pipeline: {:?}", e);
                     let _ = session.close().await;
                     PORTAL_CANCELLED.store(true, std::sync::atomic::Ordering::SeqCst);
                     PORTAL_INITIALIZED.store(false, std::sync::atomic::Ordering::SeqCst);
@@ -282,24 +282,24 @@ pub fn init_wayland_portal_screencast(target_w: u32, target_h: u32, target_fps: 
             let mut last_local_preview_ts = std::time::Instant::now() - std::time::Duration::from_secs(1);
             let mut got_first_frame = false;
 
-            log::info!("⏳ Aguardando primeiro quadro do GStreamer PipeWire (timeout 10s)...");
+            log::info!("⏳ Waiting for the first frame from GStreamer PipeWire (10s timeout)...");
 
             while PORTAL_INITIALIZED.load(std::sync::atomic::Ordering::Relaxed) && stdout.read_exact(&mut raw_buf).is_ok() {
                 if !got_first_frame {
                     got_first_frame = true;
-                    log::info!("✅ Primeiro quadro do GStreamer PipeWire recebido com sucesso!");
+                    log::info!("✅ First GStreamer PipeWire frame received successfully!");
                 }
                 pw_frame_count += 1;
                 let now = std::time::Instant::now();
                 if now.duration_since(last_pw_stats) >= std::time::Duration::from_secs(1) {
                     let elapsed_s = now.duration_since(last_pw_stats).as_secs_f64();
                     let fps = (pw_frame_count as f64) / elapsed_s;
-                    log::info!("📊 [TELEMETRIA] PipeWire GStreamer Source: {:.1} FPS ({} frames em {:.2}s)", fps, pw_frame_count, elapsed_s);
+                    log::info!("📊 [TELEMETRY] PipeWire GStreamer Source: {:.1} FPS ({} frames in {:.2}s)", fps, pw_frame_count, elapsed_s);
                     pw_frame_count = 0;
                     last_pw_stats = now;
                 }
 
-                // Despacha miniatura da interface local apenas periodicamente (~7 FPS) para eliminar 500 MB/s de alocação
+                // Dispatch the local UI thumbnail only periodically (~7 FPS) to eliminate 500 MB/s of allocation
                 if now.duration_since(last_local_preview_ts) >= std::time::Duration::from_millis(150) {
                     last_local_preview_ts = now;
                     if let Ok(cb_guard) = PORTAL_LOCAL_CB.lock() {
@@ -308,7 +308,7 @@ pub fn init_wayland_portal_screencast(target_w: u32, target_h: u32, target_fps: 
                             let bytes = pixel_buffer.make_mut_bytes();
                             bytes.copy_from_slice(&raw_buf);
                             for chunk in bytes.chunks_exact_mut(4) {
-                                chunk.swap(0, 2); // BGRA -> RGBA para exibição na UI Slint
+                                chunk.swap(0, 2); // BGRA -> RGBA for display in the Slint UI
                             }
                             if let Some(digit) = get_test_watermark_digit() {
                                 draw_test_watermark(pixel_buffer.make_mut_slice(), &mut raw_buf, dst_w, dst_h, digit);
@@ -331,14 +331,14 @@ pub fn init_wayland_portal_screencast(target_w: u32, target_h: u32, target_fps: 
             }
 
             if !got_first_frame {
-                log::error!("❌ GStreamer PipeWire encerrou sem produzir nenhum quadro! Pipeline falhou.");
+                log::error!("❌ GStreamer PipeWire exited without producing any frame! Pipeline failed.");
                 // Check if child exited with an error
                 if let Ok(mut lock) = PORTAL_CHILD.lock() {
                     if let Some(ref mut child) = *lock {
                         match child.try_wait() {
                             Ok(Some(status)) => log::error!("❌ GStreamer exit status: {}", status),
-                            Ok(None) => log::warn!("⚠️ GStreamer ainda está rodando mas stdout fechou"),
-                            Err(e) => log::error!("❌ Erro ao verificar status do GStreamer: {:?}", e),
+                            Ok(None) => log::warn!("⚠️ GStreamer is still running but stdout closed"),
+                            Err(e) => log::error!("❌ Error checking GStreamer status: {:?}", e),
                         }
                     }
                 }
@@ -351,7 +351,7 @@ pub fn init_wayland_portal_screencast(target_w: u32, target_h: u32, target_fps: 
                 }
             }
             let _ = session.close().await;
-            log::info!("🛑 Sessão do XDG Desktop Portal ScreenCast fechada com sucesso via D-Bus!");
+            log::info!("🛑 XDG Desktop Portal ScreenCast session closed successfully over D-Bus!");
             PORTAL_INITIALIZED.store(false, std::sync::atomic::Ordering::SeqCst);
         });
     });
@@ -367,7 +367,7 @@ pub fn list_screens() -> Vec<MonitorItemInfo> {
             let root = &conn.setup().roots[screen_num];
             screens.push(MonitorItemInfo {
                 id: 0,
-                name: "Tela Principal".to_string(),
+                name: "Main Screen".to_string(),
                 resolution: format!("{} × {}", root.width_in_pixels, root.height_in_pixels),
                 is_primary: true,
                 hwnd: root.root as isize,
@@ -378,7 +378,7 @@ pub fn list_screens() -> Vec<MonitorItemInfo> {
     if screens.is_empty() {
         screens.push(MonitorItemInfo {
             id: 0,
-            name: "Tela 1 (Principal)".to_string(),
+            name: "Screen 1 (Primary)".to_string(),
             resolution: "1920 × 1080".to_string(),
             is_primary: true,
             hwnd: 0,
@@ -395,7 +395,7 @@ pub fn list_capturable_windows() -> Vec<CapturableWindowItem> {
     {
         windows.push(CapturableWindowItem {
             id: "0".to_string(),
-            title: "Janela Ativa / Desktop".to_string(),
+            title: "Active Window / Desktop".to_string(),
             app_name: "X11 / Wayland".to_string(),
             icon_rgba: None,
         });

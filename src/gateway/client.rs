@@ -148,7 +148,7 @@ impl GatewayClient {
         }
 
         let _prefix_len = token.len().min(12);
-        info!("Token sanitizado carregado com sucesso (tamanho: {} chars).", token.len());
+        info!("Sanitized token loaded successfully (size: {} chars).", token.len());
 
         Self {
             token,
@@ -173,13 +173,13 @@ impl GatewayClient {
         let voice_gid = self.voice_guild_id.lock().unwrap().clone().unwrap_or_default();
         let voice_cid = self.voice_channel_id.lock().unwrap().clone().unwrap_or_default();
 
-        info!("Status de disparo de voz: user_id={:?}, sid={:?}, token={:?}, ep={:?}, gid='{}', cid='{}'",
+        info!("Voice trigger status: user_id={:?}, sid={:?}, token={:?}, ep={:?}, gid='{}', cid='{}'",
             user_id.is_some(), voice_sid.is_some(), voice_tok.is_some(), voice_ep.is_some(), voice_gid, voice_cid);
 
         if let (Some(uid), Some(sid), Some(tok), Some(ep)) = (user_id, voice_sid, voice_tok, voice_ep) {
             let effective_gid = if voice_gid.is_empty() || voice_gid == "@me" { voice_cid.clone() } else { voice_gid };
             if !voice_cid.is_empty() || !effective_gid.is_empty() {
-                info!("⚡ TODAS AS CREDENCIAIS DE VOZ PRONTAS! Conectando à Voice Gateway no endpoint {}...", ep);
+                info!("⚡ ALL VOICE CREDENTIALS READY! Connecting to the Voice Gateway at endpoint {}...", ep);
                 *self.voice_token.lock().unwrap() = None;
                 *self.voice_session_id.lock().unwrap() = None;
 
@@ -193,7 +193,7 @@ impl GatewayClient {
     }
 
     pub async fn start(self: Arc<Self>, mut cmd_rx: mpsc::Receiver<GatewayCommand>) {
-        // Spawn GatewayCommand listener loop (permanece vivo entre reconexões do WebSocket)
+        // Spawn GatewayCommand listener loop (stays alive across WebSocket reconnections)
         let client_cmd = Arc::clone(&self);
         tokio::spawn(async move {
             while let Some(cmd) = cmd_rx.recv().await {
@@ -217,10 +217,10 @@ impl GatewayClient {
                         };
 
                         if is_channel_change {
-                            // Incrementa session ID para cancelar tarefas antigas de áudio UDP
+                            // Increments the session ID to cancel old UDP audio tasks
                             CURRENT_VOICE_SESSION_ID.fetch_add(1, Ordering::SeqCst);
 
-                            // Reset de credenciais de voz para garantir handshake limpo apenas em troca/desconexão
+                            // Resets voice credentials to guarantee a clean handshake only on switch/disconnect
                             *client_cmd.voice_token.lock().unwrap() = None;
                             *client_cmd.voice_session_id.lock().unwrap() = None;
                             *client_cmd.voice_endpoint.lock().unwrap() = None;
@@ -244,12 +244,12 @@ impl GatewayClient {
                             }
                         });
 
-                        info!("📡 Enviando OP 4 VoiceStateUpdate à Gateway: {}", payload);
+                        info!("📡 Sending OP 4 VoiceStateUpdate to the Gateway: {}", payload);
                         if let Some(tx) = client_cmd.ws_tx.lock().await.as_ref() {
                             let _ = tx.send(Message::Text(payload.to_string().into())).await;
                         }
 
-                        // 🛡️ Watchdog Anti-Estado Fantasma: Apenas ao conectar a um NOVO canal
+                        // 🛡️ Anti-Ghost-State Watchdog: only when connecting to a NEW channel
                         if is_channel_change {
                             if let Some(target_cid) = channel_id {
                                 let client_watchdog = Arc::clone(&client_cmd);
@@ -262,7 +262,7 @@ impl GatewayClient {
                                     };
 
                                     if is_still_pending {
-                                        warn!("⚠️ [VOICE WATCHDOG] Detectado estado fantasma/timeout na Gateway! Forçando reset OP 4 para reconexão limpa...");
+                                        warn!("⚠️ [VOICE WATCHDOG] Ghost state/timeout detected on the Gateway! Forcing an OP 4 reset for a clean reconnection...");
                                         IS_WATCHDOG_RESETTING.store(true, Ordering::SeqCst);
                                         let effective_gid = if target_gid.trim().is_empty() || target_gid == "@me" {
                                             serde_json::Value::Null
@@ -302,19 +302,19 @@ impl GatewayClient {
         // Survives reconnections: RESUME replays what came after it.
         let last_seq_arc = Arc::new(std::sync::atomic::AtomicI64::new(-1));
 
-        // Loop Infinito de Auto-Reconexão da Gateway
+        // Infinite Auto-Reconnection loop for the Gateway
         loop {
             let resuming = self.resume.lock().unwrap().clone().filter(|_| last_seq_arc.load(Ordering::Relaxed) >= 0);
             let url = resuming.as_ref().map(|r| resume_url(&r.url)).unwrap_or_else(|| GATEWAY_URL.to_string());
             if resuming.is_some() {
-                info!("Reconectando à Gateway v9 do Discord para retomar a sessão...");
+                info!("Reconnecting to the Discord Gateway v9 to resume the session...");
             } else {
-                info!("Conectando à Gateway v9 do Discord...");
+                info!("Connecting to the Discord Gateway v9...");
             }
 
             match connect_async(url.as_str()).await {
                 Ok((ws_stream, _)) => {
-                    info!("Conexão WebSocket estabelecida com sucesso!");
+                    info!("WebSocket connection established successfully!");
                     crate::screen_capture::invalidate_cached_stun_address();
                     crate::screen_capture::force_signaling_broadcast();
                     let (mut write, mut read) = ws_stream.split();
@@ -322,11 +322,11 @@ impl GatewayClient {
 
                     *self.ws_tx.lock().await = Some(ws_out_tx.clone());
 
-                    // Worker para envio ordenado de mensagens no WebSocket
+                    // Worker for sending ordered messages on the WebSocket
                     let writer_task = tokio::spawn(async move {
                         while let Some(msg) = ws_out_rx.recv().await {
                             if let Err(e) = write.send(msg).await {
-                                warn!("Falha ao enviar mensagem no WebSocket: {:?}", e);
+                                warn!("Failed to send message on the WebSocket: {:?}", e);
                                 break;
                             }
                         }
@@ -338,7 +338,7 @@ impl GatewayClient {
                     while let Some(msg_result) = read.next().await {
                         #[cfg(feature = "automation")]
                         if crate::utils::test_hooks::DROP_GATEWAY.swap(false, Ordering::Relaxed) {
-                            warn!("🤖 [AUTOMATION] Conexão com a Gateway abandonada (teste de queda)");
+                            warn!("🤖 [AUTOMATION] Connection to the Gateway abandoned (drop test)");
                             break;
                         }
                         match msg_result {
@@ -370,7 +370,7 @@ impl GatewayClient {
                                                 .as_u64()
                                                 .unwrap_or(41250);
 
-                                            info!("Heartbeat interval recebido: {} ms", heartbeat_interval);
+                                            info!("Heartbeat interval received: {} ms", heartbeat_interval);
 
                                             // Send initial Heartbeat (Opcode 1)
                                             let last_s = last_seq_arc.load(Ordering::Relaxed);
@@ -390,7 +390,7 @@ impl GatewayClient {
                                                         "seq": last_seq_arc.load(Ordering::Relaxed)
                                                     }
                                                 });
-                                                info!("Enviando RESUME para a Gateway (seq {})...", last_seq_arc.load(Ordering::Relaxed));
+                                                info!("Sending RESUME to the Gateway (seq {})...", last_seq_arc.load(Ordering::Relaxed));
                                                 let _ = ws_out_tx.send(Message::Text(resume.to_string().into())).await;
                                             } else {
                                             // Send Identify Payload (Opcode 2) for Discord User Tokens
@@ -413,7 +413,7 @@ impl GatewayClient {
                                                 }
                                             });
 
-                                            info!("Enviando payload IDENTIFY v9 para a Gateway...");
+                                            info!("Sending IDENTIFY v9 payload to the Gateway...");
                                             let _ = ws_out_tx.send(Message::Text(identify.to_string().into())).await;
                                             }
 
@@ -444,17 +444,17 @@ impl GatewayClient {
                                         }
                                         7 => {
                                             // Opcode 7: RECONNECT. The session stays; resume it on a new connection.
-                                            info!("🔁 [GATEWAY] Discord pediu reconexão; a sessão será retomada.");
+                                            info!("🔁 [GATEWAY] Discord requested a reconnection; the session will be resumed.");
                                             break;
                                         }
                                         9 => {
                                             // Opcode 9: INVALID SESSION. `d` says whether it can still be resumed.
                                             if value["d"].as_bool() != Some(true) {
-                                                warn!("⚠️ [GATEWAY] Sessão inválida; será aberta uma nova.");
+                                                warn!("⚠️ [GATEWAY] Invalid session; a new one will be opened.");
                                                 *self.resume.lock().unwrap() = None;
                                                 last_seq_arc.store(-1, Ordering::Relaxed);
                                             } else {
-                                                warn!("⚠️ [GATEWAY] Sessão inválida, mas ainda retomável.");
+                                                warn!("⚠️ [GATEWAY] Invalid session, but still resumable.");
                                             }
                                             // Discord asks for a 1-5 s wait before identifying again.
                                             sleep(Duration::from_millis(1000 + rand::random::<u64>() % 4000)).await;
@@ -469,7 +469,7 @@ impl GatewayClient {
                                                     url: rurl.unwrap_or("wss://gateway.discord.gg").to_string(),
                                                 });
                                             } else if value["t"].as_str() == Some("RESUMED") {
-                                                info!("✅ [GATEWAY] Sessão retomada; chamada de voz e transmissão continuam.");
+                                                info!("✅ [GATEWAY] Session resumed; the voice call and the stream continue.");
                                             }
                                             self.handle_event(&value).await;
                                         }
@@ -477,7 +477,7 @@ impl GatewayClient {
                                 }
                             }
                             Ok(Message::Close(close_frame)) => {
-                                warn!("Gateway fechou a conexão (Close Frame): {:?}", close_frame);
+                                warn!("Gateway closed the connection (Close Frame): {:?}", close_frame);
                                 if close_frame.as_ref().is_some_and(|f| close_ends_session(u16::from(f.code))) {
                                     *self.resume.lock().unwrap() = None;
                                     last_seq_arc.store(-1, Ordering::Relaxed);
@@ -485,7 +485,7 @@ impl GatewayClient {
                                 break;
                             }
                             Err(e) => {
-                                error!("Erro de leitura no WebSocket: {:?}", e);
+                                error!("WebSocket read error: {:?}", e);
                                 break;
                             }
                             _ => {}
@@ -495,7 +495,7 @@ impl GatewayClient {
                     if let Some(h) = hb_task_handle { h.abort(); }
                     writer_task.abort();
                     *self.ws_tx.lock().await = None;
-                    warn!("⚠️ [GATEWAY] Conexão com o Discord perdida. Tentando reconectar automaticamente em 2s...");
+                    warn!("⚠️ [GATEWAY] Connection to Discord lost. Trying to reconnect automatically in 2s...");
                 }
                 Err(e) => {
                     if resuming.is_some() {
@@ -504,7 +504,7 @@ impl GatewayClient {
                             r.url = "wss://gateway.discord.gg".to_string();
                         }
                     }
-                    warn!("⚠️ [GATEWAY] Falha ao conectar na Gateway do Discord: {:?}. Tentando reconectar em 3s...", e);
+                    warn!("⚠️ [GATEWAY] Failed to connect to the Discord Gateway: {:?}. Trying to reconnect in 3s...", e);
                     tokio::time::sleep(Duration::from_secs(3)).await;
                 }
             }
@@ -575,7 +575,7 @@ impl GatewayClient {
                                     if u_id > 0 && !c_str.is_empty() {
                                         if let Ok(mut gvs) = get_guild_voice_states_store().lock() {
                                             gvs.insert(u_id, c_str.clone());
-                                            info!("📌 [READY] Pré-carregado estado de voz: User {} -> Canal {}", u_id, c_str);
+                                            info!("📌 [READY] Preloaded voice state: User {} -> Channel {}", u_id, c_str);
                                         }
                                     }
                                 }
@@ -589,13 +589,13 @@ impl GatewayClient {
                     } else {
                         format!("{}#{}", global_name, discriminator)
                     };
-                    info!("Login BEM-SUCEDIDO na Gateway! Usuário: {} (@{})", global_name, username);
+                    info!("Login SUCCEEDED on the Gateway! User: {} (@{})", global_name, username);
                     let _ = self.event_tx.send(GatewayEvent::Connected { user_tag }).await;
                 }
                 "READY_SUPPLEMENTAL" => {
-                    info!("📌 Evento READY_SUPPLEMENTAL recebido da Gateway! Keys: {:?}", v["d"].as_object().map(|m| m.keys().collect::<Vec<_>>()));
+                    info!("📌 READY_SUPPLEMENTAL event received from the Gateway! Keys: {:?}", v["d"].as_object().map(|m| m.keys().collect::<Vec<_>>()));
                     if let Some(vs_arr) = v["d"]["voice_states"].as_array() {
-                        info!("📌 [READY_SUPPLEMENTAL] Encontrados {} voice_states na raiz!", vs_arr.len());
+                        info!("📌 [READY_SUPPLEMENTAL] Found {} voice_states at the root!", vs_arr.len());
                         for vs in vs_arr {
                             let u_id: u64 = if let Some(s) = vs["user_id"].as_str() {
                                 s.parse().unwrap_or(0)
@@ -612,13 +612,13 @@ impl GatewayClient {
                             if u_id > 0 && !c_str.is_empty() {
                                 if let Ok(mut gvs) = get_guild_voice_states_store().lock() {
                                     gvs.insert(u_id, c_str.clone());
-                                    info!("📌 [READY_SUPPLEMENTAL] Estado de voz pré-carregado: User {} -> Canal {}", u_id, c_str);
+                                    info!("📌 [READY_SUPPLEMENTAL] Preloaded voice state: User {} -> Channel {}", u_id, c_str);
                                 }
                             }
                         }
                     }
                     if let Some(guilds_arr) = v["d"]["guilds"].as_array() {
-                        info!("📌 [READY_SUPPLEMENTAL] Encontrados {} guilds no READY_SUPPLEMENTAL!", guilds_arr.len());
+                        info!("📌 [READY_SUPPLEMENTAL] Found {} guilds in READY_SUPPLEMENTAL!", guilds_arr.len());
                         for g in guilds_arr {
                             if let Some(vs_arr) = g["voice_states"].as_array() {
                                 info!("📌 [READY_SUPPLEMENTAL] Guild {} tem {} voice_states!", g["id"], vs_arr.len());
@@ -638,7 +638,7 @@ impl GatewayClient {
                                     if u_id > 0 && !c_str.is_empty() {
                                         if let Ok(mut gvs) = get_guild_voice_states_store().lock() {
                                             gvs.insert(u_id, c_str.clone());
-                                            info!("📌 [READY_SUPPLEMENTAL] Estado de voz pré-carregado: User {} -> Canal {}", u_id, c_str);
+                                            info!("📌 [READY_SUPPLEMENTAL] Preloaded voice state: User {} -> Channel {}", u_id, c_str);
                                         }
                                     }
                                 }
@@ -699,7 +699,7 @@ impl GatewayClient {
                         if !display_name.is_empty() {
                             register_user_name(event_uid, display_name.clone());
                             register_user_avatar(event_uid, v["d"]["member"]["user"]["avatar"].as_str().unwrap_or(""));
-                            info!("VOICE_STATE_UPDATE: Registrado nome de usuário {} -> {}", event_uid, display_name);
+                            info!("VOICE_STATE_UPDATE: Registered username {} -> {}", event_uid, display_name);
                         }
 
                         let event_chan = if let Some(s) = v["d"]["channel_id"].as_str() {
@@ -712,7 +712,7 @@ impl GatewayClient {
 
                         let previous_chan = if let Ok(mut gvs) = get_guild_voice_states_store().lock() {
                             if let Some(ref cid) = event_chan {
-                                info!("📌 [VOICE_STATE_UPDATE] User {} -> Canal {}", event_uid, cid);
+                                info!("📌 [VOICE_STATE_UPDATE] User {} -> Channel {}", event_uid, cid);
                                 gvs.insert(event_uid, cid.clone())
                             } else {
                                 gvs.remove(&event_uid)
@@ -724,13 +724,13 @@ impl GatewayClient {
 
                         if let Some(ref my_cid) = my_voice_chan {
                             if event_chan.as_deref() == Some(my_cid.as_str()) {
-                                info!("👥 [VOICE CHANNEL JOIN] Usuário {} ({}) entrou no nosso canal de voz!", event_uid, display_name);
+                                info!("👥 [VOICE CHANNEL JOIN] User {} ({}) joined our voice channel!", event_uid, display_name);
                                 register_voice_participant(event_uid as u32, event_uid);
                             } else {
                                 // Voice states of every server arrive here: only someone who was
                                 // in our channel left it.
                                 if previous_chan.as_deref() == Some(my_cid.as_str()) {
-                                    info!("👥 [VOICE CHANNEL LEAVE] Usuário {} saiu do nosso canal de voz!", event_uid);
+                                    info!("👥 [VOICE CHANNEL LEAVE] User {} left our voice channel!", event_uid);
                                 }
                                 remove_voice_participant_by_user_id(event_uid);
                             }
@@ -745,18 +745,18 @@ impl GatewayClient {
                             let my_active_cid = self.voice_channel_id.lock().unwrap().clone();
 
                             if let Some(sid) = v["d"]["session_id"].as_str() {
-                                info!("VOICE_STATE_UPDATE do meu usuário recebido! Session ID: {}, Channel: {:?}, Guild: {:?}, MyActiveGuild: {:?}", sid, event_chan, event_gid, my_active_gid);
+                                info!("VOICE_STATE_UPDATE of my own user received! Session ID: {}, Channel: {:?}, Guild: {:?}, MyActiveGuild: {:?}", sid, event_chan, event_gid, my_active_gid);
                                 if let Some(cid) = event_chan {
                                     *self.voice_session_id.lock().unwrap() = Some(sid.to_string());
                                     *self.voice_channel_id.lock().unwrap() = Some(cid.to_string());
                                     if let Some(ref gid) = event_gid {
                                         *self.voice_guild_id.lock().unwrap() = Some(gid.clone());
                                     }
-                                    // Só reconectar ao voice gateway se não estivermos conectados
+                                    // Only reconnect to the voice gateway if we are not already connected
                                     if !is_connected_to_voice() {
                                         self.try_trigger_voice_connect();
                                     } else {
-                                        info!("🔇 VOICE_STATE_UPDATE: já conectado ao voice gateway, apenas atualizando session_id (mute/unmute).");
+                                        info!("🔇 VOICE_STATE_UPDATE: already connected to the voice gateway, just updating session_id (mute/unmute).");
                                     }
                                 } else {
                                     let is_matching_guild = match (&my_active_gid, &event_gid) {
@@ -767,13 +767,13 @@ impl GatewayClient {
 
                                     if my_active_cid.is_some() && is_matching_guild {
                                         if IS_WATCHDOG_RESETTING.swap(false, Ordering::SeqCst) {
-                                            info!("🛡️ [VOICE_STATE_UPDATE] Reset interno do Watchdog em andamento. Limpando credenciais antigas sem desconectar a UI...");
+                                            info!("🛡️ [VOICE_STATE_UPDATE] Internal Watchdog reset in progress. Clearing old credentials without disconnecting the UI...");
                                             CURRENT_VOICE_SESSION_ID.fetch_add(1, Ordering::SeqCst);
                                             *self.voice_session_id.lock().unwrap() = None;
                                             *self.voice_token.lock().unwrap() = None;
                                             *self.voice_endpoint.lock().unwrap() = None;
                                         } else {
-                                            info!("🚪 [VOICE_STATE_UPDATE] Desconectado da sala de voz da guild {:?}", my_active_gid);
+                                            info!("🚪 [VOICE_STATE_UPDATE] Disconnected from the voice room of guild {:?}", my_active_gid);
                                             CURRENT_VOICE_SESSION_ID.fetch_add(1, Ordering::SeqCst);
                                             *self.voice_session_id.lock().unwrap() = None;
                                             *self.voice_token.lock().unwrap() = None;
@@ -785,9 +785,9 @@ impl GatewayClient {
                                         }
                                     } else if my_active_cid.is_none() {
                                         // Our own leave: the channel was already cleared locally.
-                                        info!("🚪 [VOICE_STATE_UPDATE] Saída do canal de voz confirmada pelo Discord.");
+                                        info!("🚪 [VOICE_STATE_UPDATE] Voice channel exit confirmed by Discord.");
                                     } else {
-                                        info!("🛡️ [VOICE_STATE_UPDATE] Ignorando evento de desconexão de outra guild ({:?}) enquanto estamos em ({:?})", event_gid, my_active_gid);
+                                        info!("🛡️ [VOICE_STATE_UPDATE] Ignoring a disconnection event from another guild ({:?}) while we are in ({:?})", event_gid, my_active_gid);
                                     }
                                 }
                             }
@@ -796,7 +796,7 @@ impl GatewayClient {
                     }
                 }
                 "VOICE_SERVER_UPDATE" => {
-                    info!("VOICE_SERVER_UPDATE bruto recebido: {:?}", v["d"]);
+                    info!("Raw VOICE_SERVER_UPDATE received: {:?}", v["d"]);
                     let token = v["d"]["token"].as_str().unwrap_or("").to_string();
                     let guild_id = v["d"]["guild_id"].as_str()
                         .or_else(|| v["d"]["channel_id"].as_str())
@@ -805,7 +805,7 @@ impl GatewayClient {
                     let endpoint = v["d"]["endpoint"].as_str().unwrap_or("").to_string();
 
                     if !token.is_empty() && !endpoint.is_empty() {
-                        info!("VOICE_SERVER_UPDATE processado com Sucesso! Endpoint: {}, Guild/Channel ID: {}", endpoint, guild_id);
+                        info!("VOICE_SERVER_UPDATE processed successfully! Endpoint: {}, Guild/Channel ID: {}", endpoint, guild_id);
                         *self.voice_token.lock().unwrap() = Some(token);
                         *self.voice_endpoint.lock().unwrap() = Some(endpoint);
                         if !guild_id.is_empty() {
@@ -819,7 +819,7 @@ impl GatewayClient {
                         }
                         self.try_trigger_voice_connect();
                     } else {
-                        warn!("VOICE_SERVER_UPDATE recebido com campos ausentes ou nulos: token_empty={}, endpoint_empty={}", token.is_empty(), endpoint.is_empty());
+                        warn!("VOICE_SERVER_UPDATE received with missing or null fields: token_empty={}, endpoint_empty={}", token.is_empty(), endpoint.is_empty());
                     }
                 }
                 "MESSAGE_CREATE" => {
@@ -896,9 +896,9 @@ impl GatewayClient {
                 "CALL_CREATE" | "CALL_UPDATE" => {
                     let channel_id = v["d"]["channel_id"].as_str().unwrap_or("").to_string();
                     let my_uid = self.user_id.lock().unwrap().clone().unwrap_or_default();
-                    info!("📞 {} recebido bruto: {:?}", t, v["d"]);
+                    info!("📞 {} received raw: {:?}", t, v["d"]);
 
-                    // Extrai IDs dos usuários presentes nos voice_states da chamada
+                    // Extracts the IDs of the users present in the call's voice_states
                     let voice_uids: Vec<String> = v["d"]["voice_states"]
                         .as_array()
                         .map(|arr| {
@@ -909,8 +909,8 @@ impl GatewayClient {
                         })
                         .unwrap_or_default();
 
-                    // Se eu mesmo já estiver na chamada deste canal (voice_channel_id já definido ou meu uid nos voice_states),
-                    // eu sou o chamador ou já atendi, logo NÃO exibir modal de chamada recebida.
+                    // If I myself am already in this channel's call (voice_channel_id already set or my uid is in voice_states),
+                    // I am the caller or already answered, so do NOT show the incoming call modal.
                     let am_i_already_in_call = {
                         let cur_vc = self.voice_channel_id.lock().unwrap().clone();
                         cur_vc == Some(channel_id.clone()) || (!my_uid.is_empty() && voice_uids.contains(&my_uid))
@@ -937,31 +937,31 @@ impl GatewayClient {
                             .unwrap_or("")
                             .to_string();
 
-                        info!("📞 {} processado como chamada recebida! Canal: {}, Chamador preliminar: '{}'", t, channel_id, caller_name);
+                        info!("📞 {} processed as an incoming call! Channel: {}, Preliminary caller: '{}'", t, channel_id, caller_name);
                         let _ = self.event_tx.send(GatewayEvent::IncomingCall {
                             channel_id,
                             caller_name,
                         }).await;
                     } else {
-                        info!("📞 {} ignorado (já estou na chamada deste canal). Canal: {}", t, channel_id);
+                        info!("📞 {} ignored (I'm already in this channel's call). Channel: {}", t, channel_id);
                     }
                 }
                 "CALL_DELETE" => {
                     let channel_id = v["d"]["channel_id"].as_str().unwrap_or("").to_string();
                     if !channel_id.is_empty() {
-                        info!("📴 CALL_DELETE recebido no canal {}", channel_id);
+                        info!("📴 CALL_DELETE received in channel {}", channel_id);
                         let _ = self.event_tx.send(GatewayEvent::CallEnded { channel_id }).await;
                     }
                 }
                 "GUILD_CREATE" => {
                     let id = v["d"]["id"].as_str().unwrap_or("").to_string();
-                    let name = v["d"]["name"].as_str().unwrap_or("Servidor").to_string();
+                    let name = v["d"]["name"].as_str().unwrap_or("Server").to_string();
                     let mut channels = Vec::new();
 
                     if let Some(chans_arr) = v["d"]["channels"].as_array() {
                         for ch in chans_arr {
                             let ch_id = ch["id"].as_str().unwrap_or("").to_string();
-                            let ch_name = ch["name"].as_str().unwrap_or("canal").to_string();
+                            let ch_name = ch["name"].as_str().unwrap_or("channel").to_string();
                             let ch_type = ch["type"].as_u64().unwrap_or(0);
 
                             // type 0 = text, type 2 = voice, type 4 = category, type 5 = news, type 13 = stage, type 15 = forum
@@ -1024,7 +1024,7 @@ impl GatewayClient {
                             if uid > 0 && !cid_str.is_empty() {
                                 if let Ok(mut gvs) = get_guild_voice_states_store().lock() {
                                     gvs.insert(uid, cid_str.clone());
-                                    info!("📌 [GUILD_CREATE] Pré-carregado estado de voz: User {} -> Canal {}", uid, cid_str);
+                                    info!("📌 [GUILD_CREATE] Preloaded voice state: User {} -> Channel {}", uid, cid_str);
                                 }
                                 let mut display_name = String::new();
                                 if let Some(nick) = vs["member"]["nick"].as_str() {
@@ -1048,7 +1048,7 @@ impl GatewayClient {
                         }
                     }
 
-                    info!("Servidor carregado: '{}' ({} canais)", name, channels.len());
+                    info!("Server loaded: '{}' ({} channels)", name, channels.len());
 
                     let guild = GuildData { id, name, channels };
                     let _ = self.event_tx.send(GatewayEvent::GuildLoaded { guild }).await;

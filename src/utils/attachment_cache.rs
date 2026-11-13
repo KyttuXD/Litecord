@@ -26,7 +26,7 @@ pub fn get_attachment_cache() -> Arc<AttachmentCache> {
         temp_dir.push("temp_images");
 
         if let Err(e) = std::fs::create_dir_all(&temp_dir) {
-            warn!("Não foi possível criar diretório temporário de imagens: {}", e);
+            warn!("Could not create the temporary images directory: {}", e);
         }
 
         Arc::new(AttachmentCache {
@@ -297,7 +297,7 @@ fn decode_bytes_to_rgba(bytes: &[u8]) -> Option<DecodedImage> {
         let (w, h) = (dyn_img.width(), dyn_img.height());
         // Guard against decompression bombs / excessive dimensions causing OOM
         if w > 8192 || h > 8192 || (w as u64 * h as u64) > 25_000_000 {
-            log::warn!("Anexo de imagem com dimensões excessivas rejeitado por segurança: {}x{}", w, h);
+            log::warn!("Image attachment with excessive dimensions rejected for safety: {}x{}", w, h);
             return None;
         }
         let rgba = dyn_img.to_rgba8();

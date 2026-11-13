@@ -29,7 +29,7 @@ impl Drop for SharedDevice {
             self.context.ClearState();
             self.context.Flush();
         }
-        log::info!("🎞️ [GPU VIDEO] Dispositivo da GPU liberado (ninguém assiste pela GPU)");
+        log::info!("🎞️ [GPU VIDEO] GPU device released (nobody is watching through the GPU)");
         unsafe { report_live_objects(&self.device) };
     }
 }
@@ -62,7 +62,7 @@ pub fn shared_device() -> Result<Arc<SharedDevice>, HwError> {
         return Ok(d);
     }
     let d = Arc::new(unsafe { create()? });
-    log::info!("🎞️ [GPU VIDEO] Dispositivo da GPU criado");
+    log::info!("🎞️ [GPU VIDEO] GPU device created");
     *slot = Arc::downgrade(&d);
     Ok(d)
 }

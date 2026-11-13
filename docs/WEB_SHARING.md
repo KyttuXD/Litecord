@@ -1,46 +1,45 @@
-# Transmissão por link no navegador
+# Streaming by link in the browser
 
-Durante uma transmissão, use **Compartilhar na web → Copiar link**. Quem tem o link
-assiste sem conta do Discord. **Encerrar web** desconecta os navegadores e mantém a
-transmissão nativa; parar de transmitir ou sair da chamada também encerra a web.
-O som é o áudio do computador/janela selecionado na transmissão, sem adicionar o
-microfone ou capturar a chamada por um caminho separado. Se a captura de áudio do
-computador incluir a saída de uma chamada, esse som também pode entrar nela.
+During a stream, use **Share on the web → Copy link**. Anyone with the link
+watches without a Discord account. **End web** disconnects the browsers and keeps the
+native stream; stopping the stream or leaving the call also ends the web share.
+The sound is the audio of the computer/window selected in the stream, without adding the
+microphone or capturing the call through a separate path. If the computer audio capture
+includes a call's output, that sound may also go into it.
 
-O primeiro acesso inicia o vídeo sem som para respeitar a reprodução automática dos
-navegadores. Use **Ativar som**. Há controles de volume, reprodução e tela cheia.
-Até três espectadores podem assistir ao mesmo tempo, com uma cópia do upload por
-espectador. O link muda a cada sessão e para de funcionar quando ela termina.
+The first visit starts the video muted to respect browsers' autoplay rules. Use **Enable sound**. There are volume, playback and fullscreen controls.
+Up to three viewers can watch at the same time, with one copy of the upload per
+viewer. The link changes with every session and stops working when it ends.
 
-## Arquitetura
+## Architecture
 
-- Litecord ↔ Litecord continua com o protocolo existente.
-- `str0m` envia o H.264 do codificador existente por uma trilha WebRTC. Não há segundo
-  codificador de vídeo nem WebCodecs na página; o navegador decodifica um `<video>`.
-- O loopback existente alimenta um codificador Opus mono compartilhado, criado
-  somente enquanto há espectadores web. Suporta entrada de 44,1 e 48 kHz.
-- O worker existente serve `/watch` e roteia SDP em `/web/ws`. Nenhum áudio/vídeo
-  passa pelo worker. Não é necessário hospedar uma segunda página no GitHub Pages.
-- A chave AES-256-GCM fica no fragmento `#` do link. A sinalização é criptografada
-  antes do envio. O token de proprietário é independente dessa chave; conhecer o
-  link de espectador não permite registrar um transmissor naquela sala.
-- Antes de reservar uma vaga, o worker verifica uma prova derivada da chave e da
-  sala. A prova é `SHA-256("litecord-web-viewer-v1\0" || chave de 32 bytes || sala
-  ASCII)`; o transmissor registra somente o hash SHA-256 dessa prova. A chave AES
-  não vai ao worker. Uma prova ausente ou incorreta é recusada com status 403 sem
-  registrar socket na sala ou repassar uma oferta ao transmissor. A capacidade é
-  conferida novamente após o hash assíncrono para respeitar o limite sob concorrência.
-- O endereço público é descoberto por STUN no próprio socket WebRTC. Uma conexão
-  após um período sem espectadores refaz essa descoberta, sem heartbeat STUN ocioso.
-- Desligado: sem socket, thread ou timer de WebRTC. Ligado sem espectadores: só a
-  conexão de sinalização, com keepalive de 40 segundos; nenhum frame é copiado e
-  nenhum áudio é codificado. Os contadores da interface são atualizados por evento.
-- Filas limitadas evitam bloquear captura/codificação; perda local de um frame
-  invalida as referências e o envio espera outro quadro-chave.
+- Litecord ↔ Litecord keeps using the existing protocol.
+- `str0m` sends the existing encoder's H.264 over a WebRTC track. There is no second
+  video encoder nor WebCodecs on the page; the browser decodes a `<video>`.
+- The existing loopback feeds a shared mono Opus encoder, created
+  only while there are web viewers. It supports 44.1 and 48 kHz input.
+- The existing worker serves `/watch` and routes SDP on `/web/ws`. No audio/video
+  goes through the worker. There is no need to host a second page on GitHub Pages.
+- The AES-256-GCM key lives in the link's `#` fragment. Signaling is encrypted
+  before sending. The owner token is independent of that key; knowing the
+  viewer link does not allow registering a sender in that room.
+- Before reserving a slot, the worker verifies a proof derived from the key and the
+  room. The proof is `SHA-256("litecord-web-viewer-v1\0" || 32-byte key || ASCII
+  room)`; the sender registers only the SHA-256 hash of that proof. The AES key
+  does not go to the worker. A missing or incorrect proof is refused with status 403 without
+  registering a socket in the room or relaying an offer to the sender. Capacity is
+  checked again after the asynchronous hash to respect the limit under concurrency.
+- The public address is discovered through STUN on the WebRTC socket itself. A connection
+  after a period without viewers repeats this discovery, with no idle STUN heartbeat.
+- Off: no WebRTC socket, thread or timer. On with no viewers: only the
+  signaling connection, with a 40-second keepalive; no frame is copied and
+  no audio is encoded. The interface counters are updated by event.
+- Bounded queues avoid blocking capture/encoding; a local loss of a frame
+  invalidates the references and sending waits for another keyframe.
 
-## Validação local (Windows)
+## Local validation (Windows)
 
-Compile os testes, inicie o worker em outro terminal e rode o teste de navegador:
+Build the tests, start the worker in another terminal and run the browser test:
 
 ```powershell
 cargo test --release --lib screen_capture::web_share::tests --no-run
@@ -48,26 +47,26 @@ cd cloudflare
 npx wrangler dev --local --ip 127.0.0.1 --port 8787
 ```
 
-Na raiz, passe o executável de testes informado pelo Cargo:
+From the root, pass the test executable reported by Cargo:
 
 ```powershell
 node scripts/perf/web_share_e2e.cjs target/release/deps/litecord-<hash>.exe
 ```
 
-O teste usa Chrome headless, Playwright e Python, uma fonte H.264 sintética de
-640×360 a aproximadamente 12,5 FPS e uma senoide Opus de 440 Hz. Não usa contas,
-microfone ou captura de tela. Confere decodificação de vídeo/áudio, chave errada,
-três espectadores, recusa do quarto, reconexão de espectador, encerramento e link
-inválido. Artefatos e amostras de CPU/memória vão para `target/web-share-e2e/`.
-As amostras incluem a geração/codificação sintética: não são um benchmark de jogo
-nem uma estimativa do custo de 1080p60.
+The test uses headless Chrome, Playwright and Python, a synthetic H.264 source of
+640×360 at approximately 12.5 FPS and a 440 Hz Opus sine wave. It does not use accounts,
+a microphone or screen capture. It checks video/audio decoding, wrong key,
+three viewers, refusal of the fourth, viewer reconnection, shutdown and an invalid
+link. Artifacts and CPU/memory samples go to `target/web-share-e2e/`.
+The samples include the synthetic generation/encoding: they are not a game benchmark
+nor an estimate of the cost of 1080p60.
 
-Após a autenticação antes da admissão, passaram **48 testes Rust** (uma fixture
-ignorada por padrão), **seis testes do worker** e o fluxo completo no Chrome com
-worker local: H.264/Opus, chave errada, três espectadores, recusa do quarto,
-substituição de espectador e encerramento. A regressão da sinalização nativa
-também passou. As tentativas com prova ausente, errada ou malformada não registram
-espectador, e dez admissões simultâneas mantêm o limite de três.
+After authentication before admission, **48 Rust tests** passed (one fixture
+ignored by default), **six worker tests** and the full flow in Chrome with a
+local worker: H.264/Opus, wrong key, three viewers, refusal of the fourth,
+viewer replacement and shutdown. The native signaling regression
+also passed. Attempts with a missing, wrong or malformed proof do not register a
+viewer, and ten simultaneous admissions keep the limit of three.
 
 ```powershell
 cargo test --release --lib screen_capture::web_share::tests -- --skip browser_fixture
@@ -75,64 +74,64 @@ cd cloudflare
 npm test
 ```
 
-Para testar o aplicativo com o worker local, defina
-`LITECORD_WEB_SIGNALING_URL=ws://127.0.0.1:8787` ao iniciar uma build de teste. A
-automação `web_share_start` retorna imediatamente com `pending`; consulte `state`
-até `stream.web_url` estar disponível, ou `stream.web_error` indicar a falha.
+To test the application with the local worker, set
+`LITECORD_WEB_SIGNALING_URL=ws://127.0.0.1:8787` when starting a test build. The
+`web_share_start` automation returns immediately with `pending`; query `state`
+until `stream.web_url` is available, or `stream.web_error` indicates the failure.
 
-## Publicação e limites
+## Publishing and limits
 
-### Parada e reinício da sessão
+### Session stop and restart
 
-A parada retira os canais da sessão da interface e sinaliza o encerramento sem
-esperar a thread ou a rede. Cada início cria socket, canais, codificador e estado
-próprios; a limpeza de uma sessão anterior não altera a sessão atual. O fechamento
-do WebSocket tem limite de 50 ms em segundo plano.
+Stopping removes the session's channels from the interface and signals the shutdown without
+waiting for the thread or the network. Each start creates its own socket, channels, encoder and state;
+cleaning up a previous session does not affect the current one. Closing the
+WebSocket has a 50 ms limit in the background.
 
-Validação local em 17/10/2026: com um servidor que não confirma o fechamento,
-`stop()` retornou em **0,040 ms**. O teste também manteve uma nova sessão com três
-espectadores após a limpeza da anterior. Passaram **47 testes Rust** (uma fixture
-de navegador ignorada por padrão) e os **quatro testes do worker**. Este teste de
-parada não substitui a validação de captura real e dos navegadores.
+Local validation on 17/10/2026: with a server that does not acknowledge the close,
+`stop()` returned in **0.040 ms**. The test also kept a new session with three
+viewers after the previous one was cleaned up. **47 Rust tests** passed (one browser
+fixture ignored by default) and the **four worker tests**. This stop test does not
+replace validation of real capture and of the browsers.
 
-O servidor em produção precisa receber `cloudflare/worker.js`, `web-share.js`, a
-página e a regra de módulos HTML do `wrangler.toml`. O Wrangler empacota a página
-por importação. Nenhuma migration ou nova classe de Durable Object é necessária:
-as salas web usam o prefixo `web:` na classe existente e attachments que sobrevivem
-à hibernação. As rotas nativas `/ws` e `/health` continuam disponíveis.
+The production server needs to receive `cloudflare/worker.js`, `web-share.js`, the
+page and the HTML module rule from `wrangler.toml`. Wrangler bundles the page
+by import. No migration or new Durable Object class is needed:
+web rooms use the `web:` prefix in the existing class and attachments that survive
+hibernation. The native routes `/ws` and `/health` remain available.
 
-Compatibilidade do protocolo não significa ausência de interrupção no deploy: a
-[Cloudflare informa que atualizar o código reinicia os Durable Objects e desconecta
-os WebSockets](https://developers.cloudflare.com/durable-objects/best-practices/websockets/).
-O cliente nativo tenta reconectar. Levar isso em conta ao escolher o momento da publicação.
+Protocol compatibility does not mean no interruption on deploy:
+[Cloudflare states that updating the code restarts the Durable Objects and disconnects
+the WebSockets](https://developers.cloudflare.com/durable-objects/best-practices/websockets/).
+The native client tries to reconnect. Take this into account when choosing the time to publish.
 
-Decisão: manter um único worker e publicar suas mudanças juntas, depois de terminar
-o trabalho relacionado a ele. Por enquanto, não publicar. A variável
-`LITECORD_WEB_SIGNALING_URL` permite usar um worker local apenas para os testes web,
-sem alterar o endereço da sinalização nativa.
+Decision: keep a single worker and publish its changes together, after finishing
+the work related to it. For now, do not publish. The `LITECORD_WEB_SIGNALING_URL`
+variable allows using a local worker only for the web tests,
+without changing the native signaling address.
 
 ```powershell
 cd cloudflare
 npx wrangler deploy
 ```
 
-Não há TURN. NAT simétrico ou redes que bloqueiam UDP podem impedir a conexão;
-STUN não garante conectividade em qualquer rede. Uma queda da sinalização encerra
-a sessão; gere um novo link para reconectar. Falta validar uma transmissão real
-entre redes distintas, outros navegadores, Linux e o custo em resolução/FPS de jogo.
+There is no TURN. Symmetric NAT or networks that block UDP can prevent the connection;
+STUN does not guarantee connectivity on every network. A signaling drop ends
+the session; generate a new link to reconnect. Still to be validated: a real stream
+between distinct networks, other browsers, Linux and the cost at game resolution/FPS.
 
-## Troca manual de oferta/resposta, sem worker
+## Manual offer/answer exchange, without a worker
 
-Este é um modo de teste, ativado explicitamente. A transmissão continua saindo do
-codificador real do app. STUN descobre endereços, mas nenhum servidor faz sinalização.
+This is a test mode, enabled explicitly. The stream still comes out of the
+app's real encoder. STUN discovers addresses, but no server does signaling.
 
-Com o executável de teste já compilado em `target/web-share-e2e/litecord-web-test.exe`:
+With the test executable already built at `target/web-share-e2e/litecord-web-test.exe`:
 
 ```powershell
 powershell -File scripts/perf/start_web_manual.ps1
 ```
 
-Para recompilar essa build manualmente:
+To rebuild this build manually:
 
 ```powershell
 cargo build --release --bin litecord --features automation
@@ -141,68 +140,68 @@ $env:LITECORD_AUTOMATION_PORT = '39091'
 .\target\release\litecord.exe
 ```
 
-Inicie a transmissão e clique em **Compartilhar na web → Copiar link**. Abra o link
-local `file:///…#manual` e execute o comando abaixo no terminal:
+Start the stream and click **Share on the web → Copy link**. Open the local link
+`file:///…#manual` and run the command below in the terminal:
 
 ```powershell
 powershell -File scripts/perf/web_share_manual.ps1 -Port 39091
 ```
 
-Se a área de transferência ainda não tiver uma oferta válida, o script aguarda:
-selecione todo o texto do primeiro campo do navegador e copie; volte ao terminal
-e pressione Enter. Assim, copiar o próprio comando não faz o teste falhar. O script
-substitui a área de transferência pela resposta. Cole-a no segundo campo do
-navegador e clique em **Conectar** e depois **Ativar som**. Use Q para cancelar.
+If the clipboard does not yet hold a valid offer, the script waits:
+select all the text in the browser's first field and copy it; go back to the terminal
+and press Enter. This way, copying the command itself does not make the test fail. The script
+replaces the clipboard with the answer. Paste it into the browser's second field
+and click **Connect** and then **Enable sound**. Use Q to cancel.
 
-A automação só escuta em
-localhost. Para testar outro computador, ele pode abrir a mesma `watch.html#manual`
-e enviar sua oferta como texto; quem roda o Litecord devolve a resposta. O SDP
-contém endereços de rede: troque-o em particular. Isso não contorna NAT simétrico
-nem bloqueio de UDP. Sem a sinalização, o encerramento remoto só é percebido pelo
-timeout do WebRTC, e fechar uma aba pode demorar para liberar a vaga.
+The automation only listens on
+localhost. To test another computer, it can open the same `watch.html#manual`
+and send its offer as text; whoever runs Litecord returns the answer. The SDP
+contains network addresses: exchange it privately. This does not get around symmetric NAT
+or UDP blocking. Without signaling, a remote shutdown is only noticed by the
+WebRTC timeout, and closing a tab may take a while to free the slot.
 
-O teste automático do mesmo fluxo dispensa copiar e colar à mão:
+The automatic test of the same flow removes the need to copy and paste by hand:
 
 ```powershell
 node scripts/perf/web_share_e2e.cjs target/release/deps/litecord-<hash>.exe --manual
 ```
 
-Não distribuir builds com `automation`. O modo normal continua usando o worker único.
+Do not distribute builds with `automation`. Normal mode keeps using the single worker.
 
-## Captura real e matriz de navegadores
+## Real capture and browser matrix
 
-Com o worker local iniciado e os navegadores já instalados, use uma build de
-release isolada para medir o transmissor. O script abre a conta de teste indicada,
-seleciona pelo nome somente o servidor `Ricogames_ e MariaJulia_` e o canal
-`fofocas`, e encerra apenas o processo que iniciou. A saída de áudio fica muda.
+With the local worker started and the browsers already installed, use an
+isolated release build to measure the sender. The script opens the indicated test account,
+selects by name only the server `Ricogames_ e MariaJulia_` and the channel
+`fofocas`, and ends only the process it started. The audio output is muted.
 
 ```powershell
 cargo build --target-dir target --release --bin litecord --features automation --offline
 node scripts/perf/web_share_real.cjs --account=Marido --seconds=20 --rounds=2 --quiet-builds=1
 ```
 
-A captura usa o desktop real do Windows a 1080p60, sem áudio, com o app na bandeja.
-Uma janela própria dimensionada para o monitor principal mostra movimento constante;
-ela é capturada pelo caminho normal do app, sem injetar frames. Não é um jogo e
-seu custo não representa todo conteúdo possível. Chrome headless recebe o vídeo
-durante as medições; Edge e Firefox também verificam a reprodução real ao final.
+Capture uses the real Windows desktop at 1080p60, without audio, with the app in the tray.
+A dedicated window sized to the primary monitor shows constant motion;
+it is captured through the app's normal path, without injecting frames. It is not a game and
+its cost does not represent all possible content. Headless Chrome receives the video
+during the measurements; Edge and Firefox also verify real playback at the end.
 
-Cada rodada mede: transmissão sem web, web sem espectadores, com um espectador e
-com três. Há uma última amostra sem web para observar deriva. CPU é porcentagem de
-**um núcleo lógico**, memória é working set e private em MiB. O script chama os
-coletores existentes `process_sample.py` e `wakeups.ps1`, registra resolução/FPS
-recebidos e salva dados em `target/web-share-real/<data>/`. Falha do coletor de
-acordadas fica registrada separadamente. Feche outras compilações e mantenha o
-conteúdo da tela igual ao comparar amostras.
+Each round measures: streaming without web, web without viewers, with one viewer and
+with three. There is a final sample without web to observe drift. CPU is a percentage of
+**one logical core**, memory is working set and private in MiB. The script calls the existing
+collectors `process_sample.py` and `wakeups.ps1`, records the received resolution/FPS
+and saves data to `target/web-share-real/<date>/`. A failure of the
+wake-up collector is recorded separately. Close other builds and keep the
+screen content the same when comparing samples.
 
-`--quiet-builds=1` aguarda até dez minutos pelo fim de compiladores antes de iniciar
-o app e antes de cada amostra. Se uma compilação começa durante a coleta, o script
-preserva a amostra e repete a fase (até três tentativas). PIDs de compiladores no
-início/fim ficam no JSON. FPS usa `framesDecoded` do WebRTC: o Firefox 158 retorna
-zero em `getVideoPlaybackQuality().totalVideoFrames` mesmo decodificando normalmente.
+`--quiet-builds=1` waits up to ten minutes for compilers to finish before starting
+the app and before each sample. If a build starts during collection, the script
+keeps the sample and repeats the phase (up to three attempts). Compiler PIDs at the
+start/end are in the JSON. FPS uses WebRTC's `framesDecoded`: Firefox 158 returns
+zero in `getVideoPlaybackQuality().totalVideoFrames` even though it decodes normally.
 
-O teste sintético, que inclui áudio Opus não silencioso, aceita cada navegador
-instalado, sem baixar outro navegador nem usar o perfil pessoal:
+The synthetic test, which includes non-silent Opus audio, accepts each installed
+browser, without downloading another browser or using the personal profile:
 
 ```powershell
 node scripts/perf/web_share_e2e.cjs target/debug/deps/litecord-<hash>.exe --browser=chrome
@@ -210,109 +209,109 @@ node scripts/perf/web_share_e2e.cjs target/debug/deps/litecord-<hash>.exe --brow
 node scripts/perf/web_share_e2e.cjs target/debug/deps/litecord-<hash>.exe --browser=firefox
 ```
 
-O Firefox instalado usa o canal `moz-firefox` do Playwright (WebDriver BiDi).
-O app anuncia o IPv4 da rede local, em vez de depender de candidato `127.0.0.1`.
-Os resultados sintéticos ficam em `target/web-share-e2e/<navegador>/`; não servem
-para estimar o custo da captura real. Nenhum desses scripts publica o worker.
+The installed Firefox uses Playwright's `moz-firefox` channel (WebDriver BiDi).
+The app announces the local network IPv4 instead of relying on a `127.0.0.1` candidate.
+The synthetic results are in `target/web-share-e2e/<browser>/`; they are not useful
+for estimating the cost of real capture. None of these scripts publishes the worker.
 
-### Resultados de 18/10/2026 e pendências
+### Results of 18/10/2026 and pending items
 
-No Windows, passaram os testes completos com Chrome **155.0.8059.84**, Edge
-**155.0.4283.62** e Firefox **158.0**: H.264, Opus não silencioso, chave errada,
-três espectadores, recusa do quarto, liberação da vaga, encerramento e regressão
-da sinalização nativa. Nos três, o par ICE selecionado foi host/host e o candidato
-remoto não era loopback. Esses testes usam a fonte sintética de 640×360.
+On Windows, the full tests passed with Chrome **155.0.8059.84**, Edge
+**155.0.4283.62** and Firefox **158.0**: H.264, non-silent Opus, wrong key,
+three viewers, refusal of the fourth, slot release, shutdown and regression
+of native signaling. In all three, the selected ICE pair was host/host and the remote
+candidate was not loopback. These tests use the 640×360 synthetic source.
 
-A captura real foi executada com a build de release do código `6146e6e`, em um
-Core i5-13450HX (16 processadores lógicos), 8 GB de RAM e NVIDIA RTX 3050 Laptop
-6 GB, usando NVENC, desktop de 1920×1080, alvo de 60 FPS e 8 Mbps, sem áudio e com
-o app na bandeja. Chrome recebeu 1920×1080 com três espectadores a **59,3–60,0
-FPS** nas amostras estáveis; Edge também reproduziu a captura real em 1080p.
+Real capture was run with the release build of commit `6146e6e`, on a
+Core i5-13450HX (16 logical processors), 8 GB of RAM and NVIDIA RTX 3050 Laptop
+6 GB, using NVENC, a 1920×1080 desktop, a target of 60 FPS and 8 Mbps, without audio and with
+the app in the tray. Chrome received 1920×1080 with three viewers at **59.3–60.0
+FPS** in the stable samples; Edge also played the real capture at 1080p.
 
-Foram coletadas duas rodadas de 20 segundos por fase. A tabela abaixo preserva
-o intervalo observado; **é uma série exploratória, com interferência de
-compilações, e não uma comparação controlada do custo adicional da web**:
+Two 20-second rounds were collected per phase. The table below preserves
+the observed range; **it is an exploratory series, with interference from
+builds, and not a controlled comparison of the additional cost of the web**:
 
-| Captura real | CPU (% de um núcleo) | Working set (MiB) | Private (MiB) |
+| Real capture | CPU (% of one core) | Working set (MiB) | Private (MiB) |
 | --- | ---: | ---: | ---: |
-| Web desligada | 50,78–60,00 | 79,08–93,23 | 517,01–543,71 |
-| Web, zero espectadores | 52,73–53,83 | 83,67–118,47 | 528,04–581,50 |
-| Web, um espectador | 57,89–60,86 | 91,83–125,03 | 544,07–606,32 |
-| Web, três espectadores | 48,51–58,28 | 98,63–119,73 | 558,13–611,48 |
+| Web off | 50.78–60.00 | 79.08–93.23 | 517.01–543.71 |
+| Web, zero viewers | 52.73–53.83 | 83.67–118.47 | 528.04–581.50 |
+| Web, one viewer | 57.89–60.86 | 91.83–125.03 | 544.07–606.32 |
+| Web, three viewers | 48.51–58.28 | 98.63–119.73 | 558.13–611.48 |
 
-Os dados estão em `target/web-share-real/2026-10-18T03-11-31-686Z/`. Durante a
-compilação concorrente, uma amostra com um espectador teve recepção média de
-33,87 FPS; a fase seguinte voltou a aproximadamente 60 FPS nos três. Memória é
-o valor ao fim de cada amostra, e o processo acumula caches entre as fases. Não
-se pode interpretar os números menores de CPU com três espectadores como ganho.
+The data is in `target/web-share-real/2026-10-18T03-11-31-686Z/`. During the
+concurrent build, a sample with one viewer had an average reception of
+33.87 FPS; the next phase went back to approximately 60 FPS in all three. Memory is
+the value at the end of each sample, and the process accumulates caches between phases. The
+lower CPU numbers with three viewers cannot be interpreted as a gain.
 
-A repetição sem compiladores (`2026-10-18T03-17-47-905Z`) obteve uma amostra sem
-web a 60 FPS, mas foi interrompida às **00:20:45, horário de Brasília**, por uma
-desconexão da conta de teste do canal `fofocas`. O app encerrou captura e web; os
-dados posteriores a essa desconexão são inválidos para a comparação. O coletor
-agora valida chamada, captura e quantidade de espectadores antes/depois da amostra.
+The repeat without compilers (`2026-10-18T03-17-47-905Z`) obtained one sample without
+web at 60 FPS, but was interrupted at **00:20:45, Brasília time**, by a
+disconnection of the test account from the `fofocas` channel. The app ended capture and web; the
+data after that disconnection is invalid for the comparison. The collector
+now validates the call, capture and number of viewers before/after the sample.
 
-**Falta concluir a repetição controlada com a conta reservada por cerca de quatro
-minutos e a captura real no Firefox.** O teste sintético do Firefox já passou;
-o contador corrigido usa `framesDecoded`, pois o contador do elemento de vídeo
-retornava zero. Não foi realizado teste entre redes distintas, nem deploy.
+**Still to complete: the controlled repeat with the reserved account for about four
+minutes, and real capture on Firefox.** The synthetic Firefox test already passed;
+the corrected counter uses `framesDecoded`, since the video element's counter
+returned zero. No test between distinct networks was done, nor a deploy.
 
-## Roteiro entre redes diferentes, após publicação autorizada
+## Cross-network test script, after authorized publishing
 
-1. No computador transmissor, abra o diagnóstico em **Rede & Proxy → Testar rede**
-   antes e durante a chamada. Guarde o relatório, horário e tipo de conexão.
-2. Inicie uma captura real com resolução/FPS anotados, habilite o compartilhamento
-   web e envie o link completo em particular ao aparelho de teste.
-3. No celular, desligue o Wi-Fi e confirme que está em 4G/5G. Abra o link em HTTPS.
-   Anote navegador/versão, operadora e tempo até aparecer a primeira imagem.
-4. Observe por pelo menos dois minutos. Confira movimento contínuo, tela cheia,
-   rotação e, se a captura incluir áudio, o botão **Ativar som**. Grave pausas,
-   atraso percebido, perda de áudio e o número de espectadores mostrado no app.
-5. Abra mais dois espectadores, tente um quarto, feche um e tente novamente.
-   Confirme o aviso de lotação e a liberação da vaga. Encerre a web no app e
-   confirme o aviso de encerramento nos aparelhos.
-6. Repita em outra rede Wi-Fi e, se possível, invertendo a rede do transmissor.
-   Anote cada combinação separadamente: uma conexão local bem-sucedida não valida
-   NAT entre redes diferentes.
+1. On the sending computer, open the diagnostic at **Network & Proxy → Test network**
+   before and during the call. Keep the report, time and connection type.
+2. Start a real capture with the resolution/FPS noted, enable web sharing
+   and send the full link privately to the test device.
+3. On the phone, turn off Wi-Fi and confirm it is on 4G/5G. Open the link over HTTPS.
+   Note the browser/version, carrier and time until the first image appears.
+4. Watch for at least two minutes. Check continuous motion, fullscreen,
+   rotation and, if the capture includes audio, the **Enable sound** button. Record pauses,
+   perceived delay, audio loss and the number of viewers shown in the app.
+5. Open two more viewers, try a fourth, close one and try again.
+   Confirm the full-capacity notice and the slot release. End the web share in the app and
+   confirm the shutdown notice on the devices.
+6. Repeat on another Wi-Fi network and, if possible, swapping the sender's network.
+   Note each combination separately: a successful local connection does not validate
+   NAT between different networks.
 
-Se falhar, colete: horário, mensagem exata da página, estado/contagem de espectadores
-do app, relatório de diagnóstico de rede, versões, tipos de rede e se funciona na
-mesma LAN. No computador receptor, `chrome://webrtc-internals`,
-`edge://webrtc-internals` ou `about:webrtc` ajudam a registrar estados ICE/DTLS,
-tipo do par selecionado (host/srflx), codec, bytes recebidos e quadros decodificados.
-Não publique o link/chave, tokens ou SDP bruto; esses dados podem conter acesso à
-sessão ou endereços. Relatórios do app já mascaram endereços públicos.
+If it fails, collect: time, the exact page message, the app's viewer state/count,
+the network diagnostic report, versions, network types and whether it works on the
+same LAN. On the receiving computer, `chrome://webrtc-internals`,
+`edge://webrtc-internals` or `about:webrtc` help record ICE/DTLS states,
+selected pair type (host/srflx), codec, bytes received and decoded frames.
+Do not publish the link/key, tokens or raw SDP; this data may contain access to the
+session or addresses. The app's reports already mask public addresses.
 
-Página indisponível aponta primeiro para HTTPS/rota/deploy. Acesso recusado pede
-um link novo da sessão atual. ICE falhando sem bytes de mídia sugere bloqueio UDP
-ou NAT incompatível; o diagnóstico distingue alguns desses casos, mas não garante
-que dois NATs sejam compatíveis. Há somente conexão direta com STUN, sem TURN.
-Bytes chegando sem quadros decodificados pedem inspeção do codec e dos keyframes.
+A page unavailable points first to HTTPS/route/deploy. Access refused calls for
+a new link of the current session. ICE failing with no media bytes suggests UDP blocking
+or an incompatible NAT; the diagnostic distinguishes some of these cases, but does not guarantee
+that two NATs are compatible. There is only a direct connection with STUN, without TURN.
+Bytes arriving with no decoded frames call for inspection of the codec and keyframes.
 
-## Checklist para publicar o worker único
+## Checklist for publishing the single worker
 
-- Reunir todas as mudanças planejadas para o worker e revisar a integração na
-  branch escolhida pelo responsável. A integração não faz parte destes scripts.
-- Repetir testes Rust, `npm test` em `cloudflare/`, os três navegadores com worker
-  local e as amostras reais. Registrar commit, números e pendências antes da release.
-- Conferir `worker.js`, `web-share.js`, página importada, regra HTML, binding `ROOMS`
-  e classe existente `SignalingRoom`. Não acrescentar migration de classe nova
-  ao worker existente. Manter `/ws` nativo v2 e `/health` funcionando.
-- Guardar a versão atualmente publicada e o procedimento de rollback. Escolher
-  uma janela para a reconexão de WebSockets; links web ativos podem encerrar e
-  precisar ser recriados. Comunicar esse efeito aos participantes.
-- Pedir autorização para o deploy do conjunto revisado. Só então executar, da
-  pasta `cloudflare/`, `npx wrangler deploy` **uma vez**. Push, tag e release também
-  dependem de autorização própria; não são feitos por estes testes.
-- Verificar `/health`, `/watch`, reconexão da sinalização nativa e o roteiro 4G/5G
-  acima. Se necessário, reverter a versão do worker e desabilitar o compartilhamento
-  web enquanto se investiga.
-- Publicar somente a build normal, sem `automation`, após a validação acordada.
+- Gather all the planned changes for the worker and review the integration on the
+  branch chosen by the owner. Integration is not part of these scripts.
+- Repeat the Rust tests, `npm test` in `cloudflare/`, the three browsers with a local
+  worker and the real samples. Record the commit, numbers and pending items before the release.
+- Check `worker.js`, `web-share.js`, the imported page, the HTML rule, the `ROOMS` binding
+  and the existing `SignalingRoom` class. Do not add a new-class migration
+  to the existing worker. Keep native v2 `/ws` and `/health` working.
+- Keep the currently published version and the rollback procedure. Choose
+  a window for the WebSocket reconnection; active web links may end and
+  need to be recreated. Communicate this effect to the participants.
+- Ask for authorization to deploy the reviewed set. Only then run, from the
+  `cloudflare/` folder, `npx wrangler deploy` **once**. Push, tag and release also
+  depend on their own authorization; they are not done by these tests.
+- Verify `/health`, `/watch`, native signaling reconnection and the 4G/5G script
+  above. If necessary, roll back the worker version and disable web
+  sharing while investigating.
+- Publish only the normal build, without `automation`, after the agreed validation.
 
-O teste entre redes diferentes continua pendente até esse deploy e a execução do
-roteiro pelo usuário. Nenhuma publicação é necessária para validar o caminho local.
+The test between different networks remains pending until that deploy and the user
+runs the script. No publishing is needed to validate the local path.
 
-Validação local em 17/10/2026: modo manual passou no Chrome com o worker de teste
-desligado, incluindo vídeo H.264 e áudio Opus não silencioso. Também passaram os
-46 testes Rust e os quatro testes de roteamento do worker. O caminho automático
-foi validado anteriormente com três espectadores e regressão do protocolo nativo.
+Local validation on 17/10/2026: manual mode passed on Chrome with the test worker
+turned off, including H.264 video and non-silent Opus audio. The
+46 Rust tests and the four worker routing tests also passed. The automatic path
+was validated earlier with three viewers and a native protocol regression.

@@ -101,11 +101,11 @@ impl WmfGpuEncoder {
                 match Self::open(act, &vendor, width, height, target_fps, bitrate_bps) {
                     Ok(mut enc) => {
                         enc.gpu_name = name.clone();
-                        info!("🚀 [WMF GPU ENGINE] Encoder de hardware H.264 pronto: '{}' ({}x{} {} FPS, {:.1} Mbps)", name, width, height, target_fps, bitrate_bps as f64 / 1e6);
+                        info!("🚀 [WMF GPU ENGINE] Hardware H.264 encoder ready: '{}' ({}x{} {} FPS, {:.1} Mbps)", name, width, height, target_fps, bitrate_bps as f64 / 1e6);
                         return Ok(enc);
                     }
                     Err(e) => {
-                        warn!("⚠️ [WMF GPU ENGINE] '{}' indisponível: {}", name, e);
+                        warn!("⚠️ [WMF GPU ENGINE] '{}' unavailable: {}", name, e);
                         last_err = e;
                     }
                 }
@@ -147,7 +147,7 @@ impl WmfGpuEncoder {
                         return Ok(enc);
                     }
                     Err(e) => {
-                        warn!("⚠️ [WMF GPU ENGINE] '{}' indisponível para texturas: {}", name, e);
+                        warn!("⚠️ [WMF GPU ENGINE] '{}' unavailable for textures: {}", name, e);
                         last_err = e;
                     }
                 }
@@ -337,7 +337,7 @@ impl VideoEncoder for WmfGpuEncoder {
                     *self = enc;
                 }
                 Err(e) => {
-                    warn!("⚠️ [WMF GPU ENGINE] Não foi possível mudar para {}x{}: {}", w, h, e);
+                    warn!("⚠️ [WMF GPU ENGINE] Could not switch to {}x{}: {}", w, h, e);
                     return None;
                 }
             }
@@ -392,7 +392,7 @@ impl WmfGpuEncoder {
             let drained = start.elapsed();
             if self.need_input == 0 {
                 if drained > SLOW_FRAME {
-                    warn!("🐢 [WMF GPU ENGINE] Quadro lento: {:.1} ms só esperando o codificador liberar entrada (em processamento: {})",
+                    warn!("🐢 [WMF GPU ENGINE] Slow frame: {:.1} ms just waiting for the encoder to free an input (in flight: {})",
                         drained.as_secs_f64() * 1e3, self.in_flight);
                 }
                 return Ok(self.next_output().unwrap_or_default());
@@ -406,7 +406,7 @@ impl WmfGpuEncoder {
             }
             let total = start.elapsed();
             if total > SLOW_FRAME {
-                warn!("🐢 [WMF GPU ENGINE] Quadro lento: {:.1} ms (eventos {:.1} | cópia {:.1} | ProcessInput {:.1} | espera da saída {:.1} ms, em processamento: {})",
+                warn!("🐢 [WMF GPU ENGINE] Slow frame: {:.1} ms (events {:.1} | copy {:.1} | ProcessInput {:.1} | output wait {:.1} ms, in flight: {})",
                     total.as_secs_f64() * 1e3, drained.as_secs_f64() * 1e3, (copied - drained).as_secs_f64() * 1e3,
                     self.input_us as f64 / 1e3, self.wait_us as f64 / 1e3, self.in_flight);
             }

@@ -24,12 +24,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let token = match std::fs::read_to_string(".litecord_token") {
         Ok(t) => t.trim().to_string(),
         Err(_) => {
-            println!("❌ ERRO: Arquivo .litecord_token não encontrado.");
+            println!("❌ ERROR: File .litecord_token not found.");
             return Ok(());
         }
     };
 
-    println!("🔑 Token do Discord carregado.");
+    println!("🔑 Discord token loaded.");
 
     let client = reqwest::Client::new();
     let mut target_guild_id = String::new();
@@ -49,9 +49,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 if let Some(gid) = ch_json["guild_id"].as_str() {
                     target_guild_id = gid.to_string();
                 }
-                let cname = ch_json["name"].as_str().unwrap_or("Canal de Voz");
+                let cname = ch_json["name"].as_str().unwrap_or("Voice Channel");
                 target_channel_name = cname.to_string();
-                println!("🔎 Canal obtido via REST API: Name='{}', GuildID='{}'", target_channel_name, target_guild_id);
+                println!("🔎 Channel obtained via REST API: Name='{}', GuildID='{}'", target_channel_name, target_guild_id);
             }
         }
     }
@@ -67,7 +67,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 if let Some(guild_arr) = guilds.as_array() {
                     for g in guild_arr {
                         let gid = g["id"].as_str().unwrap_or("").to_string();
-                        let gname = g["name"].as_str().unwrap_or("Servidor").to_string();
+                        let gname = g["name"].as_str().unwrap_or("Server").to_string();
 
                         let chan_resp = client.get(format!("https://discord.com/api/v9/guilds/{}/channels", gid))
                             .header("Authorization", &token)
@@ -82,7 +82,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                         if ctype == 2 {
                                             target_guild_id = gid.clone();
                                             target_channel_id = ch["id"].as_str().unwrap_or("").to_string();
-                                            target_channel_name = format!("{} / {}", gname, ch["name"].as_str().unwrap_or("Voz"));
+                                            target_channel_name = format!("{} / {}", gname, ch["name"].as_str().unwrap_or("Voice"));
                                             break;
                                         }
                                     }
@@ -97,12 +97,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     if target_channel_id.is_empty() {
-        println!("❌ ERRO: Nenhum canal de voz encontrado.");
+        println!("❌ ERROR: No voice channel found.");
         return Ok(());
     }
 
-    println!("📌 Canal Alvo: '{}' (ChannelID: {}, GuildID: '{}')", target_channel_name, target_channel_id, target_guild_id);
-    println!("📡 Conectando à Gateway Main do Discord...");
+    println!("📌 Target Channel: '{}' (ChannelID: {}, GuildID: '{}')", target_channel_name, target_channel_id, target_guild_id);
+    println!("📡 Connecting to the Discord Main Gateway...");
 
     let (ws_stream, _) = connect_async("wss://gateway.discord.gg/?v=9&encoding=json").await?;
     let (mut write, mut read) = ws_stream.split();
@@ -173,7 +173,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     });
 
-    println!("⏳ Aguardando tokens e endpoint da Voice Gateway...");
+    println!("⏳ Waiting for tokens and endpoint from the Voice Gateway...");
     for _ in 0..100 {
         sleep(Duration::from_millis(100)).await;
         if session_id_arc.lock().unwrap().is_some() && voice_token_arc.lock().unwrap().is_some() {
@@ -181,15 +181,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     }
 
-    let uid = my_uid_arc.lock().unwrap().clone().ok_or("User ID não recebido")?;
-    let sid = session_id_arc.lock().unwrap().clone().ok_or("Session ID de voz não recebido")?;
-    let v_tok = voice_token_arc.lock().unwrap().clone().ok_or("Token de voz não recebido")?;
-    let raw_ep = voice_ep_arc.lock().unwrap().clone().ok_or("Endpoint de voz não recebido")?;
+    let uid = my_uid_arc.lock().unwrap().clone().ok_or("User ID not received")?;
+    let sid = session_id_arc.lock().unwrap().clone().ok_or("Voice session ID not received")?;
+    let v_tok = voice_token_arc.lock().unwrap().clone().ok_or("Voice token not received")?;
+    let raw_ep = voice_ep_arc.lock().unwrap().clone().ok_or("Voice endpoint not received")?;
 
     let clean_ep = raw_ep.trim();
     let v_url = format!("wss://{}/?v=4", clean_ep);
 
-    println!("🌐 Conectando à Discord Voice Gateway: {}", v_url);
+    println!("🌐 Connecting to the Discord Voice Gateway: {}", v_url);
 
     let (v_ws, _) = connect_async(&v_url).await?;
     let (mut v_write, mut v_read) = v_ws.split();
@@ -232,7 +232,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     }
 
-    println!("✅ Opcode 2 Ready recebido! SSRC={}, IP Servidor={}:{}", my_ssrc, voice_ip, voice_port);
+    println!("✅ Opcode 2 Ready received! SSRC={}, Server IP={}:{}", my_ssrc, voice_ip, voice_port);
 
     // Open UDP socket
     let udp = UdpSocket::bind("0.0.0.0:0").await?;
@@ -248,30 +248,30 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Send UDP IP discovery to server address
     for attempt in 1..=3 {
-        println!("📤 Enviando pacote de UDP IP Discovery (tentativa {})...", attempt);
+        println!("📤 Sending UDP IP Discovery packet (attempt {})...", attempt);
         let send_res = udp.send_to(&disc, &target_addr).await;
-        println!("   Resultado do envio: {:?}", send_res);
+        println!("   Send result: {:?}", send_res);
 
         let mut disc_resp = [0u8; 128];
         match tokio::time::timeout(Duration::from_secs(2), udp.recv_from(&mut disc_resp)).await {
             Ok(Ok((len, src_addr))) => {
-                println!("📥 Resposta de IP Discovery recebida de {}: {} bytes", src_addr, len);
+                println!("📥 IP Discovery response received from {}: {} bytes", src_addr, len);
                 if len >= 70 {
                     let ip_slice = &disc_resp[8..64];
                     let ip_end = ip_slice.iter().position(|&b| b == 0).unwrap_or(ip_slice.len());
                     my_pub_ip = String::from_utf8_lossy(&ip_slice[..ip_end]).trim().to_string();
                     my_pub_port = u16::from_be_bytes([disc_resp[68], disc_resp[69]]);
-                    println!("🎉 IP Público descoberto: {}:{}", my_pub_ip, my_pub_port);
+                    println!("🎉 Public IP discovered: {}:{}", my_pub_ip, my_pub_port);
                     break;
                 }
             }
-            Ok(Err(e)) => println!("   Erro na recepção UDP: {:?}", e),
-            Err(_) => println!("   Timeout na resposta de IP Discovery."),
+            Ok(Err(e)) => println!("   UDP receive error: {:?}", e),
+            Err(_) => println!("   Timeout waiting for IP Discovery response."),
         }
     }
 
     if my_pub_ip.is_empty() {
-        println!("⚠️ UDP IP Discovery falhou 3 vezes! Usando fallback de IP via HTTP...");
+        println!("⚠️ UDP IP Discovery failed 3 times! Using HTTP IP fallback...");
         if let Ok(resp) = client.get("https://api.ipify.org").send().await {
             if let Ok(ip_text) = resp.text().await {
                 my_pub_ip = ip_text.trim().to_string();
@@ -280,7 +280,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     }
 
-    println!("🌐 IP Usado no Select Protocol: {}:{}", my_pub_ip, my_pub_port);
+    println!("🌐 IP Used in Select Protocol: {}:{}", my_pub_ip, my_pub_port);
 
     // Send OP 1 Select Protocol
     let select_p = serde_json::json!({
@@ -312,11 +312,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     if secret_key.len() != 32 {
-        println!("❌ ERRO: Chave secreta de 32 bytes não recebida.");
+        println!("❌ ERROR: 32-byte secret key not received.");
         return Ok(());
     }
 
-    println!("🔑 OP 4 Session Description OK! Chave AES-256 de 32 bytes configurada.");
+    println!("🔑 OP 4 Session Description OK! 32-byte AES-256 key configured.");
 
     // Send OP 5 Speaking & Heartbeat loop task
     let speak = serde_json::json!({
@@ -325,7 +325,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     });
     v_write.send(Message::Text(speak.to_string().into())).await?;
 
-    println!("🔊 Escutando pacotes UDP de voz por 15 segundos...");
+    println!("🔊 Listening for UDP voice packets for 15 seconds...");
 
     let mut buf = vec![0u8; 4096];
     let cipher = Aes256Gcm::new_from_slice(&secret_key)?;
@@ -354,7 +354,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
             total_packets += 1;
             if detected_ssrcs.insert(ssrc_recv) {
-                println!("🎙️ Pacote UDP de Voz detectado de {}! SSRC={}", src_addr, ssrc_recv);
+                println!("🎙️ UDP Voice packet detected from {}! SSRC={}", src_addr, ssrc_recv);
             }
 
             let cc = (pkt[0] & 0x0F) as usize;
@@ -404,20 +404,20 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     println!("\n====================================================");
-    println!("📊 RELATÓRIO DO TESTE DE ÁUDIO");
+    println!("📊 AUDIO TEST REPORT");
     println!("====================================================");
-    println!("📦 Pacotes UDP de Voz Recebidos de Outros Usuários/Bots: {}", total_packets);
-    println!("🔐 Pacotes Descriptografados com Sucesso (AES-256-GCM): {}", decrypted_packets);
-    println!("🎵 Quadros Opus Decodificados com Sucesso: {}", opus_decoded_packets);
-    println!("👥 Quantidade de Fontes de Voz (SSRCs Remotos): {}", detected_ssrcs.len());
-    println!("🔊 Pico de Volume Áudio RMS Detectado: {:.2}%", max_rms * 100.0);
+    println!("📦 UDP Voice Packets Received from Other Users/Bots: {}", total_packets);
+    println!("🔐 Packets Decrypted Successfully (AES-256-GCM): {}", decrypted_packets);
+    println!("🎵 Opus Frames Decoded Successfully: {}", opus_decoded_packets);
+    println!("👥 Number of Voice Sources (Remote SSRCs): {}", detected_ssrcs.len());
+    println!("🔊 Peak Audio RMS Volume Detected: {:.2}%", max_rms * 100.0);
 
     if decrypted_packets > 0 && opus_decoded_packets > 0 {
-        println!("\n✅ VERIFICAÇÃO CONCLUÍDA COM SUCESSO! A recepção de áudio e a música estão 100% FUNCIONANDO!");
+        println!("\n✅ VERIFICATION COMPLETED SUCCESSFULLY! Audio reception and music are 100% WORKING!");
     } else if total_packets > 0 {
-        println!("\n⚠️ Pacotes UDP recebidos ({}), mas sem áudio nos 15 segundos.", total_packets);
+        println!("\n⚠️ UDP packets received ({}), but no audio in the 15 seconds.", total_packets);
     } else {
-        println!("\n⚠️ Nenhum pacote de voz detectado nos 15 segundos.");
+        println!("\n⚠️ No voice packet detected in the 15 seconds.");
     }
     println!("====================================================");
 

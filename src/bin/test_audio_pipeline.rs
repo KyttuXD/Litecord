@@ -116,19 +116,19 @@ fn generate_synthetic_speech(duration_secs: f32, sample_rate: usize) -> Vec<(f32
 
 fn main() {
     println!("==================================================");
-    println!("🧪 TESTE AUTOMATIZADO E DIAGNÓSTICO DO PIPELINE DE ÁUDIO");
+    println!("🧪 AUTOMATED TEST AND DIAGNOSTICS OF THE AUDIO PIPELINE");
     println!("==================================================");
 
     let sample_rate = 48000;
     let duration = 5.0f32;
-    println!("1. Gerando sinal sintético de fala humana (5.0s, 48kHz Estéreo)...");
+    println!("1. Generating synthetic human speech signal (5.0s, 48kHz Stereo)...");
     let ground_truth = generate_synthetic_speech(duration, sample_rate);
     save_wav("test_ground_truth.wav", &ground_truth, sample_rate as u32);
-    println!("   - Salvo ground truth original em `test_ground_truth.wav`.");
+    println!("   - Saved original ground truth to `test_ground_truth.wav`.");
 
-    println!("\n2. Codificando via Opus (libopus 48kHz Stereo VBR)...");
+    println!("\n2. Encoding via Opus (libopus 48kHz Stereo VBR)...");
     let mut encoder = OpusEncoder::new(48000, 2, Application::Voip)
-        .expect("Falha ao criar OpusEncoder");
+        .expect("Failed to create OpusEncoder");
 
     let frame_samples_per_ch = 960; // 20ms
     let frame_samples_total = frame_samples_per_ch * 2;
@@ -148,12 +148,12 @@ fn main() {
 
         let mut opus_buf = vec![0u8; 1275];
         let bytes_written = encoder.encode(&pcm_buf, 960, &mut opus_buf)
-            .expect("Falha ao codificar frame Opus");
+            .expect("Failed to encode Opus frame");
         opus_buf.truncate(bytes_written);
         opus_packets.push((f_idx, opus_buf));
     }
 
-    println!("\n3. Simulando Condições Reais de Rede (UDP Jitter, DAVE Passthrough 0x00, e Perda de Pacotes)...");
+    println!("\n3. Simulating Real Network Conditions (UDP Jitter, DAVE Passthrough 0x00, and Packet Loss)...");
     let mut network_packets = Vec::new();
     for (f_idx, mut opus_pkt) in opus_packets {
         // Prepend DAVE 0x00 codec header to 50% of packets
@@ -171,9 +171,9 @@ fn main() {
         network_packets.push((f_idx, opus_pkt));
     }
 
-    println!("\n4. Executando Pipeline Completo de Decodificação & Reamostragem (gateway.rs)...");
+    println!("\n4. Running Full Decoding & Resampling Pipeline (gateway.rs)...");
     let mut decoder = OpusDecoder::new(48000, 2)
-        .expect("Falha ao criar OpusDecoder");
+        .expect("Failed to create OpusDecoder");
 
     let mut decoded_pipeline_samples = Vec::new();
     let mut pcm_out_buf = vec![0.0f32; 11520];
@@ -296,22 +296,22 @@ fn main() {
     }
 
     save_wav("test_pipeline_output.wav", &decoded_pipeline_samples, sample_rate as u32);
-    println!("   - Salvo resultado do pipeline em `test_pipeline_output.wav`.");
+    println!("   - Saved pipeline result to `test_pipeline_output.wav`.");
 
     println!("\n==================================================");
-    println!("📊 DIAGNÓSTICO E ANÁLISE DE DIFERENÇA SAMPLE-BY-SAMPLE");
+    println!("📊 DIAGNOSTICS AND SAMPLE-BY-SAMPLE DIFFERENCE ANALYSIS");
     println!("==================================================");
-    println!("Eventos de Perda PLC simulados: {}", total_plc_events);
-    println!("Quadros de Silêncio DTX Suprimidos: {}", total_dtx_suppressions);
-    println!("Amostras Comparadas: {} pares estéreo", decoded_pipeline_samples.len().min(ground_truth.len()));
+    println!("Simulated PLC Loss Events: {}", total_plc_events);
+    println!("Suppressed DTX Silence Frames: {}", total_dtx_suppressions);
+    println!("Samples Compared: {} stereo pairs", decoded_pipeline_samples.len().min(ground_truth.len()));
 
     if frame_errors.is_empty() {
-        println!("\n✅ SUCESSO ABSOLUTO! Nenhuma discrepância de áudio/estática/chiado detectada (>0.15 err)!");
-        println!("   O pipeline reproduz o sinal com 100% de transparência e fidelidade estúdios!");
+        println!("\n✅ ABSOLUTE SUCCESS! No audio discrepancy/static/hiss detected (>0.15 err)!");
+        println!("   The pipeline reproduces the signal with 100% transparency and studio fidelity!");
     } else {
-        println!("\n⚠️ FORAM DETECTADAS {} ANOMALIAS/DISCREPÂNCIAS DE ÁUDIO NO PIPELINE:", frame_errors.len());
+        println!("\n⚠️ {} AUDIO ANOMALIES/DISCREPANCIES DETECTED IN THE PIPELINE:", frame_errors.len());
         for err in frame_errors.iter().take(15) {
-            println!("   - Quadro #{:>3} ({:>5.2}s): Erro Máximo={:.4} | RMS Error={:.4}", err.0, err.1, err.2, err.3);
+            println!("   - Frame #{:>3} ({:>5.2}s): Max Error={:.4} | RMS Error={:.4}", err.0, err.1, err.2, err.3);
         }
     }
 }

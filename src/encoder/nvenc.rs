@@ -76,7 +76,7 @@ fn ensure_embedded_ffmpeg_extracted() -> Option<std::path::PathBuf> {
 
     let target_dir = base_dir.join("Litecord").join("bin");
     if let Err(e) = std::fs::create_dir_all(&target_dir) {
-        warn!("⚠️ [EMBEDDED FFMPEG] Falha ao criar diretório {}: {}", target_dir.display(), e);
+        warn!("⚠️ [EMBEDDED FFMPEG] Failed to create directory {}: {}", target_dir.display(), e);
         return None;
     }
 
@@ -97,19 +97,19 @@ fn ensure_embedded_ffmpeg_extracted() -> Option<std::path::PathBuf> {
         };
         if need_write {
             if let Err(e) = std::fs::write(&dest, bytes) {
-                warn!("⚠️ [EMBEDDED FFMPEG] Falha ao extrair {}: {}", dest.display(), e);
+                warn!("⚠️ [EMBEDDED FFMPEG] Failed to extract {}: {}", dest.display(), e);
                 return None;
             }
         }
     }
 
-    info!("📦 [EMBEDDED FFMPEG] Dependências FFmpeg autônomas verificadas em: {}", target_dir.display());
+    info!("📦 [EMBEDDED FFMPEG] Standalone FFmpeg dependencies verified at: {}", target_dir.display());
     Some(target_dir)
 }
 
 impl FfmpegNvencEncoder {
     pub fn try_new(target_fps: u32, _is_screen_content: bool) -> Result<Self, String> {
-        info!("🔍 [NVENC FFMPEG PROBE] Localizando bibliotecas FFmpeg (OBS / Sunshine) no sistema...");
+        info!("🔍 [NVENC FFMPEG PROBE] Locating FFmpeg libraries (OBS / Sunshine) on the system...");
 
         unsafe {
             #[cfg(target_os = "windows")]
@@ -142,7 +142,7 @@ impl FfmpegNvencEncoder {
                         }
                     }
 
-                    // Pré-carrega todas as dependências auxiliares por caminho absoluto
+                    // Preload all auxiliary dependencies by absolute path
                     for dep_name in ["zlib.dll", "w32-pthreads.dll", "swresample-5.dll", "swscale-8.dll"] {
                         let dep_path = dir.join(dep_name);
                         if dep_path.exists() {
@@ -191,13 +191,13 @@ impl FfmpegNvencEncoder {
                     }
 
                     if !avcodec_dll.is_null() && !avutil_dll.is_null() {
-                        info!("✅ [NVENC FFMPEG] Bibliotecas carregadas com sucesso a partir de: '{}'", dir.display());
+                        info!("✅ [NVENC FFMPEG] Libraries loaded successfully from: '{}'", dir.display());
                         break;
                     }
                 }
 
                 if avcodec_dll.is_null() || avutil_dll.is_null() {
-                    return Err("Bibliotecas FFmpeg (avcodec / avutil) não encontradas".to_string());
+                    return Err("FFmpeg libraries (avcodec / avutil) not found".to_string());
                 }
 
                 let get_proc = windows_sys::Win32::System::LibraryLoader::GetProcAddress;
@@ -228,7 +228,7 @@ impl FfmpegNvencEncoder {
                     let h = libc::dlopen(codec_name as *const libc::c_char, libc::RTLD_NOW | libc::RTLD_GLOBAL);
                     if !h.is_null() {
                         avcodec_dll = h;
-                        info!("✅ [NVENC FFMPEG] libavcodec carregada via dlopen");
+                        info!("✅ [NVENC FFMPEG] libavcodec loaded via dlopen");
                         break;
                     }
                 }
@@ -246,13 +246,13 @@ impl FfmpegNvencEncoder {
                     let h = libc::dlopen(util_name as *const libc::c_char, libc::RTLD_NOW | libc::RTLD_GLOBAL);
                     if !h.is_null() {
                         avutil_dll = h;
-                        info!("✅ [NVENC FFMPEG] libavutil carregada via dlopen");
+                        info!("✅ [NVENC FFMPEG] libavutil loaded via dlopen");
                         break;
                     }
                 }
 
                 if avcodec_dll.is_null() || avutil_dll.is_null() {
-                    return Err("Bibliotecas FFmpeg (libavcodec / libavutil) não encontradas no sistema".to_string());
+                    return Err("FFmpeg libraries (libavcodec / libavutil) not found on the system".to_string());
                 }
 
                 let get_proc_codec = move |sym: &[u8]| -> Option<unsafe extern "C" fn()> {
@@ -276,74 +276,74 @@ impl FfmpegNvencEncoder {
 
             let find_encoder_fn: FnAvcodecFindEncoderByName = std::mem::transmute(
                 get_proc_codec(b"avcodec_find_encoder_by_name\0")
-                    .ok_or_else(|| "Símbolo avcodec_find_encoder_by_name ausente".to_string())?
+                    .ok_or_else(|| "Symbol avcodec_find_encoder_by_name missing".to_string())?
             );
             let alloc_context_fn: FnAvcodecAllocContext3 = std::mem::transmute(
                 get_proc_codec(b"avcodec_alloc_context3\0")
-                    .ok_or_else(|| "Símbolo avcodec_alloc_context3 ausente".to_string())?
+                    .ok_or_else(|| "Symbol avcodec_alloc_context3 missing".to_string())?
             );
             let free_ctx_fn: FnAvcodecFreeContext = std::mem::transmute(
                 get_proc_codec(b"avcodec_free_context\0")
-                    .ok_or_else(|| "Símbolo avcodec_free_context ausente".to_string())?
+                    .ok_or_else(|| "Symbol avcodec_free_context missing".to_string())?
             );
             let open2_fn: FnAvcodecOpen2 = std::mem::transmute(
                 get_proc_codec(b"avcodec_open2\0")
-                    .ok_or_else(|| "Símbolo avcodec_open2 ausente".to_string())?
+                    .ok_or_else(|| "Symbol avcodec_open2 missing".to_string())?
             );
             let frame_alloc_fn: FnAvFrameAlloc = std::mem::transmute(
                 get_proc_util(b"av_frame_alloc\0")
-                    .ok_or_else(|| "Símbolo av_frame_alloc ausente".to_string())?
+                    .ok_or_else(|| "Symbol av_frame_alloc missing".to_string())?
             );
             let frame_free_fn: FnAvFrameFree = std::mem::transmute(
                 get_proc_util(b"av_frame_free\0")
-                    .ok_or_else(|| "Símbolo av_frame_free ausente".to_string())?
+                    .ok_or_else(|| "Symbol av_frame_free missing".to_string())?
             );
             let frame_get_buf_fn: FnAvFrameGetBuffer = std::mem::transmute(
                 get_proc_util(b"av_frame_get_buffer\0")
-                    .ok_or_else(|| "Símbolo av_frame_get_buffer ausente".to_string())?
+                    .ok_or_else(|| "Symbol av_frame_get_buffer missing".to_string())?
             );
             let packet_alloc_fn: FnAvPacketAlloc = std::mem::transmute(
                 get_proc_codec(b"av_packet_alloc\0")
-                    .ok_or_else(|| "Símbolo av_packet_alloc ausente".to_string())?
+                    .ok_or_else(|| "Symbol av_packet_alloc missing".to_string())?
             );
             let packet_free_fn: FnAvPacketFree = std::mem::transmute(
                 get_proc_codec(b"av_packet_free\0")
-                    .ok_or_else(|| "Símbolo av_packet_free ausente".to_string())?
+                    .ok_or_else(|| "Symbol av_packet_free missing".to_string())?
             );
             let send_frame_fn: FnAvcodecSendFrame = std::mem::transmute(
                 get_proc_codec(b"avcodec_send_frame\0")
-                    .ok_or_else(|| "Símbolo avcodec_send_frame ausente".to_string())?
+                    .ok_or_else(|| "Symbol avcodec_send_frame missing".to_string())?
             );
             let recv_packet_fn: FnAvcodecReceivePacket = std::mem::transmute(
                 get_proc_codec(b"avcodec_receive_packet\0")
-                    .ok_or_else(|| "Símbolo avcodec_receive_packet ausente".to_string())?
+                    .ok_or_else(|| "Symbol avcodec_receive_packet missing".to_string())?
             );
             let packet_unref_fn: FnAvPacketUnref = std::mem::transmute(
                 get_proc_codec(b"av_packet_unref\0")
-                    .ok_or_else(|| "Símbolo av_packet_unref ausente".to_string())?
+                    .ok_or_else(|| "Symbol av_packet_unref missing".to_string())?
             );
             let opt_find_fn: FnAvOptFind = std::mem::transmute(
                 get_proc_util(b"av_opt_find\0")
-                    .ok_or_else(|| "Símbolo av_opt_find ausente".to_string())?
+                    .ok_or_else(|| "Symbol av_opt_find missing".to_string())?
             );
             let dict_set_fn: FnAvDictSet = std::mem::transmute(
                 get_proc_util(b"av_dict_set\0")
-                    .ok_or_else(|| "Símbolo av_dict_set ausente".to_string())?
+                    .ok_or_else(|| "Symbol av_dict_set missing".to_string())?
             );
             let dict_free_fn: FnAvDictFree = std::mem::transmute(
                 get_proc_util(b"av_dict_free\0")
-                    .ok_or_else(|| "Símbolo av_dict_free ausente".to_string())?
+                    .ok_or_else(|| "Symbol av_dict_free missing".to_string())?
             );
 
             let codec_name = CString::new("h264_nvenc").unwrap();
             let codec = find_encoder_fn(codec_name.as_ptr());
             if codec.is_null() {
-                return Err("Hardware Codec 'h264_nvenc' não suportado na GPU deste computador".to_string());
+                return Err("Hardware codec 'h264_nvenc' is not supported by this computer's GPU".to_string());
             }
 
             let codec_ctx = alloc_context_fn(codec);
             if codec_ctx.is_null() {
-                return Err("Falha ao alocar AVCodecContext".to_string());
+                return Err("Failed to allocate AVCodecContext".to_string());
             }
 
             let initial_width = 1920u32;
@@ -394,13 +394,13 @@ impl FfmpegNvencEncoder {
             dict_free_fn(&mut opts);
             if open_ret < 0 {
                 free_ctx_fn(&mut (codec_ctx as *mut _));
-                return Err(format!("avcodec_open2 falhou para h264_nvenc com código: {}", open_ret));
+                return Err(format!("avcodec_open2 failed for h264_nvenc with code: {}", open_ret));
             }
 
             let frame = frame_alloc_fn();
             if frame.is_null() {
                 free_ctx_fn(&mut (codec_ctx as *mut _));
-                return Err("Falha ao alocar AVFrame".to_string());
+                return Err("Failed to allocate AVFrame".to_string());
             }
 
             let frame_u8 = frame as *mut u8;
@@ -413,10 +413,10 @@ impl FfmpegNvencEncoder {
             if packet.is_null() {
                 frame_free_fn(&mut (frame as *mut _));
                 free_ctx_fn(&mut (codec_ctx as *mut _));
-                return Err("Falha ao alocar AVPacket".to_string());
+                return Err("Failed to allocate AVPacket".to_string());
             }
 
-            info!("🎉 [NVENC GPU] Pipeline de Hardware NVIDIA NVENC (OBS / Sunshine Grade) INICIALIZADO COM SUCESSO!");
+            info!("🎉 [NVENC GPU] NVIDIA NVENC Hardware Pipeline (OBS / Sunshine Grade) INITIALIZED SUCCESSFULLY!");
 
             Ok(Self {
                 avcodec_dll,
@@ -453,7 +453,7 @@ impl VideoEncoder for FfmpegNvencEncoder {
         unsafe {
             let frame_u8 = self.frame as *mut u8;
 
-            // Obter ponteiros de planos e strides do AVFrame
+            // Get plane pointers and strides from the AVFrame
             let data_ptrs = frame_u8 as *mut *mut u8;
             let linesize_ptrs = frame_u8.add(64) as *mut i32;
 
@@ -466,7 +466,7 @@ impl VideoEncoder for FfmpegNvencEncoder {
                 return None;
             }
 
-            // Conversão SIMD ultrarrápida BGRA -> NV12 nos buffers de memória do AVFrame (< 0.2ms, 0% CPU overhead)
+            // Ultra-fast SIMD BGRA -> NV12 conversion into the AVFrame memory buffers (< 0.2ms, 0% CPU overhead)
             let copy_h = h.min(1080);
             let copy_w = w.min(1920);
 
@@ -528,7 +528,7 @@ impl VideoEncoder for FfmpegNvencEncoder {
                 *(frame_u8.add(124) as *mut i32) = 0;
             }
 
-            // Enviar quadro para a GPU NVIDIA
+            // Send frame to the NVIDIA GPU
             let send_res = (self.send_frame_fn)(self.codec_ctx, self.frame);
             if send_res < 0 {
                 return None;
@@ -536,7 +536,7 @@ impl VideoEncoder for FfmpegNvencEncoder {
 
             self.out_buffer.clear();
 
-            // Receber pacotes H.264 NAL da GPU NVIDIA
+            // Receive H.264 NAL packets from the NVIDIA GPU
             loop {
                 let recv_res = (self.recv_packet_fn)(self.codec_ctx, self.packet);
                 if recv_res < 0 {
@@ -621,7 +621,7 @@ impl Drop for FfmpegNvencEncoder {
                     libc::dlclose(self.avutil_dll);
                 }
             }
-            info!("🛑 [NVENC GPU] Pipeline NVIDIA NVENC encerrado e recursos liberados.");
+            info!("🛑 [NVENC GPU] NVIDIA NVENC pipeline shut down and resources released.");
         }
     }
 }
@@ -637,7 +637,7 @@ mod tests {
         let mut encoder = match FfmpegNvencEncoder::try_new(60, false) {
             Ok(enc) => enc,
             Err(e) => {
-                println!("⚠️ NVENC indisponível no ambiente de teste: {}", e);
+                println!("⚠️ NVENC unavailable in the test environment: {}", e);
                 return;
             }
         };
@@ -649,13 +649,13 @@ mod tests {
         let mut encoded_packets = 0;
         for _ in 0..10 {
             if let Some(packet) = encoder.encode(&frame_data, width as u32, height as u32) {
-                assert!(!packet.is_empty(), "Packet não pode ser vazio");
+                assert!(!packet.is_empty(), "Packet must not be empty");
                 encoded_packets += 1;
             }
         }
 
-        println!("🎉 [TESTE NVENC] {} frames codificados com sucesso via {}", encoded_packets, encoder.name());
-        assert!(encoded_packets > 0, "Deveria codificar pelo menos 1 frame");
+        println!("🎉 [NVENC TEST] {} frames encoded successfully via {}", encoded_packets, encoder.name());
+        assert!(encoded_packets > 0, "Should encode at least 1 frame");
     }
 }
 

@@ -42,12 +42,12 @@ fn main() {
         }
     }
 
-    println!("📡 Destino padrão UDP: {}", target_addr_str);
-    println!("🎧 Porta Local: {}", local_port);
+    println!("📡 Default UDP destination: {}", target_addr_str);
+    println!("🎧 Local Port: {}", local_port);
 
     let socket = match UdpSocket::bind(format!("0.0.0.0:{}", local_port)) {
         Ok(s) => s,
-        Err(_) => UdpSocket::bind("0.0.0.0:0").expect("Falha ao abrir socket UDP"),
+        Err(_) => UdpSocket::bind("0.0.0.0:0").expect("Failed to open UDP socket"),
     };
     socket.set_nonblocking(true).unwrap();
 
@@ -55,14 +55,14 @@ fn main() {
     let height = 1080u32;
     let target_fps = 60u32;
 
-    println!("🛠️ Inicializando AmdAmfZeroCopyEncoder (1080p @ 60 FPS)...");
+    println!("🛠️ Initializing AmdAmfZeroCopyEncoder (1080p @ 60 FPS)...");
     let mut encoder = match AmdAmfZeroCopyEncoder::try_new(target_fps, true) {
         Ok(enc) => {
-            println!("💎 AMD AMF Inicializado com SUCESSO na GPU: {}", enc.gpu_name);
+            println!("💎 AMD AMF Initialized SUCCESSFULLY on GPU: {}", enc.gpu_name);
             enc
         }
         Err(e) => {
-            eprintln!("❌ Falha ao criar AmdAmfZeroCopyEncoder: {}", e);
+            eprintln!("❌ Failed to create AmdAmfZeroCopyEncoder: {}", e);
             return;
         }
     };
@@ -87,25 +87,25 @@ fn main() {
     let mut frames_sent_window = 0u64;
     let mut bytes_sent_window = 0usize;
 
-    println!("🚀 Transmissão iniciada! Pressione Ctrl+C para parar.");
+    println!("🚀 Transmission started! Press Ctrl+C to stop.");
 
     loop {
-        // 1. Processar pacotes UDP recebidos (PLI / OP_KEYFRAME_REQ / ANNOUNCE)
+        // 1. Process received UDP packets (PLI / OP_KEYFRAME_REQ / ANNOUNCE)
         loop {
             match socket.recv_from(&mut rx_buf) {
                 Ok((n, src)) => {
                     if !known_targets.contains(&src) {
-                        println!("📡 [NOVO RECEPTOR DESCOBERTO] Conectado de: {}", src);
+                        println!("📡 [NEW RECEIVER DISCOVERED] Connected from: {}", src);
                         known_targets.push(src);
                     }
 
                     if n >= 9 && &rx_buf[..4] == MAGIC {
                         let op = rx_buf[8];
                         if op == OP_KEYFRAME_REQ {
-                            println!("⚡ [PLI RECEBIDO] Receptor {} solicitou IDR Keyframe imediato!", src);
+                            println!("⚡ [PLI RECEIVED] Receiver {} requested an immediate IDR Keyframe!", src);
                             keyframe_requested = true;
                         } else if op == OP_ANNOUNCE {
-                            println!("👋 [ANNOUNCE RECEBIDO] Receptor {} registrou presença!", src);
+                            println!("👋 [ANNOUNCE RECEIVED] Receiver {} registered its presence!", src);
                             keyframe_requested = true;
                         }
                     }
@@ -115,7 +115,7 @@ fn main() {
             }
         }
 
-        // 2. Gerar padrão animado rápido no frame BGRA
+        // 2. Generate a fast animated pattern in the BGRA frame
         let color_offset = (seq * 4) as u8;
         for y in 0..height {
             let row_start = (y * width * 4) as usize;
@@ -133,14 +133,14 @@ fn main() {
             }
         }
 
-        // 3. Forçar IDR se requisitado por PLI ou periodicamente
+        // 3. Force IDR if requested by PLI or periodically
         if keyframe_requested || last_idr.elapsed() >= Duration::from_millis(2000) {
             encoder.force_intra_frame();
             last_idr = Instant::now();
             keyframe_requested = false;
         }
 
-        // 4. Codificar frame na GPU AMD via Zero-Copy
+        // 4. Encode frame on the AMD GPU via Zero-Copy
         if let Some(encoded_bytes) = encoder.encode(&bgra_frame, width, height) {
             let total_chunks = ((encoded_bytes.len() + MAX_UDP_PAYLOAD - 1) / MAX_UDP_PAYLOAD).max(1);
 
@@ -154,7 +154,7 @@ fn main() {
             }
 
             if nals.contains(&5) {
-                println!("🔑 [TX IDR KEYFRAME] Seq #{} | Tamanho: {} bytes | NALs: {:?}", seq, encoded_bytes.len(), nals);
+                println!("🔑 [TX IDR KEYFRAME] Seq #{} | Size: {} bytes | NALs: {:?}", seq, encoded_bytes.len(), nals);
             }
 
             for (chunk_idx, slice) in encoded_bytes.chunks(MAX_UDP_PAYLOAD).enumerate() {
@@ -183,7 +183,7 @@ fn main() {
             let elapsed_s = last_log.elapsed().as_secs_f64();
             let fps = (frames_sent_window as f64) / elapsed_s;
             let mbps = (bytes_sent_window as f64 * 8.0) / (elapsed_s * 1_000_000.0);
-            println!("📊 [TX AMF STATUS] FPS: {:.1} | Bitrate: {:.2} Mbps | Frames: {} | Destinos: {:?}", fps, mbps, seq, known_targets);
+            println!("📊 [TX AMF STATUS] FPS: {:.1} | Bitrate: {:.2} Mbps | Frames: {} | Targets: {:?}", fps, mbps, seq, known_targets);
             frames_sent_window = 0;
             bytes_sent_window = 0;
             last_log = Instant::now();

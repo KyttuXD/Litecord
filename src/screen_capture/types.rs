@@ -213,7 +213,7 @@ pub fn is_stream_recently_stopped(uid: u64) -> bool {
 }
 
 pub fn trigger_stream_stopped(uid: u64) {
-    info!("🛑 [STREAM STOPPED] Encerrando imediatamente estado do stream UID={}", uid);
+    info!("🛑 [STREAM STOPPED] Immediately ending stream state for UID={}", uid);
     // The next stream of this peer comes with a new key.
     super::watch::forget_stream(uid);
     if let Ok(mut guard) = STREAM_STOPPED_AT.lock() {
@@ -337,7 +337,7 @@ fn camera_api_available() -> bool {
         let major: u32 = text.split('.').next().and_then(|v| v.parse().ok()).unwrap_or(0);
         let available = ok && major >= 14;
         if !available {
-            info!("📷 Câmeras indisponíveis neste macOS ({}): a biblioteca de câmera exige o macOS 14.", text);
+            info!("📷 Cameras unavailable on this macOS ({}): the camera library requires macOS 14.", text);
         }
         available
     })
@@ -430,7 +430,7 @@ pub fn get_local_lan_addresses(port: u16) -> Vec<SocketAddr> {
                 if let Ok(SocketAddr::V4(local)) = socket.local_addr() {
                     let ip = *local.ip();
                     let octets = ip.octets();
-                    // Ignora VPNs / Tailscale (100.64.0.0/10), Link-Local (169.254.x.x) e Virtual Adapters
+                    // Ignore VPNs / Tailscale (100.64.0.0/10), Link-Local (169.254.x.x) and Virtual Adapters
                     if (octets[0] == 100 && (octets[1] & 0xC0) == 64)
                         || (octets[0] == 169 && octets[1] == 254)
                         || (octets[0] == 198 && (octets[1] == 18 || octets[1] == 19))
@@ -452,7 +452,7 @@ pub fn get_local_lan_addresses(port: u16) -> Vec<SocketAddr> {
                 if let SocketAddr::V4(v4) = sa {
                     let ip = *v4.ip();
                     let octets = ip.octets();
-                    // Ignora VPNs / Tailscale (100.64.0.0/10), Link-Local (169.254.x.x) e Virtual Adapters
+                    // Ignore VPNs / Tailscale (100.64.0.0/10), Link-Local (169.254.x.x) and Virtual Adapters
                     if (octets[0] == 100 && (octets[1] & 0xC0) == 64)
                         || (octets[0] == 169 && octets[1] == 254)
                         || (octets[0] == 198 && (octets[1] == 18 || octets[1] == 19))

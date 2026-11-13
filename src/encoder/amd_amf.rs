@@ -139,7 +139,7 @@ struct AMFComponentVtbl {
     add_observer: *const c_void,
     remove_observer: *const c_void,
 
-    // AMFPropertyStorageEx (4 métodos)
+    // AMFPropertyStorageEx (4 methods)
     get_properties_info_count: *const c_void,
     get_property_info_idx: *const c_void,
     get_property_info_name: *const c_void,
@@ -352,7 +352,7 @@ impl AmdAmfZeroCopyEncoder {
         unsafe {
             let amf_dll = windows_sys::Win32::System::LibraryLoader::LoadLibraryA(b"amfrt64.dll\0".as_ptr());
             if amf_dll.is_null() {
-                return Err("amfrt64.dll ausente".to_string());
+                return Err("amfrt64.dll missing".to_string());
             }
 
             let amf_init_fn: Option<FnAMFInit> = std::mem::transmute(
@@ -362,7 +362,7 @@ impl AmdAmfZeroCopyEncoder {
                 Some(f) => f,
                 None => {
                     windows_sys::Win32::Foundation::FreeLibrary(amf_dll);
-                    return Err("AMFInit não encontrado".to_string());
+                    return Err("AMFInit not found".to_string());
                 }
             };
 
@@ -370,24 +370,24 @@ impl AmdAmfZeroCopyEncoder {
             let mut factory: *mut AMFFactory = std::ptr::null_mut();
             if amf_init(amf_version, &mut factory) != 0 || factory.is_null() {
                 windows_sys::Win32::Foundation::FreeLibrary(amf_dll);
-                return Err("AMFInit falhou".to_string());
+                return Err("AMFInit failed".to_string());
             }
 
             let factory_vtbl = (*factory).vtbl;
             let mut context: *mut AMFContext = std::ptr::null_mut();
             if ((*factory_vtbl).create_context)(factory, &mut context) != 0 || context.is_null() {
                 windows_sys::Win32::Foundation::FreeLibrary(amf_dll);
-                return Err("CreateContext falhou".to_string());
+                return Err("CreateContext failed".to_string());
             }
 
-            // Inicializar Direct3D 11
+            // Initialize Direct3D 11
             let d3d11_dll = windows_sys::Win32::System::LibraryLoader::LoadLibraryA(b"d3d11.dll\0".as_ptr());
             let dxgi_dll = windows_sys::Win32::System::LibraryLoader::LoadLibraryA(b"dxgi.dll\0".as_ptr());
 
             if d3d11_dll.is_null() {
                 let _ = ((*(*context).vtbl).release)(context);
                 windows_sys::Win32::Foundation::FreeLibrary(amf_dll);
-                return Err("d3d11.dll ausente".to_string());
+                return Err("d3d11.dll missing".to_string());
             }
 
             type FnD3D11CreateDevice = unsafe extern "system" fn(
@@ -412,7 +412,7 @@ impl AmdAmfZeroCopyEncoder {
                     let _ = ((*(*context).vtbl).release)(context);
                     windows_sys::Win32::Foundation::FreeLibrary(amf_dll);
                     windows_sys::Win32::Foundation::FreeLibrary(d3d11_dll);
-                    return Err("D3D11CreateDevice não encontrado".to_string());
+                    return Err("D3D11CreateDevice not found".to_string());
                 }
             };
 
@@ -436,7 +436,7 @@ impl AmdAmfZeroCopyEncoder {
                 let _ = ((*(*context).vtbl).release)(context);
                 windows_sys::Win32::Foundation::FreeLibrary(amf_dll);
                 windows_sys::Win32::Foundation::FreeLibrary(d3d11_dll);
-                return Err(format!("D3D11CreateDevice falhou: 0x{:08X}", hr));
+                return Err(format!("D3D11CreateDevice failed: 0x{:08X}", hr));
             }
 
             let ctx_vtbl = (*context).vtbl;
@@ -445,13 +445,13 @@ impl AmdAmfZeroCopyEncoder {
                 let _ = ((*ctx_vtbl).release)(context);
                 windows_sys::Win32::Foundation::FreeLibrary(amf_dll);
                 windows_sys::Win32::Foundation::FreeLibrary(d3d11_dll);
-                return Err(format!("InitDX11 falhou: {}", init_dx_res));
+                return Err(format!("InitDX11 failed: {}", init_dx_res));
             }
 
-            // Identificar GPU
+            // Identify the GPU
             let gpu_name = "AMD Radeon GPU (AMF Hardware Accelerated)".to_string();
 
-            // Criar AMFVideoConverter (GPU AMD faz a conversão de cores por hardware)
+            // Create AMFVideoConverter (the AMD GPU does the color conversion in hardware)
             let conv_name: Vec<u16> = "AMFVideoConverter\0".encode_utf16().collect();
             let mut converter: *mut AMFComponent = std::ptr::null_mut();
             let conv_res = ((*factory_vtbl).create_component)(factory, context, conv_name.as_ptr(), &mut converter);
@@ -460,7 +460,7 @@ impl AmdAmfZeroCopyEncoder {
                 let _ = ((*ctx_vtbl).release)(context);
                 windows_sys::Win32::Foundation::FreeLibrary(amf_dll);
                 windows_sys::Win32::Foundation::FreeLibrary(d3d11_dll);
-                return Err(format!("CreateComponent(AMFVideoConverter) falhou: {}", conv_res));
+                return Err(format!("CreateComponent(AMFVideoConverter) failed: {}", conv_res));
             }
 
             let conv_vtbl = (*converter).vtbl;
@@ -469,17 +469,17 @@ impl AmdAmfZeroCopyEncoder {
             let _ = ((*conv_vtbl).set_property)(converter, prop_conv_out_fmt.as_ptr(), AMFVariantStruct::from_int64(1)); // NV12
             let _ = ((*conv_vtbl).set_property)(converter, prop_conv_mem_type.as_ptr(), AMFVariantStruct::from_int64(3)); // DX11
 
-            let conv_init_res = ((*conv_vtbl).init)(converter, 3, 1920, 1080); // Entrada BGRA = 3
+            let conv_init_res = ((*conv_vtbl).init)(converter, 3, 1920, 1080); // BGRA input = 3
             if conv_init_res != 0 {
                 let _ = ((*conv_vtbl).release)(converter);
                 let _ = ((*ctx_vtbl).terminate)(context);
                 let _ = ((*ctx_vtbl).release)(context);
                 windows_sys::Win32::Foundation::FreeLibrary(amf_dll);
                 windows_sys::Win32::Foundation::FreeLibrary(d3d11_dll);
-                return Err(format!("AMFVideoConverter::Init falhou: {}", conv_init_res));
+                return Err(format!("AMFVideoConverter::Init failed: {}", conv_init_res));
             }
 
-            // Criar Encoder AVC (H.264)
+            // Create AVC (H.264) encoder
             let codec_name: Vec<u16> = "AMFVideoEncoderVCE_AVC\0".encode_utf16().collect();
             let mut encoder: *mut AMFComponent = std::ptr::null_mut();
             let comp_res = ((*factory_vtbl).create_component)(factory, context, codec_name.as_ptr(), &mut encoder);
@@ -490,7 +490,7 @@ impl AmdAmfZeroCopyEncoder {
                 let _ = ((*ctx_vtbl).release)(context);
                 windows_sys::Win32::Foundation::FreeLibrary(amf_dll);
                 windows_sys::Win32::Foundation::FreeLibrary(d3d11_dll);
-                return Err(format!("CreateComponent(AMFVideoEncoderVCE_AVC) falhou: {}", comp_res));
+                return Err(format!("CreateComponent(AMFVideoEncoderVCE_AVC) failed: {}", comp_res));
             }
 
             let enc_vtbl = (*encoder).vtbl;
@@ -507,12 +507,12 @@ impl AmdAmfZeroCopyEncoder {
             let initial_bitrate = 8_000_000u32;
             let peak_bitrate = 12_000_000u32;
             let _ = ((*enc_vtbl).set_property)(encoder, prop_usage.as_ptr(), AMFVariantStruct::from_int64(1)); // Ultra Low Latency
-            let _ = ((*enc_vtbl).set_property)(encoder, prop_profile.as_ptr(), AMFVariantStruct::from_int64(66)); // Baseline Profile (Compatibilidade universal com OpenH264)
+            let _ = ((*enc_vtbl).set_property)(encoder, prop_profile.as_ptr(), AMFVariantStruct::from_int64(66)); // Baseline Profile (universal compatibility with OpenH264)
             let _ = ((*enc_vtbl).set_property)(encoder, prop_cabac.as_ptr(), AMFVariantStruct::from_int64(2)); // CALV / CAVLC (AMF_VIDEO_ENCODER_CODER_MODE_CALV = 2)
-            let _ = ((*enc_vtbl).set_property)(encoder, prop_rc.as_ptr(), AMFVariantStruct::from_int64(1)); // RateControlMethod CBR (1) para stream UDP de baixa latência
+            let _ = ((*enc_vtbl).set_property)(encoder, prop_rc.as_ptr(), AMFVariantStruct::from_int64(1)); // RateControlMethod CBR (1) for low-latency UDP streaming
             let _ = ((*enc_vtbl).set_property)(encoder, prop_bitrate.as_ptr(), AMFVariantStruct::from_int64(initial_bitrate as i64));
             let _ = ((*enc_vtbl).set_property)(encoder, prop_peak_bitrate.as_ptr(), AMFVariantStruct::from_int64(peak_bitrate as i64));
-            // IDR a cada 2 segundos (120 frames a 60fps) — alinhado com loop TX IDR de 2000ms
+            // IDR every 2 seconds (120 frames at 60fps) — aligned with the 2000ms TX IDR loop
             let gop_frames = (target_fps as i64) * 2;
             let _ = ((*enc_vtbl).set_property)(encoder, prop_gop.as_ptr(), AMFVariantStruct::from_int64(gop_frames));
             let _ = ((*enc_vtbl).set_property)(encoder, prop_header_spacing.as_ptr(), AMFVariantStruct::from_int64(gop_frames));
@@ -521,11 +521,11 @@ impl AmdAmfZeroCopyEncoder {
                 int64_val: (target_fps as i64) | (1i64 << 32),
                 padding: [0; 16],
             });
-            // QualityPreset BALANCED (0) — melhor qualidade que SPEED sem custo proibitivo de latência
+            // QualityPreset BALANCED (0) — better quality than SPEED without a prohibitive latency cost
             let prop_quality: Vec<u16> = "QualityPreset\0".encode_utf16().collect();
             let _ = ((*enc_vtbl).set_property)(encoder, prop_quality.as_ptr(), AMFVariantStruct::from_int64(0));
 
-            // Init encoder para 1920x1080 (AMF_SURFACE_NV12 = 1)
+            // Init encoder for 1920x1080 (AMF_SURFACE_NV12 = 1)
             let init_res = ((*enc_vtbl).init)(encoder, 1, 1920, 1080);
             if init_res != 0 {
                 let _ = ((*enc_vtbl).terminate)(encoder);
@@ -536,10 +536,10 @@ impl AmdAmfZeroCopyEncoder {
                 let _ = ((*ctx_vtbl).release)(context);
                 windows_sys::Win32::Foundation::FreeLibrary(amf_dll);
                 windows_sys::Win32::Foundation::FreeLibrary(d3d11_dll);
-                return Err(format!("AMFComponent::Init falhou: {}", init_res));
+                return Err(format!("AMFComponent::Init failed: {}", init_res));
             }
 
-            info!("💎 [AMD AMF GPU] Engine Nativo Zero-Copy Ativado com Sucesso (Converter GPU + Profile Constrained Baseline)! Placa: {}", gpu_name);
+            info!("💎 [AMD AMF GPU] Native Zero-Copy Engine Enabled Successfully (GPU Converter + Constrained Baseline Profile)! Card: {}", gpu_name);
 
             Ok(Self {
                 amf_dll,
@@ -575,8 +575,8 @@ impl VideoEncoder for AmdAmfZeroCopyEncoder {
             let ctx_vtbl = (*self.context).vtbl;
             let enc_vtbl = (*self.encoder).vtbl;
 
-            // Alocar superfície HOST com formato BGRA (AMF_MEMORY_HOST = 1, AMF_SURFACE_BGRA = 3)
-            // A GPU AMD faz a conversão de cores BGRA -> NV12 via hardware VCN diretamente!
+            // Allocate a HOST surface in BGRA format (AMF_MEMORY_HOST = 1, AMF_SURFACE_BGRA = 3)
+            // The AMD GPU does the BGRA -> NV12 color conversion directly via VCN hardware!
             let mut surface: *mut c_void = std::ptr::null_mut();
             let alloc_res = ((*ctx_vtbl).alloc_surface)(self.context, 1, 3, w, h, &mut surface);
             if alloc_res != 0 || surface.is_null() {
@@ -586,7 +586,7 @@ impl VideoEncoder for AmdAmfZeroCopyEncoder {
             let surf = surface as *mut AMFSurface;
             let surf_vtbl = (*surf).vtbl;
 
-            // Obter plano 0 para preencher os pixels da tela
+            // Get plane 0 to fill in the screen pixels
             let plane = ((*surf_vtbl).get_plane_at)(surf, 0);
             if plane.is_null() {
                 let _ = ((*surf_vtbl).release)(surf);
@@ -616,7 +616,7 @@ impl VideoEncoder for AmdAmfZeroCopyEncoder {
             ((*surf_vtbl).set_pts)(surf, pts);
             ((*surf_vtbl).set_duration)(surf, 166_666);
 
-            // 1. Converter BGRA -> NV12 100% por hardware na GPU AMD
+            // 1. Convert BGRA -> NV12 100% in hardware on the AMD GPU
             let conv_vtbl = (*self.converter).vtbl;
             let conv_sub_res = ((*conv_vtbl).submit_input)(self.converter, surface);
             let _ = ((*surf_vtbl).release)(surf);
@@ -625,14 +625,14 @@ impl VideoEncoder for AmdAmfZeroCopyEncoder {
                 return None;
             }
 
-            // 2. Coletar superfície NV12 acelerada e enviar para o encoder
+            // 2. Collect the accelerated NV12 surface and send it to the encoder
             let mut conv_out: *mut c_void = std::ptr::null_mut();
             let conv_q_res = ((*conv_vtbl).query_output)(self.converter, &mut conv_out);
             if conv_q_res == 0 && !conv_out.is_null() {
                 let out_surf = conv_out as *mut AMFSurface;
                 if self.needs_keyframe {
                     let prop_force: Vec<u16> = "ForcePictureType\0".encode_utf16().collect();
-                    // AMF_VIDEO_ENCODER_PICTURE_TYPE_IDR = 2 (No VideoEncoderVCE.h: NONE=0, SKIP=1, IDR=2, I=3)
+                    // AMF_VIDEO_ENCODER_PICTURE_TYPE_IDR = 2 (In VideoEncoderVCE.h: NONE=0, SKIP=1, IDR=2, I=3)
                     let _ = ((*(*out_surf).vtbl).set_property)(out_surf, prop_force.as_ptr(), AMFVariantStruct::from_int64(2));
                 }
                 let enc_sub_res = ((*enc_vtbl).submit_input)(self.encoder, conv_out);
@@ -644,7 +644,7 @@ impl VideoEncoder for AmdAmfZeroCopyEncoder {
 
             self.out_buffer.clear();
 
-            // Puxar pacotes produzidos da GPU (AMF é assíncrono — retry até 3x com 1ms de espera)
+            // Pull packets produced by the GPU (AMF is asynchronous — retry up to 3x with a 1ms wait)
             for attempt in 0..3 {
                 let mut output_data: *mut c_void = std::ptr::null_mut();
                 let q_res = ((*enc_vtbl).query_output)(self.encoder, &mut output_data);
@@ -658,7 +658,7 @@ impl VideoEncoder for AmdAmfZeroCopyEncoder {
                         self.out_buffer.extend_from_slice(slice);
                     }
                     let _ = ((*buf_vtbl).release)(buf);
-                    // Tentar puxar mais pacotes (pode haver múltiplos NALs prontos)
+                    // Try to pull more packets (there may be several NALs ready)
                     loop {
                         let mut extra_data: *mut c_void = std::ptr::null_mut();
                         let extra_res = ((*enc_vtbl).query_output)(self.encoder, &mut extra_data);
@@ -678,7 +678,7 @@ impl VideoEncoder for AmdAmfZeroCopyEncoder {
                     }
                     break;
                 } else if attempt < 2 {
-                    // AMF ainda processando — aguardar 1ms e tentar novamente
+                    // AMF still processing — wait 1ms and try again
                     let _ = std::hint::black_box(());
                     std::thread::sleep(std::time::Duration::from_millis(1));
                 } else {
@@ -687,7 +687,7 @@ impl VideoEncoder for AmdAmfZeroCopyEncoder {
             }
 
             if !self.out_buffer.is_empty() {
-                // Extrair e preservar SPS/PPS se presente
+                // Extract and keep SPS/PPS if present
                 let has_sps = self.out_buffer.windows(5).any(|w| (w[..4] == [0, 0, 0, 1] && (w[4] & 0x1F) == 7) || (w[..3] == [0, 0, 1] && (w[3] & 0x1F) == 7));
                 if has_sps {
                     let sps_start = self.out_buffer.windows(5).position(|w| {
@@ -715,7 +715,7 @@ impl VideoEncoder for AmdAmfZeroCopyEncoder {
                             self.header_cache = self.out_buffer[start..].to_vec();
                         }
                     }
-                    // Frame IDR com SPS incluso — resetar flag de keyframe
+                    // IDR frame with SPS included — reset the keyframe flag
                     self.needs_keyframe = false;
                 } else if !self.header_cache.is_empty() {
                     let is_idr = self.out_buffer.windows(5).any(|w| (w[..4] == [0, 0, 0, 1] && (w[4] & 0x1F) == 5) || (w[..3] == [0, 0, 1] && (w[3] & 0x1F) == 5));
@@ -797,7 +797,7 @@ impl Drop for AmdAmfZeroCopyEncoder {
             if !self.dxgi_dll.is_null() {
                 windows_sys::Win32::Foundation::FreeLibrary(self.dxgi_dll);
             }
-            info!("🛑 [AMD AMF GPU] Pipeline AMF Native Zero-Copy liberado com sucesso.");
+            info!("🛑 [AMD AMF GPU] AMF Native Zero-Copy pipeline released successfully.");
         }
     }
 }
@@ -838,7 +838,7 @@ impl AmfD3d11Encoder {
         unsafe {
             let amf_dll = windows_sys::Win32::System::LibraryLoader::LoadLibraryA(b"amfrt64.dll\0".as_ptr());
             if amf_dll.is_null() {
-                return Err("amfrt64.dll ausente".into());
+                return Err("amfrt64.dll missing".into());
             }
             let init: Option<FnAMFInit> = std::mem::transmute(windows_sys::Win32::System::LibraryLoader::GetProcAddress(amf_dll, b"AMFInit\0".as_ptr()));
             let mut me = Self {
@@ -853,22 +853,22 @@ impl AmfD3d11Encoder {
                 needs_keyframe: true,
                 headers: Vec::new(),
             };
-            let init = init.ok_or("AMFInit não encontrado")?;
+            let init = init.ok_or("AMFInit not found")?;
             let mut factory: *mut AMFFactory = std::ptr::null_mut();
             if init((1u64 << 48) | (4u64 << 32), &mut factory) != 0 || factory.is_null() {
-                return Err("AMFInit falhou".into());
+                return Err("AMFInit failed".into());
             }
             let fv = (*factory).vtbl;
             if ((*fv).create_context)(factory, &mut me.context) != 0 || me.context.is_null() {
-                return Err("CreateContext falhou".into());
+                return Err("CreateContext failed".into());
             }
             let r = ((*(*me.context).vtbl).init_dx11)(me.context, device.as_raw(), 110);
             if r != 0 {
-                return Err(format!("InitDX11 falhou: {r}"));
+                return Err(format!("InitDX11 failed: {r}"));
             }
             let name = wide("AMFVideoEncoderVCE_AVC");
             if ((*fv).create_component)(factory, me.context, name.as_ptr(), &mut me.encoder) != 0 || me.encoder.is_null() {
-                return Err("CreateComponent(AMFVideoEncoderVCE_AVC) falhou".into());
+                return Err("CreateComponent(AMFVideoEncoderVCE_AVC) failed".into());
             }
             let set = |n: &str, v: i64| {
                 let n = wide(n);
@@ -895,7 +895,7 @@ impl AmfD3d11Encoder {
             ((*(*me.encoder).vtbl).set_property)(me.encoder, fname.as_ptr(), AMFVariantStruct { variant_type: 7, int64_val: fps as i64 | (1i64 << 32), padding: [0; 16] });
             let r = ((*(*me.encoder).vtbl).init)(me.encoder, 1, me.width as i32, me.height as i32); // NV12
             if r != 0 {
-                return Err(format!("AMFComponent::Init falhou: {r}"));
+                return Err(format!("AMFComponent::Init failed: {r}"));
             }
             Ok(me)
         }
@@ -907,7 +907,7 @@ impl AmfD3d11Encoder {
             let mut surface: *mut c_void = std::ptr::null_mut();
             let r = ((*(*self.context).vtbl).create_surface_from_dx11_native)(self.context, texture.as_raw(), &mut surface, std::ptr::null_mut());
             if r != 0 || surface.is_null() {
-                return Err(format!("CreateSurfaceFromDX11Native falhou: {r}"));
+                return Err(format!("CreateSurfaceFromDX11Native failed: {r}"));
             }
             let surf = surface as *mut AMFSurface;
             let sv = (*surf).vtbl;
@@ -925,7 +925,7 @@ impl AmfD3d11Encoder {
             let r = ((*ev).submit_input)(self.encoder, surface);
             ((*sv).release)(surf);
             if r != 0 && r != 24 {
-                return Err(format!("SubmitInput falhou: {r}"));
+                return Err(format!("SubmitInput failed: {r}"));
             }
             // The picture is ready within a few milliseconds (and the texture is free again).
             let mut out = Vec::new();

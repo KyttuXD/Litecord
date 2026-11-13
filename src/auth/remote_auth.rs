@@ -61,11 +61,11 @@ pub fn generate_qr_image(url: &str) -> Result<slint::Image, String> {
 fn generate_rsa_key_pair() -> Result<(RsaPrivateKey, String), String> {
     let mut rng = rand::thread_rng();
     let private_key = RsaPrivateKey::new(&mut rng, 2048)
-        .map_err(|e| format!("Falha ao gerar chave RSA 2048: {:?}", e))?;
+        .map_err(|e| format!("Failed to generate RSA 2048 key: {:?}", e))?;
     let public_key = RsaPublicKey::from(&private_key);
 
     let spki_der = public_key.to_public_key_der()
-        .map_err(|e| format!("Falha ao exportar SPKI DER: {:?}", e))?;
+        .map_err(|e| format!("Failed to export SPKI DER: {:?}", e))?;
     let encoded_public_key = base64::engine::general_purpose::STANDARD.encode(spki_der.as_bytes());
 
     Ok((private_key, encoded_public_key))
@@ -107,22 +107,22 @@ async fn exchange_ticket_for_token(
         .json(&serde_json::json!({ "ticket": ticket }))
         .send()
         .await
-        .map_err(|e| format!("Erro HTTP ao trocar ticket: {:?}", e))?;
+        .map_err(|e| format!("HTTP error while exchanging ticket: {:?}", e))?;
 
     let json: serde_json::Value = res.json()
         .await
-        .map_err(|e| format!("Erro JSON na resposta de login: {:?}", e))?;
+        .map_err(|e| format!("JSON error in login response: {:?}", e))?;
 
     if let Some(enc_token_b64) = json["encrypted_token"].as_str() {
         let enc_bytes = base64::engine::general_purpose::STANDARD.decode(enc_token_b64)
-            .map_err(|e| format!("Erro ao decodificar Base64 do token: {:?}", e))?;
+            .map_err(|e| format!("Error decoding token Base64: {:?}", e))?;
         let decrypted = private_key.decrypt(Oaep::new::<Sha256>(), &enc_bytes)
-            .map_err(|e| format!("Erro ao decifrar token: {:?}", e))?;
+            .map_err(|e| format!("Error decrypting token: {:?}", e))?;
         let token_str = String::from_utf8(decrypted)
-            .map_err(|e| format!("Token inválido UTF-8: {:?}", e))?;
+            .map_err(|e| format!("Invalid UTF-8 token: {:?}", e))?;
         Ok(token_str)
     } else {
-        Err(format!("Resposta sem encrypted_token: {:?}", json))
+        Err(format!("Response without encrypted_token: {:?}", json))
     }
 }
 
@@ -130,7 +130,7 @@ async fn run_remote_auth_loop(
     event_tx: mpsc::Sender<RemoteAuthEvent>,
     cancel_flag: Arc<AtomicBool>,
 ) -> Result<(), String> {
-    info!("📱 Iniciando sessão de Login por QR Code (Discord Remote Auth v2)...");
+    info!("📱 Starting QR Code Login session (Discord Remote Auth v2)...");
 
     // 1. Generate RSA 2048-bit key pair (in synchronous block so rng is not held across await)
     let (private_key, encoded_public_key) = generate_rsa_key_pair()?;
@@ -146,25 +146,25 @@ async fn run_remote_auth_loop(
         .header("Sec-WebSocket-Version", "13")
         .header("Sec-WebSocket-Key", tokio_tungstenite::tungstenite::handshake::client::generate_key())
         .body(())
-        .map_err(|e| format!("Erro ao criar requisição WS: {:?}", e))?;
+        .map_err(|e| format!("Error creating WS request: {:?}", e))?;
 
     let (ws_stream, _) = connect_async(req).await
-        .map_err(|e| format!("Falha ao conectar no Remote Auth Gateway: {:?}", e))?;
+        .map_err(|e| format!("Failed to connect to the Remote Auth Gateway: {:?}", e))?;
 
-    info!("📡 Conectado ao Discord Remote Auth Gateway!");
+    info!("📡 Connected to the Discord Remote Auth Gateway!");
 
     let (write, mut read) = ws_stream.split();
 
     while let Some(msg_res) = read.next().await {
         if cancel_flag.load(Ordering::SeqCst) {
-            info!("🚫 Sessão de QR Code cancelada pelo usuário.");
+            info!("🚫 QR Code session cancelled by the user.");
             let _ = event_tx.send(RemoteAuthEvent::Cancelled).await;
             break;
         }
 
         let msg = match msg_res {
             Ok(m) => m,
-            Err(e) => return Err(format!("Erro de leitura WebSocket: {:?}", e)),
+            Err(e) => return Err(format!("WebSocket read error: {:?}", e)),
         };
 
         if let Message::Text(text) = msg {
@@ -201,7 +201,7 @@ async fn run_remote_auth_loop(
                     });
                     let mut w = write_arc.lock().await;
                     w.send(Message::Text(init_payload.to_string().into())).await
-                        .map_err(|e| format!("Falha ao enviar init payload: {:?}", e))?;
+                        .map_err(|e| format!("Failed to send init payload: {:?}", e))?;
                     drop(w);
                     return handle_auth_steps(read, write_arc, private_key, event_tx, cancel_flag).await;
                 }
@@ -230,7 +230,7 @@ async fn handle_auth_steps(
 
         let msg = match msg_res {
             Ok(m) => m,
-            Err(e) => return Err(format!("Erro WebSocket: {:?}", e)),
+            Err(e) => return Err(format!("WebSocket error: {:?}", e)),
         };
 
         if let Message::Text(text) = msg {
@@ -261,7 +261,7 @@ async fn handle_auth_steps(
                 "fingerprint" | "pending_remote_init" if json["fingerprint"].is_string() => {
                     if let Some(fingerprint) = json["fingerprint"].as_str() {
                         let qr_url = format!("https://discord.com/ra/{}", fingerprint);
-                        info!("📷 QR Code URL gerada com sucesso: {}", qr_url);
+                        info!("📷 QR Code URL generated successfully: {}", qr_url);
                         let _ = event_tx.send(RemoteAuthEvent::QrCodeUrl(qr_url)).await;
                     }
                 }
@@ -274,7 +274,7 @@ async fn handle_auth_steps(
                                     // format: user_id:discriminator:avatar:username
                                     let parts: Vec<&str> = user_info.split(':').collect();
                                     let username = if parts.len() >= 4 { parts[3].to_string() } else { user_info };
-                                    info!("📲 QR Code escaneado pelo usuário: {}!", username);
+                                    info!("📲 QR Code scanned by the user: {}!", username);
                                     let _ = event_tx.send(RemoteAuthEvent::UserScanned { username }).await;
                                 }
                             }
@@ -284,15 +284,15 @@ async fn handle_auth_steps(
                 "pending_login" => {
                     // User tapped "Yes, Log In" on mobile! Exchange ticket via REST API
                     if let Some(ticket) = json["ticket"].as_str() {
-                        info!("🔑 Usuário aprovou o login no celular! Trocando ticket pelo token...");
+                        info!("🔑 User approved the login on mobile! Exchanging ticket for token...");
                         match exchange_ticket_for_token(&http_client, ticket, &private_key).await {
                             Ok(token) => {
-                                info!("🎉 Token de acesso recebido via QR Code com sucesso!");
+                                info!("🎉 Access token received via QR Code successfully!");
                                 let _ = event_tx.send(RemoteAuthEvent::TokenReceived(token)).await;
                                 return Ok(());
                             }
                             Err(e) => {
-                                error!("❌ Falha ao trocar ticket por token: {}", e);
+                                error!("❌ Failed to exchange ticket for token: {}", e);
                                 let _ = event_tx.send(RemoteAuthEvent::Error(e)).await;
                             }
                         }
@@ -306,7 +306,7 @@ async fn handle_auth_steps(
                         if let Ok(enc_bytes) = base64::engine::general_purpose::STANDARD.decode(enc_token_b64) {
                             if let Ok(decrypted) = private_key.decrypt(Oaep::new::<Sha256>(), &enc_bytes) {
                                 if let Ok(token_str) = String::from_utf8(decrypted) {
-                                    info!("🎉 Token de acesso recebido via finish opcode!");
+                                    info!("🎉 Access token received via finish opcode!");
                                     let _ = event_tx.send(RemoteAuthEvent::TokenReceived(token_str)).await;
                                     return Ok(());
                                 }
@@ -315,7 +315,7 @@ async fn handle_auth_steps(
                     }
                 }
                 "cancel" => {
-                    info!("❌ Login por QR Code rejeitado no celular.");
+                    info!("❌ QR Code login rejected on mobile.");
                     let _ = event_tx.send(RemoteAuthEvent::Cancelled).await;
                     return Ok(());
                 }

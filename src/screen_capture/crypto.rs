@@ -13,7 +13,7 @@ use super::types::get_process_instance_id;
 static LOCAL_ECDH_SECRET: Mutex<Option<StaticSecret>> = Mutex::new(None);
 static LOCAL_ECDH_PUBLIC: Mutex<Option<[u8; 32]>> = Mutex::new(None);
 
-/// Obtém ou gera o par de chaves X25519 efêmero na RAM para esta sessão
+/// Gets or generates the ephemeral X25519 key pair held in RAM for this session
 pub fn get_or_create_local_ecdh_keypair() -> [u8; 32] {
     let mut pub_lock = LOCAL_ECDH_PUBLIC.lock().unwrap_or_else(|e| e.into_inner());
     if let Some(pub_bytes) = *pub_lock {
@@ -46,7 +46,7 @@ fn pair_key_from(secret: &StaticSecret, peer_public: &[u8; 32], uid_a: u64, uid_
     hasher.finalize().into()
 }
 
-/// Deriva uma chave AES de 32 bytes exclusiva e sincronizada para todos os participantes do canal de voz
+/// Derives a 32-byte AES key, unique to the channel and shared by every participant of the voice channel
 pub fn get_voice_encryption_key(cid: u64) -> [u8; 32] {
     let mut hasher = Sha256::new();
     hasher.update(b"litecord_e2ee_voice_p2p_channel_salt_v3_2026");
@@ -59,7 +59,7 @@ pub fn get_voice_encryption_key(cid: u64) -> [u8; 32] {
 
 static ENCRYPT_NONCE_COUNTER: AtomicU64 = AtomicU64::new(1);
 
-/// Criptografa o payload usando AES-256-GCM com Nonce determinístico de 12 bytes ultrarrápido (0ns overhead)
+/// Encrypts the payload with AES-256-GCM using a very fast deterministic 12-byte nonce (0 ns overhead)
 pub fn encrypt_signaling_payload(key_bytes: &[u8; 32], plaintext: &[u8]) -> Option<Vec<u8>> {
     let key = Key::<Aes256Gcm>::from_slice(key_bytes);
     let cipher = Aes256Gcm::new(key);
@@ -81,7 +81,7 @@ pub fn encrypt_signaling_payload(key_bytes: &[u8; 32], plaintext: &[u8]) -> Opti
     }
 }
 
-/// Descriptografa o payload via AES-256-GCM. Rejeita pacotes forjados ou sem autenticação válida.
+/// Decrypts the payload with AES-256-GCM. Rejects forged packets or ones without valid authentication.
 pub fn decrypt_signaling_payload(key_bytes: &[u8; 32], encrypted_data: &[u8]) -> Option<Vec<u8>> {
     if encrypted_data.len() < 12 + 16 {
         return None;

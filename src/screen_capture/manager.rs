@@ -122,7 +122,7 @@ impl ScreenCaptureManager {
     pub fn register_remote_peer(&self, uid: u64, addr: SocketAddr) {
         if let Ok(mut peers) = self.known_peers.lock() {
             peers.insert(uid, (addr, Instant::now()));
-            info!("🌐 Peer remoto P2P registrado: User ID {} -> {}", uid, addr);
+            info!("🌐 Remote P2P peer registered: User ID {} -> {}", uid, addr);
         }
         request_intra_keyframe();
         let current_cid = self.channel_id.load(Ordering::Relaxed);
@@ -192,7 +192,7 @@ impl ScreenCaptureManager {
             let stop_proof = super::watch::session_key().and_then(|k| super::watch::stop_proof(&k));
             super::watch::end_session();
             CURRENT_TX_FPS.store(0, Ordering::Relaxed);
-            info!("🛑 Parando captura e transmissão de tela P2P...");
+            info!("🛑 Stopping P2P screen capture and streaming...");
             let mut cid = self.channel_id.load(Ordering::Relaxed);
             if cid == 0 {
                 cid = crate::gateway::get_my_voice_channel_id();
@@ -202,11 +202,11 @@ impl ScreenCaptureManager {
                 uid = crate::gateway::get_my_user_id();
             }
 
-            // 1. Notifica imediatamente o canal de sinalização Cloudflare para fechar o stream em <50ms
+            // 1. Immediately notify the Cloudflare signaling channel to close the stream in <50ms
             notify_signaling_stream_state(cid, uid, false);
 
             let known_peers_clone = Arc::clone(&self.known_peers);
-            // 2. Dispara burst robusto em background thread para não travar a UI e garantir entrega sobre redes lentas/WAN
+            // 2. Fire a robust burst on a background thread so the UI does not freeze and delivery is ensured over slow/WAN networks
             std::thread::Builder::new()
                 .name("p2p-stop-burst".to_string())
                 .spawn(move || {
@@ -258,7 +258,7 @@ impl ScreenCaptureManager {
         F: Fn(SharedPixelBuffer<Rgba8Pixel>) + Send + Sync + 'static,
     {
         if self.is_running.swap(true, Ordering::SeqCst) {
-            warn!("Transmissão de tela já está em execução.");
+            warn!("Screen streaming is already running.");
             return;
         }
         // New stream: new key, nobody watching yet, full bitrate.
@@ -311,7 +311,7 @@ impl ScreenCaptureManager {
             );
         }
 
-        info!("🖥️ Iniciando transmissão P2P H.264 ({}x{} @ {} FPS, screen_idx={}, hwnd={}, cam={:?}, audio={})...", target_w, target_h, target_fps, screen_index, target_hwnd, camera_index, camera_index.is_none() && include_audio);
+        info!("🖥️ Starting P2P H.264 stream ({}x{} @ {} FPS, screen_idx={}, hwnd={}, cam={:?}, audio={})...", target_w, target_h, target_fps, screen_index, target_hwnd, camera_index, camera_index.is_none() && include_audio);
 
         std::thread::Builder::new()
             .name("screen-capture-tx".to_string())
@@ -361,7 +361,7 @@ impl ScreenCaptureManager {
                 };
 
                 // =========================================================================
-                // ESTÁGIO 1: Captura Windows Graphics Capture (WGC - GPU Direct 60-100 FPS)
+                // STAGE 1: Windows Graphics Capture (WGC - GPU Direct 60-100 FPS)
                 // =========================================================================
                 #[cfg(windows)]
                 let wgc_started = if selected_gpu_started {
@@ -493,9 +493,9 @@ impl ScreenCaptureManager {
                         std::thread::Builder::new()
                             .name("wgc-capture-thread".to_string())
                             .spawn(move || {
-                                info!("⚡ Iniciando Windows Graphics Capture (WGC) para Janela HWND={}", target_hwnd);
+                                info!("⚡ Starting Windows Graphics Capture (WGC) for Window HWND={}", target_hwnd);
                                 if let Err(e) = WgcHandler::start(settings) {
-                                    warn!("⚠️ WGC falhou ({:?}), acionando fallback GDI...", e);
+                                    warn!("⚠️ WGC failed ({:?}), switching to GDI fallback...", e);
                                     let mut cur_buf = Vec::with_capacity((target_w * target_h * 4) as usize);
                                     let frame_interval = Duration::from_nanos(1_000_000_000 / target_fps.max(1));
                                     while is_running_fallback.load(Ordering::Relaxed) {
@@ -534,12 +534,12 @@ impl ScreenCaptureManager {
                                 .name("dxgi-duplication-thread".to_string())
                                 .spawn(move || {
                                     crate::cpu_profiler::set_current_thread_name("dxgi-duplication-thread");
-                                    info!("⚡ [SUNSHINE GPU ENGINE] Tentando DXGI Desktop Duplication Direto na GPU para {}...", mon_name);
+                                    info!("⚡ [SUNSHINE GPU ENGINE] Trying DXGI Desktop Duplication directly on the GPU for {}...", mon_name);
                                     let mut dup_opt = DxgiDuplicationApi::new(monitor).ok();
                                     let dxgi_ok = dup_opt.is_some();
 
                                     if dxgi_ok {
-                                        info!("🚀 [SUNSHINE GPU ENGINE] DXGI Desktop Duplication ATIVADO com sucesso na GPU! (Zero-Copy VRAM 60 FPS)");
+                                        info!("🚀 [SUNSHINE GPU ENGINE] DXGI Desktop Duplication ACTIVATED successfully on the GPU! (Zero-Copy VRAM 60 FPS)");
                                         let canvas_w = target_w;
                                         let canvas_h = target_h;
                                         let total_canvas_bytes = (canvas_w * canvas_h * 4) as usize;
@@ -578,14 +578,14 @@ impl ScreenCaptureManager {
                                                         dup_opt = Some(dup);
                                                     }
                                                     Err(windows_capture::dxgi_duplication_api::Error::AccessLost) => {
-                                                        warn!("⚠️ [DXGI GPU] Access Lost (troca de modo D3D11 / UAC), recriando sessão...");
+                                                        warn!("⚠️ [DXGI GPU] Access Lost (D3D11 mode switch / UAC), recreating session...");
                                                         dup_opt = dup.recreate().ok().or_else(|| DxgiDuplicationApi::new(monitor).ok());
                                                         if dup_opt.is_none() {
                                                             std::thread::sleep(Duration::from_millis(50));
                                                         }
                                                     }
                                                     Err(e) => {
-                                                        warn!("⚠️ [DXGI GPU] Erro na duplicação DXGI ({:?}), tentando recriar...", e);
+                                                        warn!("⚠️ [DXGI GPU] DXGI duplication error ({:?}), trying to recreate...", e);
                                                         dup_opt = dup.recreate().ok().or_else(|| DxgiDuplicationApi::new(monitor).ok());
                                                         if dup_opt.is_none() {
                                                             std::thread::sleep(Duration::from_millis(50));
@@ -612,7 +612,7 @@ impl ScreenCaptureManager {
                                     }
 
                                     if !dxgi_ok {
-                                        warn!("⚠️ [DXGI GPU] DXGI Duplication indisponível para este monitor, iniciando Windows Graphics Capture (WGC)...");
+                                        warn!("⚠️ [DXGI GPU] DXGI Duplication unavailable for this monitor, starting Windows Graphics Capture (WGC)...");
                                         let settings = Settings::new(
                                             monitor,
                                             CursorCaptureSettings::Default,
@@ -624,7 +624,7 @@ impl ScreenCaptureManager {
                                             flags,
                                         );
                                         if let Err(e) = WgcHandler::start(settings) {
-                                            warn!("⚠️ WGC falhou ({:?}), acionando fallback GDI...", e);
+                                            warn!("⚠️ WGC failed ({:?}), switching to GDI fallback...", e);
                                             let mut cur_buf = Vec::with_capacity((target_w * target_h * 4) as usize);
                                             let frame_interval = Duration::from_nanos(1_000_000_000 / target_fps.max(1));
                                             while is_running_fallback_inner.load(Ordering::Relaxed) {
@@ -654,17 +654,17 @@ impl ScreenCaptureManager {
                 let wgc_started = false;
 
                 if !wgc_started {
-                    // Fallback para Câmera ou Captura Tradicional
+                    // Fallback to Camera or Traditional Capture
                     std::thread::Builder::new()
                         .name("screen-capture-worker".to_string())
                         .spawn(move || {
                             let _fine_timer = crate::utils::timer_resolution::FineTimerGuard::new();
 
                             let camera_handle = if let Some(cam_idx) = camera_index {
-                                info!("📷 [CAMERA WORKER] Buscando câmeras disponíveis na thread dedicada (índice selecionado: {})...", cam_idx);
+                                info!("📷 [CAMERA WORKER] Looking for available cameras on the dedicated thread (selected index: {})...", cam_idx);
                                 match camera_devices() {
                                     Ok(devs) => {
-                                        info!("📷 [CAMERA WORKER] {} dispositivo(s) de câmera encontrado(s) no sistema", devs.len());
+                                        info!("📷 [CAMERA WORKER] {} camera device(s) found on the system", devs.len());
                                         for (i, d) in devs.iter().enumerate() {
                                             info!("📷 [CAMERA WORKER] Dev #{}: '{}' (id: '{:?}')", i, d.name, d.id);
                                         }
@@ -698,7 +698,7 @@ impl ScreenCaptureManager {
                                                         };
                                                         match cameras::open(&dev, config) {
                                                             Ok(cam) => {
-                                                                info!("📷 [CAMERA WORKER] Câmera '{}' aberta com sucesso ({}x{} @ {} FPS, {:?})!", dev.name, res_test.width, res_test.height, fps_test, fmt);
+                                                                info!("📷 [CAMERA WORKER] Camera '{}' opened successfully ({}x{} @ {} FPS, {:?})!", dev.name, res_test.width, res_test.height, fps_test, fmt);
                                                                 opened = Some(cam);
                                                                 break 'outer;
                                                             }
@@ -708,16 +708,16 @@ impl ScreenCaptureManager {
                                                 }
                                             }
                                             if opened.is_none() {
-                                                warn!("⚠️ [CAMERA WORKER] Falha ao abrir câmera '{}' em todos os formatos de pixel testados.", dev.name);
+                                                warn!("⚠️ [CAMERA WORKER] Failed to open camera '{}' in all pixel formats tested.", dev.name);
                                             }
                                             opened
                                         } else {
-                                            warn!("⚠️ [CAMERA WORKER] Câmera índice {} fora do alcance de dispositivos disponíveis", cam_idx);
+                                            warn!("⚠️ [CAMERA WORKER] Camera index {} is out of range of the available devices", cam_idx);
                                             None
                                         }
                                     }
                                     Err(e) => {
-                                        warn!("⚠️ [CAMERA WORKER] Erro ao listar dispositivos de câmera: {:?}", e);
+                                        warn!("⚠️ [CAMERA WORKER] Error listing camera devices: {:?}", e);
                                         None
                                     }
                                 }
@@ -784,7 +784,7 @@ impl ScreenCaptureManager {
                 }
 
                 // =========================================================================
-                // ESTÁGIO 2: Worker de Encode OpenH264 e Emissão UDP (Em Paralelo)
+                // STAGE 2: OpenH264 Encode Worker and UDP Emission (In Parallel)
                 // =========================================================================
                 let mut tx_frame_count = 0u64;
                 let mut last_tx_stats = std::time::Instant::now();
@@ -892,7 +892,7 @@ impl ScreenCaptureManager {
                     #[cfg(not(windows))]
                     let gpu_path = false;
 
-                    // Drena quadros novos da GPU para sempre ter o frame mais atualizado
+                    // Drain new frames from the GPU so we always have the most up-to-date frame
                     while let Ok(new_frame) = rx_frame.try_recv() {
                         new_captures += 1;
                         fresh_picture = true;
@@ -902,7 +902,7 @@ impl ScreenCaptureManager {
                         }
                     }
 
-                    // Se nenhum quadro chegou ainda, aguarda até 20ms ou usa fallback GDI imediato para captura de tela (vital para notebooks com GPUs híbridas)
+                    // If no frame has arrived yet, wait up to 20ms or use an immediate GDI fallback for screen capture (vital for laptops with hybrid GPUs)
                     if latest_cached_frame.is_none() && !gpu_path {
                         match rx_frame.recv_timeout(Duration::from_millis(20)) {
                             Ok(first_frame) => {
@@ -928,7 +928,7 @@ impl ScreenCaptureManager {
                         }
                     }
 
-                    // Pacer CFR de precisão (Sem busy spinloop para 0% CPU overhead)
+                    // Precision CFR pacer (no busy spin loop, for 0% CPU overhead)
                     // Nobody watching: the preview's pace (a new viewer is noticed within it).
                     let frame_target_interval = if was_watched { frame_target_interval } else { IDLE_FRAME_INTERVAL };
                     let now = Instant::now();
@@ -1022,7 +1022,7 @@ impl ScreenCaptureManager {
                         let before = rate.current();
                         let bps = rate.update(super::watch::worst_loss(), last_rate_update);
                         if bps != before {
-                            info!("📶 [ABR] Taxa da transmissão: {:.1} -> {:.1} Mbps (pior perda entre espectadores: {:?}‰)", before as f64 / 1e6, bps as f64 / 1e6, super::watch::worst_loss());
+                            info!("📶 [ABR] Stream rate: {:.1} -> {:.1} Mbps (worst loss among viewers: {:?}‰)", before as f64 / 1e6, bps as f64 / 1e6, super::watch::worst_loss());
                         }
                         REQUESTED_BITRATE_BPS.store(bps, Ordering::Relaxed);
                     }
@@ -1034,7 +1034,7 @@ impl ScreenCaptureManager {
                     if watched != was_watched {
                         was_watched = watched;
                         TX_WATCHED.store(watched, Ordering::Relaxed);
-                        info!("👀 [ASSISTIR SOB DEMANDA] {}", if watched { "Alguém começou a assistir: codificando." } else { "Ninguém assistindo: codificação pausada." });
+                        info!("👀 [WATCH ON DEMAND] {}", if watched { "Someone started watching: encoding." } else { "Nobody watching: encoding paused." });
                     }
 
                     // A still screen is not encoded again on every tick: a repeat goes out
@@ -1142,7 +1142,7 @@ impl ScreenCaptureManager {
                                 let _ = socket.send_to(&pkt, target);
                             }
 
-                            // Sunshine micro-pacing: pausa microscópica a cada 4 pacotes para evitar bufferbloat
+                            // Sunshine micro-pacing: a microscopic pause every 4 packets to avoid bufferbloat
                             if (chunk_idx + 1) % 4 == 0 && (chunk_idx + 1) < total_chunks {
                                 std::thread::yield_now();
                             }
@@ -1176,7 +1176,7 @@ impl ScreenCaptureManager {
                     turn_start = Instant::now();
                     max_turn_us = max_turn_us.max(turn_us);
                     if watched && turn_us > 100_000 {
-                        warn!("🐢 [TX] Volta do laço de envio levou {:.1} ms (codificação {:.1} ms)", turn_us as f64 / 1e3, enc_dur as f64 / 1e3);
+                        warn!("🐢 [TX] Send loop turn took {:.1} ms (encoding {:.1} ms)", turn_us as f64 / 1e3, enc_dur as f64 / 1e3);
                     }
                     if last_tx_stats.elapsed() >= Duration::from_secs(1) {
                         let elapsed_s = last_tx_stats.elapsed().as_secs_f64();
@@ -1192,7 +1192,7 @@ impl ScreenCaptureManager {
                         let _avg_pix_ms = (total_pix_us as f64) / n / 1000.0;
                         let cur_mbps = (REQUESTED_BITRATE_BPS.load(Ordering::Relaxed) as f64) / 1_000_000.0;
 
-                        info!("📊 [DETALHAMENTO DE CPU & GPU (TX)] FPS: {:.1}/{} | Bitrate: {:.2} Mbps | Encode: {:.2}ms | UI Preview: {:.2}ms | Cripto E2EE: {:.2}ms | FEC: {:.2}ms | Rede UDP: {:.2}ms | Espera: {:.2}/{:.2}ms | Pior volta: {:.1}ms | Capturas novas: {}",
+                        info!("📊 [CPU & GPU BREAKDOWN (TX)] FPS: {:.1}/{} | Bitrate: {:.2} Mbps | Encode: {:.2}ms | UI Preview: {:.2}ms | E2EE Crypto: {:.2}ms | FEC: {:.2}ms | UDP Network: {:.2}ms | Wait: {:.2}/{:.2}ms | Worst turn: {:.1}ms | New captures: {}",
                             fps, target_fps, cur_mbps, avg_enc_ms, avg_preview_ms, avg_crypt_ms, avg_fec_ms, avg_net_ms,
                             total_park_us as f64 / n / 1000.0, total_park_asked_us as f64 / n / 1000.0, max_turn_us as f64 / 1000.0, new_captures);
                         new_captures = 0;
@@ -1214,9 +1214,9 @@ impl ScreenCaptureManager {
 
                 CURRENT_TX_FPS.store(0, Ordering::Relaxed);
                 stop_window_border_overlay();
-                info!("🖥️ Thread emissora de tela/vídeo finalizada.");
+                info!("🖥️ Screen/video sender thread finished.");
             })
-            .expect("Falha ao iniciar thread TX");
+            .expect("Failed to start TX thread");
     }
 
     /// Starts the background UDP receiver thread for incoming streams from peers
@@ -1269,7 +1269,7 @@ impl ScreenCaptureManager {
             .name("video-decoder-worker".to_string())
             .spawn(move || {
                 crate::cpu_profiler::set_current_thread_name("video-decoder-worker");
-                info!("🎬 [VIDEO DECODER WORKER] Thread dedicada de decodificação H.264 iniciada com buffer elástico de 120 quadros!");
+                info!("🎬 [VIDEO DECODER WORKER] Dedicated H.264 decoding thread started with an elastic buffer of 120 frames!");
                 let mut decoders = StreamDecoders::default();
                 // Pictures the GPU draws straight into a window never reach the UI; it is
                 // told once a second (FPS, stream state) with the last known height.
@@ -1279,7 +1279,7 @@ impl ScreenCaptureManager {
                 let mut rx_frame_count: HashMap<u64, u64> = HashMap::new();
                 let mut rx_last_stats: HashMap<u64, Instant> = HashMap::new();
                 let mut rx_error_streak: HashMap<u64, u32> = HashMap::new();
-                // Aguardando IDR por peer: quando true, dropa frames até receber SPS/IDR
+                // Waiting for IDR per peer: when true, drops frames until an SPS/IDR is received
                 let mut waiting_for_idr: HashMap<u64, bool> = HashMap::new();
 
                 while is_running_decoder.load(Ordering::Relaxed) {
@@ -1347,7 +1347,7 @@ impl ScreenCaptureManager {
                                                         sent_targets.push(p_addr);
                                                     }
                                                 }
-                                                info!("🔄 [PLI RECOVERY] Keyframe solicitado ao peer {} (rotas acionadas: {:?})", target_uid, sent_targets);
+                                                info!("🔄 [PLI RECOVERY] Keyframe requested from peer {} (routes triggered: {:?})", target_uid, sent_targets);
                                             }
                                             for bcast in get_broadcast_addresses() {
                                                 let _ = sock.send_to(&req_pkt, bcast);
@@ -1373,20 +1373,20 @@ impl ScreenCaptureManager {
                                 waiting_for_idr.insert(peer_uid, true);
                             }
 
-                            // Se estiver aguardando IDR, verificar se o frame atual contém SPS ou IDR antes de decodificar
+                            // If waiting for an IDR, check whether the current frame contains an SPS or IDR before decoding
                             if *waiting_for_idr.entry(peer_uid).or_insert(false) {
                                 let is_idr_or_sps = frame_data.windows(5).any(|w| {
                                     (w[..4] == [0, 0, 0, 1] && (w[4] & 0x1F == 7 || w[4] & 0x1F == 5)) ||
                                     (w[..3] == [0, 0, 1] && (w[3] & 0x1F == 7 || w[3] & 0x1F == 5))
                                 });
                                 if !is_idr_or_sps {
-                                    // Continua aguardando IDR: solicita PLI periodicamente para destravar o transmissor
+                                    // Still waiting for an IDR: request a PLI periodically to unstick the sender
                                     send_pli(peer_uid);
                                     continue;
                                 }
-                                // Recebeu IDR/SPS — pode decodificar normalmente
+                                // Received IDR/SPS — can decode normally
                                 waiting_for_idr.insert(peer_uid, false);
-                                log::info!("✅ [DECODER RECOVERY] IDR/SPS recebido para peer {} — retomando decodificação!", peer_uid);
+                                log::info!("✅ [DECODER RECOVERY] IDR/SPS received for peer {} — resuming decoding!", peer_uid);
                             }
 
                             let decoded = decode_video_frame(&mut decoders, peer_uid, &frame_data);
@@ -1411,7 +1411,7 @@ impl ScreenCaptureManager {
                                     let elapsed_s = last_stats.elapsed().as_secs_f64();
                                     let rx_fps = (*count as f64) / elapsed_s;
                                     CURRENT_RX_FPS.store((rx_fps * 10.0).round() as u32, Ordering::Relaxed);
-                                    info!("📥 [TELEMETRIA RX WORKER] Peer {}: {:.1} FPS ({} quadros em {:.2}s) | {}p {}fps | Decode: {:.2}ms",
+                                    info!("📥 [RX WORKER TELEMETRY] Peer {}: {:.1} FPS ({} frames in {:.2}s) | {}p {}fps | Decode: {:.2}ms",
                                         peer_uid, rx_fps, *count, elapsed_s, h, peer_fps, dec_us as f64 / 1000.0);
                                     *count = 0;
                                     *last_stats = Instant::now();
@@ -1458,7 +1458,7 @@ impl ScreenCaptureManager {
                                 let streak = rx_error_streak.entry(peer_uid).or_insert(0);
                                 *streak += 1;
                                 if *streak >= 60 {
-                                    log::info!("🔄 [DECODER RECOVERY] Resetando o decodificador do peer {} após {} falhas consecutivas — aguardando IDR", peer_uid, *streak);
+                                    log::info!("🔄 [DECODER RECOVERY] Resetting the decoder of peer {} after {} consecutive failures — waiting for IDR", peer_uid, *streak);
                                     decoders.reset(peer_uid);
                                     waiting_for_idr.insert(peer_uid, true);
                                     *streak = 0;
@@ -1485,7 +1485,7 @@ impl ScreenCaptureManager {
                     }
                 }
                 CURRENT_RX_FPS.store(0, Ordering::Relaxed);
-                info!("🎬 [VIDEO DECODER WORKER] Thread de decodificação finalizada.");
+                info!("🎬 [VIDEO DECODER WORKER] Decoding thread finished.");
             })
             .ok();
 
@@ -1524,15 +1524,15 @@ impl ScreenCaptureManager {
                                         let p = std_sock.local_addr().map(|a| a.port()).unwrap_or(P2P_VIDEO_PORT);
                                         (std_sock, p)
                                     } else {
-                                        warn!("Falha ao bind socket UDP RX");
+                                        warn!("Failed to bind UDP RX socket");
                                         return;
                                     }
                                 } else {
-                                    warn!("Falha ao criar socket UDP RX");
+                                    warn!("Failed to create UDP RX socket");
                                     return;
                                 }
                             } else {
-                                warn!("Falha ao parsear endereço UDP RX");
+                                warn!("Failed to parse UDP RX address");
                                 return;
                             }
                         }
@@ -1631,7 +1631,7 @@ impl ScreenCaptureManager {
                                 }
 
                                 if qos.fec_recovered > 0 || qos.frames_lost > 0 {
-                                    info!("🛡️ [QOS TELEMETRIA RX] Peer {}: {} frames OK, {} recuperados via FEC, {} perdidos (Perda real: {:.1}%)",
+                                    info!("🛡️ [QOS RX TELEMETRY] Peer {}: {} frames OK, {} recovered via FEC, {} lost (Actual loss: {:.1}%)",
                                         peer_uid, qos.frames_received, qos.fec_recovered, qos.frames_lost, (loss_permille as f64) / 10.0
                                     );
                                 }
@@ -1726,7 +1726,7 @@ impl ScreenCaptureManager {
                                 }
                             }
                         }
-                        // Enviar também para LAST_SEEN_PEER_ADDR para manter NAT pinhole aberto
+                        // Also send to LAST_SEEN_PEER_ADDR to keep the NAT pinhole open
                         let mut sent_last = Vec::new();
                         if let Ok(last_guard) = LAST_SEEN_PEER_ADDR.lock() {
                             if let Some(map) = last_guard.as_ref() {
@@ -1740,7 +1740,7 @@ impl ScreenCaptureManager {
                         }
                         let summary = format!("{} bcasts. PeersStore: {:?}, LastSeen: {:?}", bcasts.len(), sent_peers, sent_last);
                         if summary != hb_last_summary || hb_last_log.elapsed() >= Duration::from_secs(60) {
-                            info!("💓 [HEARTBEAT PROATIVO] Enviado para {}", summary);
+                            info!("💓 [PROACTIVE HEARTBEAT] Sent to {}", summary);
                             hb_last_summary = summary;
                             hb_last_log = Instant::now();
                         }
@@ -1786,7 +1786,7 @@ impl ScreenCaptureManager {
                                             }
                                             if stun_last_logged != Some(public_stun_addr) {
                                                 stun_last_logged = Some(public_stun_addr);
-                                                info!("🌐 [NAT TRAVERSAL] Porta pública mapeada com sucesso no socket P2P: {}", public_stun_addr);
+                                                info!("🌐 [NAT TRAVERSAL] Public port successfully mapped on the P2P socket: {}", public_stun_addr);
                                             }
                                             break;
                                         }
@@ -1813,15 +1813,15 @@ impl ScreenCaptureManager {
 
                                 rx_pkts_since_log += 1;
                                 if rx_last_log.elapsed() >= Duration::from_secs(10) {
-                                    info!("📥 [TELEMETRIA RX P2P] {} pacotes nos últimos {:.0}s (último: OP={}, UID={}, IP={})",
+                                    info!("📥 [P2P RX TELEMETRY] {} packets in the last {:.0}s (last: OP={}, UID={}, IP={})",
                                         rx_pkts_since_log, rx_last_log.elapsed().as_secs_f32(), op, pkt_uid, src_addr);
                                     rx_pkts_since_log = 0;
                                     rx_last_log = Instant::now();
                                 }
 
                                 let my_current_cid = current_voice_channel_fallback();
-                                // Regra Estrita de Segurança & Privacidade:
-                                // Descarta imediatamente qualquer pacote de áudio/vídeo se não estivermos na mesma sala de voz
+                                // Strict Security & Privacy Rule:
+                                // Immediately discard any audio/video packet if we are not in the same voice room
                                 if my_current_cid == 0 || pkt_cid == 0 || pkt_cid != my_current_cid {
                                     continue;
                                 }
@@ -1904,7 +1904,7 @@ impl ScreenCaptureManager {
                                             if is_streaming {
                                                 PEER_STREAMING_STATES.lock().unwrap_or_else(|e| e.into_inner()).get_or_insert_with(HashMap::new).insert(pkt_uid, true);
                                             }
-                                            info!("📡 Usuário {} alterou estado de stream: {}", pkt_uid, is_streaming);
+                                            info!("📡 User {} changed stream state: {}", pkt_uid, is_streaming);
                                             // Senders announce only while streaming: an announce saying
                                             // otherwise is forged, and does not end anybody's stream.
                                             if is_streaming {
@@ -1943,7 +1943,7 @@ impl ScreenCaptureManager {
                                                     peers.insert(peer_key.wrapping_add(0x8000_0000_0000_0000), (explicit_addr, Instant::now()));
                                                 }
                                                 if is_new {
-                                                    info!("📡 [P2P HEARTBEAT RECEBIDO] Novo peer UID={} conectado em {}", pkt_uid, src_addr);
+                                                    info!("📡 [P2P HEARTBEAT RECEIVED] New peer UID={} connected at {}", pkt_uid, src_addr);
                                                     if is_tx_running.load(Ordering::Relaxed) {
                                                         KEYFRAME_REQUESTED.store(true, Ordering::Relaxed);
                                                     }
@@ -2045,7 +2045,7 @@ impl ScreenCaptureManager {
 
                                                     let prev_state = active_streaming_users.insert(pkt_uid, true);
                                                     if prev_state != Some(true) {
-                                                        info!("📡 [AUTO-ATIVAÇÃO STREAM] Usuário {} iniciou transmissão de tela (quadro recebido)!", pkt_uid);
+                                                        info!("📡 [STREAM AUTO-ACTIVATION] User {} started screen sharing (frame received)!", pkt_uid);
                                                         on_state_arc(pkt_uid, true);
                                                     }
 
@@ -2053,7 +2053,7 @@ impl ScreenCaptureManager {
                                                     qos.frames_received += 1;
                                                     last_stream_activity.insert(pkt_uid, Instant::now());
 
-                                                    let uname = peer_names.get(&pkt_uid).cloned().unwrap_or_else(|| format!("Usuário {}", pkt_uid));
+                                                    let uname = peer_names.get(&pkt_uid).cloned().unwrap_or_else(|| format!("User {}", pkt_uid));
                                                     let fps_val = peer_fps.get(&pkt_uid).copied().unwrap_or(60);
 
                                                     let q_item = QueuedVideoFrame {
@@ -2069,7 +2069,7 @@ impl ScreenCaptureManager {
                                                         queue_full_dropped += 1;
                                                         mark_decode_resync(pkt_uid);
                                                         if queue_full_last.elapsed() >= Duration::from_secs(1) {
-                                                            log::warn!("⚠️ [JITTER BUFFER] Fila de decodificação cheia ({} quadros): {} quadro(s) descartado(s); pedindo Keyframe ao transmissor {}", DECODE_QUEUE_FRAMES, queue_full_dropped, pkt_uid);
+                                                            log::warn!("⚠️ [JITTER BUFFER] Decode queue full ({} frames): {} frame(s) dropped; requesting Keyframe from sender {}", DECODE_QUEUE_FRAMES, queue_full_dropped, pkt_uid);
                                                             queue_full_dropped = 0;
                                                             queue_full_last = Instant::now();
                                                         }
@@ -2166,7 +2166,7 @@ impl ScreenCaptureManager {
 
                                                     let prev_state = active_streaming_users.insert(pkt_uid, true);
                                                     if prev_state != Some(true) {
-                                                        info!("📡 [AUTO-ATIVAÇÃO STREAM FEC] Usuário {} iniciou transmissão de tela (quadro recuperado via FEC)!", pkt_uid);
+                                                        info!("📡 [STREAM AUTO-ACTIVATION FEC] User {} started screen sharing (frame recovered via FEC)!", pkt_uid);
                                                         on_state_arc(pkt_uid, true);
                                                     }
 
@@ -2175,7 +2175,7 @@ impl ScreenCaptureManager {
                                                     qos.fec_recovered += 1;
                                                     last_stream_activity.insert(pkt_uid, Instant::now());
 
-                                                    let uname = peer_names.get(&pkt_uid).cloned().unwrap_or_else(|| format!("Usuário {}", pkt_uid));
+                                                    let uname = peer_names.get(&pkt_uid).cloned().unwrap_or_else(|| format!("User {}", pkt_uid));
                                                     let fps_val = peer_fps.get(&pkt_uid).copied().unwrap_or(60);
 
                                                     let q_item = QueuedVideoFrame {
@@ -2191,7 +2191,7 @@ impl ScreenCaptureManager {
                                                         queue_full_dropped += 1;
                                                         mark_decode_resync(pkt_uid);
                                                         if queue_full_last.elapsed() >= Duration::from_secs(1) {
-                                                            log::warn!("⚠️ [JITTER BUFFER] Fila de decodificação cheia ({} quadros): {} quadro(s) descartado(s) (último: {}); pedindo Keyframe ao transmissor {}", DECODE_QUEUE_FRAMES, queue_full_dropped, seq, pkt_uid);
+                                                            log::warn!("⚠️ [JITTER BUFFER] Decode queue full ({} frames): {} frame(s) dropped (last: {}); requesting Keyframe from sender {}", DECODE_QUEUE_FRAMES, queue_full_dropped, seq, pkt_uid);
                                                             queue_full_dropped = 0;
                                                             queue_full_last = Instant::now();
                                                         }
@@ -2211,7 +2211,7 @@ impl ScreenCaptureManager {
                                         };
                                         if is_for_me && keyframe_last_honored.elapsed() >= Duration::from_secs(1) {
                                             keyframe_last_honored = Instant::now();
-                                            info!("⚡ [KEYFRAME REQ RECEBIDO] Receptor UID={} solicitou IDR Keyframe imediato!", pkt_uid);
+                                            info!("⚡ [KEYFRAME REQ RECEIVED] Receiver UID={} requested an immediate IDR Keyframe!", pkt_uid);
                                             KEYFRAME_REQUESTED.store(true, Ordering::Relaxed);
                                         }
                                     }
@@ -2233,7 +2233,7 @@ impl ScreenCaptureManager {
                                         match super::watch::on_watch(pkt_uid, viewer_public, src_addr, in_channel) {
                                             Some(super::watch::Verdict::Accepted { new }) => {
                                                 if new {
-                                                    info!("👀 [ASSISTIR SOB DEMANDA] UID={} começou a assistir (de {}).", pkt_uid, src_addr);
+                                                    info!("👀 [WATCH ON DEMAND] UID={} started watching (from {}).", pkt_uid, src_addr);
                                                     KEYFRAME_REQUESTED.store(true, Ordering::Relaxed);
                                                     wake_tx();
                                                 }
@@ -2255,7 +2255,7 @@ impl ScreenCaptureManager {
                                             Some(refused) => {
                                                 static REFUSED: crate::utils::logger::LogThrottle = crate::utils::logger::LogThrottle::new(5000);
                                                 if let Some(n) = REFUSED.hit() {
-                                                    warn!("🚫 [ASSISTIR SOB DEMANDA] Pedido de UID={} ({}) recusado: {:?} ({} desde o último aviso)", pkt_uid, src_addr, refused, n);
+                                                    warn!("🚫 [WATCH ON DEMAND] Request from UID={} ({}) refused: {:?} ({} since the last notice)", pkt_uid, src_addr, refused, n);
                                                 }
                                             }
                                             None => {}
@@ -2265,7 +2265,7 @@ impl ScreenCaptureManager {
                                 OP_UNWATCH => {
                                     if len >= 33 && u64::from_be_bytes(recv_buf[25..33].try_into().unwrap()) == my_uid {
                                         if super::watch::on_unwatch(pkt_uid) {
-                                            info!("👀 [ASSISTIR SOB DEMANDA] UID={} parou de assistir.", pkt_uid);
+                                            info!("👀 [WATCH ON DEMAND] UID={} stopped watching.", pkt_uid);
                                         }
                                     }
                                 }
@@ -2277,7 +2277,7 @@ impl ScreenCaptureManager {
                                             .and_then(|k| <[u8; 32]>::try_from(k.as_slice()).ok());
                                         if let Some(key) = key {
                                             if super::watch::stream_key(pkt_uid) != Some(key) {
-                                                info!("🔑 [ASSISTIR SOB DEMANDA] Chave da transmissão de UID={} recebida.", pkt_uid);
+                                                info!("🔑 [WATCH ON DEMAND] Stream key from UID={} received.", pkt_uid);
                                                 super::watch::set_stream_key(pkt_uid, key);
                                             }
                                         }
@@ -2295,7 +2295,7 @@ impl ScreenCaptureManager {
                                             last_rendered_seq.remove(&pkt_uid);
                                             last_stream_activity.remove(&pkt_uid);
                                             if was != Some(false) {
-                                                info!("📡 Usuário {} encerrou a transmissão de tela via UDP OP_STOP.", pkt_uid);
+                                                info!("📡 User {} ended the screen share via UDP OP_STOP.", pkt_uid);
                                                 trigger_stream_stopped(pkt_uid);
                                             }
                                         }
@@ -2423,7 +2423,7 @@ impl ScreenCaptureManager {
                         }
                         #[cfg(target_os = "windows")]
                         Err(ref e) if e.kind() == std::io::ErrorKind::ConnectionReset => {
-                            // Ignora ICMP Port/Host Unreachable (WSAECONNRESET 10054) no socket UDP
+                            // Ignore ICMP Port/Host Unreachable (WSAECONNRESET 10054) on the UDP socket
                             continue;
                         }
                         Err(_) => break,
@@ -2460,7 +2460,7 @@ impl ScreenCaptureManager {
                     }
                 }
 
-                    // Check stream timeouts (> 2500ms sem quadros)
+                    // Check stream timeouts (> 2500ms without frames)
                     let now = Instant::now();
                     let mut expired = Vec::new();
                     for (&uid, &last_act) in last_stream_activity.iter() {
@@ -2471,7 +2471,7 @@ impl ScreenCaptureManager {
                     for uid in expired {
                         last_stream_activity.remove(&uid);
                         if active_streaming_users.insert(uid, false) != Some(false) {
-                            info!("📡 Stream do usuário {} expirou por inatividade (2.5s sem quadros).", uid);
+                            info!("📡 Stream of user {} expired due to inactivity (2.5s without frames).", uid);
                             last_rendered_seq.remove(&uid);
                             in_flight.remove(&uid);
                             trigger_stream_stopped(uid);
@@ -2480,7 +2480,7 @@ impl ScreenCaptureManager {
                     crate::utils::timer_resolution::set_stream_rx_active(!last_stream_activity.is_empty());
                 }
             })
-            .expect("Falha ao iniciar thread RX");
+            .expect("Failed to start RX thread");
     }
 }
 
@@ -2533,7 +2533,7 @@ fn gpu_output(encoder: &mut Option<(usize, super::gpu_encode_worker::GpuEncodeWo
         }
         Err(e) => {
             *encoder = None;
-            super::gpu_tx::give_up(&format!("falha ao codificar pela GPU ({e})"));
+            super::gpu_tx::give_up(&format!("failed to encode on the GPU ({e})"));
             None
         }
     }
@@ -2584,7 +2584,7 @@ fn open_gpu_encoder(
             true
         }
         Err(e) => {
-            super::gpu_tx::give_up(&format!("codificador pela GPU indisponível ({e})"));
+            super::gpu_tx::give_up(&format!("GPU encoder unavailable ({e})"));
             false
         }
     }

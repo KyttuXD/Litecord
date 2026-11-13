@@ -51,14 +51,14 @@ fn query_stun_server(socket: &UdpSocket, server: &str) -> Option<SocketAddr> {
 
 fn main() {
     println!("==================================================================");
-    println!("🌐 TEST_STUN_WAN: Teste Independente de Resolução Pública (WAN)");
+    println!("🌐 TEST_STUN_WAN: Independent Public (WAN) Resolution Test");
     println!("==================================================================");
 
     let socket = UdpSocket::bind("0.0.0.0:50005")
         .or_else(|_| UdpSocket::bind("0.0.0.0:0"))
-        .expect("Falha ao abrir socket UDP");
+        .expect("Failed to open UDP socket");
     socket.set_read_timeout(Some(Duration::from_millis(200))).unwrap();
-    println!("🎧 Socket local vinculado na porta: {}", socket.local_addr().unwrap().port());
+    println!("🎧 Local socket bound to port: {}", socket.local_addr().unwrap().port());
 
     let stun_servers = [
         "stun.l.google.com:19302",
@@ -70,14 +70,14 @@ fn main() {
         "stun.twilio.com:3478",
     ];
 
-    println!("\n🔍 Consultando servidores STUN públicos...");
+    println!("\n🔍 Querying public STUN servers...");
     let mut resolved_public_addr = None;
 
     for server in stun_servers {
-        print!("   -> Consultando {} ... ", server);
+        print!("   -> Querying {} ... ", server);
         match query_stun_server(&socket, server) {
             Some(mapped_addr) => {
-                println!("✅ MAPEADO: {}", mapped_addr);
+                println!("✅ MAPPED: {}", mapped_addr);
                 if resolved_public_addr.is_none() {
                     resolved_public_addr = Some(mapped_addr);
                 }
@@ -90,10 +90,10 @@ fn main() {
 
     match resolved_public_addr {
         Some(addr) => {
-            println!("\n🎉 IP PÚBLICO WAN RESOLVIDO COM SUCESSO: {}", addr);
+            println!("\n🎉 PUBLIC WAN IP RESOLVED SUCCESSFULLY: {}", addr);
         }
         None => {
-            println!("\n❌ ERRO: Não foi possível obter o IP público via nenhum servidor STUN.");
+            println!("\n❌ ERROR: Could not obtain the public IP from any STUN server.");
         }
     }
 }

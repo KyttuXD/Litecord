@@ -343,7 +343,7 @@ pub fn get_voice_channel_participants(channel_id: &str) -> Vec<(u64, String)> {
                 .as_ref()
                 .and_then(|known_names| known_names.get(&user_id))
                 .cloned()
-                .unwrap_or_else(|| format!("Participante #{}", user_id));
+                .unwrap_or_else(|| format!("Participant #{}", user_id));
             (user_id, name)
         })
         .collect();
@@ -373,9 +373,9 @@ pub fn set_my_username(name: String) {
 
 pub fn get_my_username() -> String {
     if let Ok(uname) = MY_USERNAME.get_or_init(|| Arc::new(std::sync::Mutex::new(String::new()))).lock() {
-        if uname.is_empty() { "Você".to_string() } else { uname.clone() }
+        if uname.is_empty() { "You".to_string() } else { uname.clone() }
     } else {
-        "Você".to_string()
+        "You".to_string()
     }
 }
 
@@ -435,7 +435,7 @@ const USER_AUDIO_SETTINGS_FILE: &str = ".litecord_user_settings.json";
 fn load_persisted_user_audio_settings() -> std::collections::HashMap<String, (bool, f32, i32)> {
     if let Ok(data) = std::fs::read_to_string(USER_AUDIO_SETTINGS_FILE) {
         if let Ok(map) = serde_json::from_str::<std::collections::HashMap<String, (bool, f32, i32)>>(&data) {
-            info!("⚙️ Carregadas configurações de volume e prioridade salvas para {} usuários", map.len());
+            info!("⚙️ Loaded saved volume and priority settings for {} users", map.len());
             return map;
         }
     }
@@ -623,8 +623,8 @@ pub fn get_user_name(user_id: u64) -> String {
     match user_id {
         1307641538502725643 => "MusicMan [Bot]".to_string(),
         1323489999953465385 => "cortez".to_string(),
-        398203126630580225 => "Marido da juju (Você)".to_string(),
-        _ => format!("Participante #{}", user_id),
+        398203126630580225 => "Juju's husband (You)".to_string(),
+        _ => format!("Participant #{}", user_id),
     }
 }
 

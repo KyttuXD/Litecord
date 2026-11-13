@@ -30,7 +30,7 @@ fn decrypt_signaling_payload(key_bytes: &[u8; 32], encrypted_data: &[u8]) -> Opt
     cipher.decrypt(nonce, ciphertext).ok()
 }
 
-// --- ESTRUTURAS DO LITECORD REPLICADAS DO SCREEN_CAPTURE.RS ---
+// --- LITECORD STRUCTURES REPLICATED FROM SCREEN_CAPTURE.RS ---
 
 static PEER_SPS_PPS_CACHE: Mutex<Option<HashMap<u64, Vec<u8>>>> = Mutex::new(None);
 
@@ -134,7 +134,7 @@ fn ensure_annex_b(peer_uid: u64, data: &[u8]) -> Cow<'_, [u8]> {
         let has_sps = clean.windows(5).any(|w| (w[..4] == [0, 0, 0, 1] && (w[4] & 0x1F) == 7) || (w[..3] == [0, 0, 1] && (w[3] & 0x1F) == 7));
         if has_sps {
             if let Some(sps_pps) = extract_sps_pps_annex_b(clean.as_ref()) {
-                println!("🎯 [RX PIPELINE] SPS/PPS capturado e cacheado do peer {}: {:02X?}", peer_uid, sps_pps);
+                println!("🎯 [RX PIPELINE] SPS/PPS captured and cached from peer {}: {:02X?}", peer_uid, sps_pps);
                 cache_peer_sps_pps(peer_uid, &sps_pps);
             }
         } else if let Some(cached_header) = get_cached_peer_sps_pps(peer_uid) {
@@ -159,21 +159,21 @@ fn main() {
     }
 
     println!("==================================================================");
-    println!("🧪 LITECORD | TESTBENCH NATIVO DO PIPELINE AMD AMF / SUNSHINE");
+    println!("🧪 LITECORD | NATIVE TESTBENCH FOR THE AMD AMF / SUNSHINE PIPELINE");
     println!("==================================================================");
 
     let width = 1280;
     let height = 720;
     let peer_uid = 995123987032055918u64;
 
-    // Gerador de quadros sintéticos reais H.264
-    let mut encoder = Encoder::new().expect("Falha ao inicializar Encoder H.264");
+    // Real synthetic H.264 frame generator
+    let mut encoder = Encoder::new().expect("Failed to initialize H.264 Encoder");
     let mut raw_frames = Vec::new();
 
-    println!("🎬 1. Gerando 120 quadros de teste em 720p 60 FPS com movimento...");
+    println!("🎬 1. Generating 120 test frames at 720p 60 FPS with motion...");
     let mut rgb_buffer = vec![0u8; width * height * 3];
     for frame_idx in 0..120 {
-        // Gera padrão de cores em movimento
+        // Generates a moving color pattern
         let offset = (frame_idx * 8) as u8;
         for y in 0..height {
             for x in 0..width {
@@ -186,53 +186,53 @@ fn main() {
 
         let rgb_slice = RgbSliceU8::new(&rgb_buffer, (width, height));
         let yuv = YUVBuffer::from_rgb_source(rgb_slice);
-        let bitstream = encoder.encode(&yuv).expect("Falha ao codificar frame");
+        let bitstream = encoder.encode(&yuv).expect("Failed to encode frame");
         raw_frames.push(bitstream.to_vec());
     }
-    println!("✅ 120 quadros H.264 gerados com sucesso!\n");
+    println!("✅ 120 H.264 frames generated successfully!\n");
 
-    // Extrai o SPS/PPS oficial do Frame 0
-    let sps_pps_master = extract_sps_pps_annex_b(&raw_frames[0]).expect("SPS/PPS ausente no Frame 0");
-    println!("📦 SPS/PPS Oficial Capturado: {} bytes\n", sps_pps_master.len());
+    // Extracts the official SPS/PPS from Frame 0
+    let sps_pps_master = extract_sps_pps_annex_b(&raw_frames[0]).expect("SPS/PPS missing from Frame 0");
+    println!("📦 Official SPS/PPS Captured: {} bytes\n", sps_pps_master.len());
 
     // -------------------------------------------------------------
-    // CENÁRIO 1: Transmissão Contínua com AMD AMF (NAL 9 AUD em todos os quadros)
+    // SCENARIO 1: Continuous Transmission with AMD AMF (NAL 9 AUD in every frame)
     // -------------------------------------------------------------
     println!("------------------------------------------------------------------");
-    println!("🧪 CENÁRIO 1: Stream Contínuo da AMD AMF (com NAL 9 AUD injetado)");
+    println!("🧪 SCENARIO 1: Continuous AMD AMF Stream (with injected NAL 9 AUD)");
     println!("------------------------------------------------------------------");
-    let mut decoder = Decoder::new().expect("Falha ao criar Decoder OpenH264");
+    let mut decoder = Decoder::new().expect("Failed to create OpenH264 Decoder");
     if let Ok(mut lock) = PEER_SPS_PPS_CACHE.lock() { *lock = None; }
 
     let mut decoded_count = 0;
     let t_start = Instant::now();
 
     for (i, frame) in raw_frames.iter().enumerate() {
-        // Simulação do driver AMD AMF: Injeta [00 00 00 01 09 30] em TODOS os quadros
+        // AMD AMF driver simulation: Injects [00 00 00 01 09 30] into ALL frames
         let mut amd_packet = vec![0x00, 0x00, 0x00, 0x01, 0x09, 0x30];
         amd_packet.extend_from_slice(frame);
 
-        // Processa pelo pipeline do Litecord
+        // Process through the Litecord pipeline
         let annex_b = ensure_annex_b(peer_uid, &amd_packet);
         match decoder.decode(&annex_b) {
             Ok(Some(_)) => decoded_count += 1,
-            Ok(None) => println!("⚠️ Frame {} retornou None", i),
-            Err(e) => println!("❌ Frame {} erro de decode: {:?}", i, e),
+            Ok(None) => println!("⚠️ Frame {} returned None", i),
+            Err(e) => println!("❌ Frame {} decode error: {:?}", i, e),
         }
     }
     let elapsed = t_start.elapsed();
-    println!("📊 Resultado Cenário 1: {}/{} quadros decodificados com sucesso ({:.2?})", decoded_count, raw_frames.len(), elapsed);
-    assert_eq!(decoded_count, 120, "Cenário 1 falhou: Nem todos os quadros foram decodificados!");
-    println!("✅ CENÁRIO 1 APROVADO COM 100% DE SUCESSO!\n");
+    println!("📊 Scenario 1 Result: {}/{} frames decoded successfully ({:.2?})", decoded_count, raw_frames.len(), elapsed);
+    assert_eq!(decoded_count, 120, "Scenario 1 failed: Not all frames were decoded!");
+    println!("✅ SCENARIO 1 PASSED WITH 100% SUCCESS!\n");
 
     // -------------------------------------------------------------
-    // CENÁRIO 2: Entrada Tardia (Late Join no Quadro 40) + PLI Recovery
+    // SCENARIO 2: Late Join (at Frame 40) + PLI Recovery
     // -------------------------------------------------------------
     println!("------------------------------------------------------------------");
-    println!("🧪 CENÁRIO 2: Late Join no Quadro 40 (Entrando no meio da live)");
+    println!("🧪 SCENARIO 2: Late Join at Frame 40 (Joining mid-stream)");
     println!("------------------------------------------------------------------");
-    let mut late_tx_encoder = Encoder::new().expect("Falha ao criar Tx Encoder");
-    let mut late_decoder = Decoder::new().expect("Falha ao criar Decoder");
+    let mut late_tx_encoder = Encoder::new().expect("Failed to create Tx Encoder");
+    let mut late_decoder = Decoder::new().expect("Failed to create Decoder");
     if let Ok(mut lock) = PEER_SPS_PPS_CACHE.lock() { *lock = None; }
 
     let mut late_decoded_count = 0;
@@ -256,9 +256,9 @@ fn main() {
             needs_pli_keyframe = false;
         }
 
-        let bitstream = late_tx_encoder.encode(&yuv).expect("Falha ao codificar");
+        let bitstream = late_tx_encoder.encode(&yuv).expect("Failed to encode");
 
-        // O receptor só entra no quadro 40
+        // The receiver only joins at frame 40
         if i < 40 {
             continue;
         }
@@ -270,28 +270,28 @@ fn main() {
         match late_decoder.decode(&annex_b) {
             Ok(Some(_)) => late_decoded_count += 1,
             Ok(None) => {
-                // OpenH264 aguardando cabeçalho -> dispara PLI Recovery instantâneo
+                // OpenH264 waiting for header -> triggers instant PLI Recovery
                 needs_pli_keyframe = true;
             }
             Err(e) => {
-                // Erro esperado no primeiro quadro (quadro 40 não tinha SPS) -> dispara PLI Recovery
-                println!("ℹ️ Quadro {} deu erro esperado ({:?}) -> Solicitando PLI Recovery...", i, e);
+                // Expected error on the first frame (frame 40 had no SPS) -> triggers PLI Recovery
+                println!("ℹ️ Frame {} gave expected error ({:?}) -> Requesting PLI Recovery...", i, e);
                 needs_pli_keyframe = true;
             }
         }
     }
-    println!("📊 Resultado Cenário 2: {}/80 quadros decodificados (recuperou imediatamente no quadro 41)", late_decoded_count);
-    assert!(late_decoded_count >= 79, "Cenário 2 falhou ao recuperar após entrada tardia");
-    println!("✅ CENÁRIO 2 APROVADO COM RECUPERAÇÃO INSTANTÂNEA!\n");
+    println!("📊 Scenario 2 Result: {}/80 frames decoded (recovered immediately at frame 41)", late_decoded_count);
+    assert!(late_decoded_count >= 79, "Scenario 2 failed to recover after late join");
+    println!("✅ SCENARIO 2 PASSED WITH INSTANT RECOVERY!\n");
 
     // -------------------------------------------------------------
-    // CENÁRIO 3: Simulação de Perda de Pacotes no GTA (Quadros 60 a 65 perdidos)
+    // SCENARIO 3: Packet Loss Simulation in GTA (Frames 60 to 65 lost)
     // -------------------------------------------------------------
     println!("------------------------------------------------------------------");
-    println!("🧪 CENÁRIO 3: Simulação de Oscilação/Perda de Pacotes no GTA");
+    println!("🧪 SCENARIO 3: Jitter/Packet Loss Simulation in GTA");
     println!("------------------------------------------------------------------");
-    let mut gta_tx_encoder = Encoder::new().expect("Falha ao criar Tx Encoder");
-    let mut gta_decoder = Decoder::new().expect("Falha ao criar Decoder");
+    let mut gta_tx_encoder = Encoder::new().expect("Failed to create Tx Encoder");
+    let mut gta_decoder = Decoder::new().expect("Failed to create Decoder");
     if let Ok(mut lock) = PEER_SPS_PPS_CACHE.lock() { *lock = None; }
 
     let mut gta_decoded_count = 0;
@@ -315,9 +315,9 @@ fn main() {
             gta_needs_pli = false;
         }
 
-        let bitstream = gta_tx_encoder.encode(&yuv).expect("Falha ao codificar");
+        let bitstream = gta_tx_encoder.encode(&yuv).expect("Failed to encode");
 
-        // Simula queda de 5 quadros no meio do jogo
+        // Simulates a drop of 5 frames mid-game
         if i >= 60 && i <= 65 {
             continue;
         }
@@ -332,17 +332,17 @@ fn main() {
                 gta_needs_pli = true;
             }
             Err(e) => {
-                println!("ℹ️ Quadro {} pós-perda acusou erro ({:?}) -> Solicitando PLI Recovery...", i, e);
+                println!("ℹ️ Frame {} after loss reported an error ({:?}) -> Requesting PLI Recovery...", i, e);
                 gta_needs_pli = true;
             }
         }
     }
-    println!("📊 Resultado Cenário 3: {}/114 quadros decodificados com sucesso após perda de pacotes", gta_decoded_count);
-    assert!(gta_decoded_count >= 113, "Cenário 3 falhou ao se recuperar da perda de pacotes");
-    println!("✅ CENÁRIO 3 APROVADO COM RECUPERAÇÃO AUTOMÁTICA!\n");
+    println!("📊 Scenario 3 Result: {}/114 frames decoded successfully after packet loss", gta_decoded_count);
+    assert!(gta_decoded_count >= 113, "Scenario 3 failed to recover from packet loss");
+    println!("✅ SCENARIO 3 PASSED WITH AUTOMATIC RECOVERY!\n");
 
     println!("==================================================================");
-    println!("🎉 TODOS OS 3 CENÁRIOS DA AMD FORAM VALIDADOS COM 100% DE SUCESSO!");
+    println!("🎉 ALL 3 AMD SCENARIOS WERE VALIDATED WITH 100% SUCCESS!");
     println!("==================================================================");
 
     let args: Vec<String> = std::env::args().collect();
@@ -356,7 +356,7 @@ fn run_live_rx_monitor() {
     use std::time::Duration;
 
     println!("\n==================================================================");
-    println!("📡 LITECORD | MONITOR AO VIVO DE STREAMING DO NOTEBOOK AMD");
+    println!("📡 LITECORD | LIVE STREAMING MONITOR FOR THE AMD NOTEBOOK");
     println!("==================================================================");
 
     const MAGIC: &[u8; 4] = b"LTPV";
@@ -372,18 +372,18 @@ fn run_live_rx_monitor() {
         Ok(s) => s,
         Err(_) => match UdpSocket::bind("0.0.0.0:50005") {
             Ok(s) => s,
-            Err(_) => UdpSocket::bind("0.0.0.0:0").expect("Falha ao abrir socket UDP"),
+            Err(_) => UdpSocket::bind("0.0.0.0:0").expect("Failed to open UDP socket"),
         },
     };
     socket.set_nonblocking(true).unwrap();
     let local_port = socket.local_addr().unwrap().port();
-    println!("✅ Socket RX ativo em 0.0.0.0:{}", local_port);
+    println!("✅ RX socket active on 0.0.0.0:{}", local_port);
 
     let targets: Vec<SocketAddr> = vec![
         "100.120.251.124:50005".parse().unwrap(),
     ];
 
-    let mut decoder = Decoder::new().expect("Falha ao criar OpenH264 Decoder");
+    let mut decoder = Decoder::new().expect("Failed to create OpenH264 Decoder");
     let mut in_flight_frames: HashMap<u32, (u16, Instant, HashMap<u16, Vec<u8>>)> = HashMap::new();
     let mut last_rendered_seq = 0u32;
     let mut frames_decoded_window = 0u64;
@@ -401,7 +401,7 @@ fn run_live_rx_monitor() {
     let stream_start_time = Instant::now();
 
     let mut recv_buf = [0u8; 4096];
-    println!("⏳ Aguardando pacotes do Notebook AMD no canal 'fofocas'...\n");
+    println!("⏳ Waiting for packets from the AMD Notebook on channel 'fofocas'...\n");
 
     let mut hb_count = 0u64;
     loop {
@@ -411,7 +411,7 @@ fn run_live_rx_monitor() {
             let mut ann = Vec::with_capacity(36);
             ann.extend_from_slice(MAGIC);
             ann.extend_from_slice(&2466369941u32.to_be_bytes());
-            ann.push(OP_ANNOUNCE); // OP_ANNOUNCE (1) registra o receptor no transmissor
+            ann.push(OP_ANNOUNCE); // OP_ANNOUNCE (1) registers the receiver with the transmitter
             ann.extend_from_slice(&cid.to_be_bytes());
             ann.extend_from_slice(&my_uid.to_be_bytes());
             ann.push(0); // is_streaming = 0
@@ -473,7 +473,7 @@ fn run_live_rx_monitor() {
                         }
 
                         if nals.contains(&7) {
-                            println!("🎯 [RX PIPELINE] SPS/PPS capturado no Frame #{}! NALs={:?}", seq, nals);
+                            println!("🎯 [RX PIPELINE] SPS/PPS captured in Frame #{}! NALs={:?}", seq, nals);
                         } else if seq % 300 == 0 {
                             println!("🎬 [DECRYPTED FRAME #{}] len={} | NALs={:?}", seq, final_frame.len(), nals);
                         }
@@ -505,7 +505,7 @@ fn run_live_rx_monitor() {
                                         let avg_dec = total_dec_ms / (frames_total as f64).max(1.0);
                                         let success_pct = (frames_total as f64) / ((frames_total + error_count) as f64) * 100.0;
 
-                                        println!("🎬 [ESTRESSE AO VIVO] FPS: {:.1} (Média: {:.1}) | {}x{} | Bitrate: {:.2} Mbps | Decode: {:.2}ms (Min: {:.2}ms, Max: {:.2}ms, Média: {:.2}ms) | Quadros: {} | Sucesso: {:.2}% | Erros: {}",
+                                        println!("🎬 [LIVE STRESS TEST] FPS: {:.1} (Avg: {:.1}) | {}x{} | Bitrate: {:.2} Mbps | Decode: {:.2}ms (Min: {:.2}ms, Max: {:.2}ms, Avg: {:.2}ms) | Frames: {} | Success: {:.2}% | Errors: {}",
                                             fps, avg_fps, w, h, mbps, dec_ms, min_dec_ms, max_dec_ms, avg_dec, frames_total, success_pct, error_count);
                                         frames_decoded_window = 0;
                                         bytes_window = 0;
@@ -513,10 +513,10 @@ fn run_live_rx_monitor() {
                                     }
                                 }
                                 Ok(None) => {
-                                    println!("⏳ [RX MONITOR] Frame #{} (len={}) OpenH264 aguardando IDR Keyframe...", seq, clean_annex_b.len());
+                                    println!("⏳ [RX MONITOR] Frame #{} (len={}) OpenH264 waiting for IDR Keyframe...", seq, clean_annex_b.len());
                                     if last_pli_req.elapsed() >= Duration::from_millis(300) {
                                         last_pli_req = Instant::now();
-                                        println!("🔄 [RX MONITOR] Solicitando Keyframe PLI imediato ao Notebook AMD...");
+                                        println!("🔄 [RX MONITOR] Requesting immediate Keyframe PLI from the AMD Notebook...");
                                         let mut req = Vec::with_capacity(33);
                                         req.extend_from_slice(MAGIC);
                                         req.extend_from_slice(&2466369941u32.to_be_bytes());
@@ -533,7 +533,7 @@ fn run_live_rx_monitor() {
                                 }
                                 Err(e) => {
                                     error_count += 1;
-                                    println!("⚠️ [RX MONITOR ERRO] Frame #{} descartado: {:?} (len={}) -> Solicitando Keyframe PLI...", seq, e, clean_annex_b.len());
+                                    println!("⚠️ [RX MONITOR ERROR] Frame #{} dropped: {:?} (len={}) -> Requesting Keyframe PLI...", seq, e, clean_annex_b.len());
                                     if last_pli_req.elapsed() >= Duration::from_millis(300) {
                                         last_pli_req = Instant::now();
                                         let mut req = Vec::with_capacity(33);
@@ -559,7 +559,7 @@ fn run_live_rx_monitor() {
                 std::thread::sleep(Duration::from_millis(1));
             }
             Err(e) => {
-                eprintln!("Erro no socket: {:?}", e);
+                eprintln!("Socket error: {:?}", e);
             }
         }
     }

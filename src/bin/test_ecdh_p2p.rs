@@ -13,10 +13,10 @@ use x25519_dalek::{PublicKey, StaticSecret};
 
 fn main() {
     println!("============================================================");
-    println!("🔒 TESTANDO NEGOCIAÇÃO X25519 ECDH + AES-256-GCM NO LITECORD");
+    println!("🔒 TESTING X25519 ECDH + AES-256-GCM NEGOTIATION IN LITECORD");
     println!("============================================================");
 
-    // 1. Benchmark do Handshake X25519 ECDH
+    // 1. X25519 ECDH Handshake Benchmark
     let t0 = Instant::now();
     let tx_secret = StaticSecret::from(rand::random::<[u8; 32]>());
     let tx_public = PublicKey::from(&tx_secret);
@@ -31,14 +31,14 @@ fn main() {
     assert_eq!(
         shared_tx.as_bytes(),
         shared_rx.as_bytes(),
-        "FATAL: Chaves ECDH compartilhadas não coincidem!"
+        "FATAL: Shared ECDH keys do not match!"
     );
-    println!("✅ Handshake X25519 concluído com SUCESSO em {:.3} ms ({:.1} µs)!", 
+    println!("✅ X25519 handshake completed SUCCESSFULLY in {:.3} ms ({:.1} µs)!", 
         handshake_time.as_secs_f64() * 1000.0,
         handshake_time.as_secs_f64() * 1_000_000.0
     );
 
-    // 2. Derivação de Chave Simétrica AES-256-GCM via SHA-256 HKDF
+    // 2. AES-256-GCM Symmetric Key Derivation via SHA-256 HKDF
     let derive_key = |shared: &[u8; 32], salt_prefix: &[u8]| -> [u8; 32] {
         let mut hasher = Sha256::new();
         hasher.update(b"litecord_x25519_ecdh_aes256_gcm_salt_v1_2026");
@@ -52,11 +52,11 @@ fn main() {
 
     let key_tx = derive_key(shared_tx.as_bytes(), b"stream_session_peer_1");
     let key_rx = derive_key(shared_rx.as_bytes(), b"stream_session_peer_1");
-    assert_eq!(key_tx, key_rx, "FATAL: Chaves AES derivadas não coincidem!");
-    println!("✅ Chave de sessão AES-256-GCM idêntica gerada na RAM dos dois nós!");
+    assert_eq!(key_tx, key_rx, "FATAL: Derived AES keys do not match!");
+    println!("✅ Identical AES-256-GCM session key generated in the RAM of both nodes!");
 
-    // 3. Simulação de Criptografia e Descriptografia de 300 quadros H.264 (1080p 60 FPS = 5 segundos de vídeo)
-    let sample_h264_frame = vec![0xABu8; 35_000]; // 35 KB por frame (típico de 1080p 60 FPS)
+    // 3. Simulation of Encryption and Decryption of 300 H.264 frames (1080p 60 FPS = 5 seconds of video)
+    let sample_h264_frame = vec![0xABu8; 35_000]; // 35 KB per frame (typical for 1080p 60 FPS)
     let cipher_tx = Aes256Gcm::new(Key::<Aes256Gcm>::from_slice(&key_tx));
     let cipher_rx = Aes256Gcm::new(Key::<Aes256Gcm>::from_slice(&key_rx));
 
@@ -65,17 +65,17 @@ fn main() {
     let frame_count = 300;
 
     for _ in 0..frame_count {
-        // Criptografia no Transmissor
+        // Encryption on the Transmitter
         let t_enc = Instant::now();
         let mut nonce_bytes = [0u8; 12];
         rand::thread_rng().fill_bytes(&mut nonce_bytes);
         let nonce = Nonce::from_slice(&nonce_bytes);
-        let ciphertext = cipher_tx.encrypt(nonce, sample_h264_frame.as_slice()).expect("Falha ao criptografar");
+        let ciphertext = cipher_tx.encrypt(nonce, sample_h264_frame.as_slice()).expect("Failed to encrypt");
         total_enc_micros += t_enc.elapsed().as_micros();
 
-        // Descriptografia no Receptor
+        // Decryption on the Receiver
         let t_dec = Instant::now();
-        let decrypted = cipher_rx.decrypt(nonce, ciphertext.as_slice()).expect("Falha ao descriptografar");
+        let decrypted = cipher_rx.decrypt(nonce, ciphertext.as_slice()).expect("Failed to decrypt");
         total_dec_micros += t_dec.elapsed().as_micros();
 
         assert_eq!(decrypted.len(), sample_h264_frame.len());
@@ -85,10 +85,10 @@ fn main() {
     let avg_dec_us = total_dec_micros as f64 / frame_count as f64;
 
     println!("------------------------------------------------------------");
-    println!("📊 BENCHMARK CRIPTOGRÁFICO DE TRANSMISSÃO (300 FRAMES 1080p):");
-    println!("   - Tempo médio de Criptografia (TX):   {:.2} µs ({:.4} ms) por quadro", avg_enc_us, avg_enc_us / 1000.0);
-    println!("   - Tempo médio de Descriptografia (RX): {:.2} µs ({:.4} ms) por quadro", avg_dec_us, avg_dec_us / 1000.0);
-    println!("   - Custo total de CPU a 60 FPS:         {:.3}% de um único núcleo!", (avg_enc_us + avg_dec_us) * 60.0 / 10_000.0);
+    println!("📊 TRANSMISSION CRYPTOGRAPHIC BENCHMARK (300 FRAMES 1080p):");
+    println!("   - Average Encryption time (TX):   {:.2} µs ({:.4} ms) per frame", avg_enc_us, avg_enc_us / 1000.0);
+    println!("   - Average Decryption time (RX): {:.2} µs ({:.4} ms) per frame", avg_dec_us, avg_dec_us / 1000.0);
+    println!("   - Total CPU cost at 60 FPS:      {:.3}% of a single core!", (avg_enc_us + avg_dec_us) * 60.0 / 10_000.0);
     println!("============================================================");
-    println!("🎉 CONCLUSÃO: X25519 ECDH + AES-256-GCM É 100% INVIOLÁVEL E INVISÍVEL NO HARDWARE!");
+    println!("🎉 CONCLUSION: X25519 ECDH + AES-256-GCM IS 100% UNBREAKABLE AND INVISIBLE ON THE HARDWARE!");
 }

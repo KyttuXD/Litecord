@@ -106,10 +106,10 @@ export component AppWindow inherits Window {
     callback toggle_mute();
     callback toggle_deafen();
     callback leave_voice();
-    callback call_dm();    // Inicia chamada de voz em DM (ring + OP4)
-    callback hangup_dm();  // Encerra chamada de voz em DM (stop-ringing + OP4 null)
-    callback accept_call();  // Aceita chamada DM recebida
-    callback reject_call();  // Recusa chamada DM recebida
+    callback call_dm();    // Starts a DM voice call (ring + OP4)
+    callback hangup_dm();  // Ends a DM voice call (stop-ringing + OP4 null)
+    callback accept_call();  // Accepts an incoming DM call
+    callback reject_call();  // Declines an incoming DM call
     callback minimize_to_tray();
     callback open_settings();
     callback close_settings();
@@ -424,12 +424,12 @@ export component AppWindow inherits Window {
     in-out property <[LanguageItem]> languages: [];
     in-out property <[AudioDeviceItem]> input_devices: [];
     in-out property <[AudioDeviceItem]> output_devices: [];
-    in-out property <string> selected_input_device: "Microfone Padrão do Sistema";
-    in-out property <string> selected_output_device: "Alto-falantes Padrão do Sistema";
+    in-out property <string> selected_input_device: "System Default Microphone";
+    in-out property <string> selected_output_device: "System Default Speakers";
     in-out property <float> mic_level: 0.0; // Real-time mic volume level (0.0 to 1.0)
     in-out property <float> mic_volume: 1.0; // Microphone Input Gain Volume (0.0 to 2.0, 100% = 1.0)
     in-out property <float> vad_threshold: 0.05; // Voice Activity Detection Threshold (0.0 to 1.0)
-    in-out property <bool> is_testing_mic: false; // Mic loopback ("Se ouvir") test active
+    in-out property <bool> is_testing_mic: false; // Mic loopback ("Hear yourself") test active
 
     // Screen Share / Live Video Grid Properties
     in-out property <bool> is_screen_sharing: false;
@@ -1016,7 +1016,7 @@ export component AppWindow inherits Window {
                                     wrap: word-wrap;
                                 }
 
-                                // Botão Re-gerar QR Code
+                                // Regenerate QR Code button
                                 HorizontalLayout {
                                     alignment: center;
                                     Rectangle {
@@ -1068,7 +1068,7 @@ export component AppWindow inherits Window {
             padding: 0px;
             spacing: 0px;
 
-            // 1. Guilds Sidebar (Servidores com Scroll e tamanho fixado)
+            // 1. Guilds Sidebar (Servers with scrolling and fixed size)
             Rectangle {
                 width: 72px;
                 background: AppTheme.surface-guild-rail;
@@ -1115,7 +1115,7 @@ export component AppWindow inherits Window {
                                 animate colorize { duration: 150ms; }
                             }
 
-                            // Unread Badge (pill no canto inferior direito estilo Discord)
+                            // Unread Badge (pill in the bottom-right corner, Discord style)
                             if root.total_dm_unread_count > 0: Rectangle {
                                 x: parent.width - self.width + 3px;
                                 y: parent.height - self.height + 3px;
@@ -1730,7 +1730,7 @@ export component AppWindow inherits Window {
                                                         spacing: 6px;
                                                         alignment: start;
 
-                                                        // 6. AO VIVO Badge (Priority 6 - least important, hidden first when width < 380px)
+                                                        // 6. LIVE Badge (Priority 6 - least important, hidden first when width < 380px)
                                                         if (stream_top_bar.width >= 380px): Rectangle {
                                                             background: AppTheme.danger;
                                                             border-radius: 4px;
@@ -2072,7 +2072,7 @@ export component AppWindow inherits Window {
                                             }
                                         }
 
-                                        // Self-Preview Resource Notice (Single compact line below AO VIVO badge)
+                                        // Self-Preview Resource Notice (Single compact line below LIVE badge)
                                         if (p.is_self && root.is_screen_sharing && root.show_self_preview_notice): Rectangle {
                                             x: 8px;
                                             y: 38px;
@@ -2485,7 +2485,7 @@ export component AppWindow inherits Window {
                                                           }
                                                       }
 
-                                                      // Speech Priority Control Box (Prioridade de Fala)
+                                                      // Speech Priority Control Box (Speech Priority)
                                                       VerticalLayout {
                                                           alignment: center;
                                                           Rectangle {
@@ -3464,7 +3464,7 @@ export component AppWindow inherits Window {
                             spacing: 8px;
                             padding: 0px;
 
-                            // Sair de Todas as Contas Button (Danger Red / Logout)
+                            // Sign Out of All Accounts Button (Danger Red / Logout)
                             Rectangle {
                                 height: 32px;
                                 horizontal-stretch: 1;
@@ -3713,7 +3713,7 @@ export component AppWindow inherits Window {
                         if !root.is_updating: HorizontalLayout {
                             spacing: 10px;
 
-                            // Não Mostrar Mais (Ignore)
+                            // Do Not Show Again (Ignore)
                             Rectangle {
                                 height: 36px;
                                 horizontal-stretch: 1;
@@ -3739,7 +3739,7 @@ export component AppWindow inherits Window {
                                 }
                             }
 
-                            // Lembrar Depois (Não)
+                            // Remind Me Later (No)
                             Rectangle {
                                 height: 36px;
                                 horizontal-stretch: 1;
@@ -4056,7 +4056,7 @@ export component AppWindow inherits Window {
                             }
                         }
 
-                        // 2. Tabs Bar (Captura de Tela vs Captura de Janela)
+                        // 2. Tabs Bar (Screen Capture vs Window Capture)
                         Rectangle {
                             height: 38px;
                             background: AppTheme.surface-sidebar;
@@ -4066,7 +4066,7 @@ export component AppWindow inherits Window {
                                 padding-right: 20px;
                                 spacing: 24px;
 
-                                // Tab: Telas (Captura de Tela)
+                                // Tab: Screens (Screen Capture)
                                 Rectangle {
                                     background: transparent;
                                     VerticalLayout {
@@ -4109,7 +4109,7 @@ export component AppWindow inherits Window {
                                     }
                                 }
 
-                                // Tab: Janelas (Captura de Janela apenas no Windows)
+                                // Tab: Windows (Window Capture on Windows only)
                                 if !root.is_linux: Rectangle {
                                     background: transparent;
                                     VerticalLayout {
@@ -4154,7 +4154,7 @@ export component AppWindow inherits Window {
                                     }
                                 }
 
-                                // Tab: Câmera (Webcam)
+                                // Tab: Camera (Webcam)
                                 Rectangle {
                                     background: transparent;
                                     VerticalLayout {
@@ -5509,7 +5509,7 @@ export component PopoutStreamWindow inherits Window {
         }
     }
 
-    // Self-Preview Resource Notice in Popout (Single compact line below AO VIVO badge)
+    // Self-Preview Resource Notice in Popout (Single compact line below LIVE badge)
     if (root.is_self && root.show_self_preview_notice): Rectangle {
         x: 8px;
         y: 44px;

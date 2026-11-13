@@ -1,35 +1,35 @@
-﻿# 🌐 Arquitetura de Rede & Proxy do Litecord
+﻿# 🌐 Litecord Network & Proxy Architecture
 
-Esta documentação detalha a arquitetura, modelos de dados, fluxo de tráfego e tratamento de erros do sistema de **Rede e Proxy** do Litecord.
-
----
-
-## 📑 Índice
-1. [Visão Geral](#-visão-geral)
-2. [Modelos e Estrutura de Dados](#-modelos-e-estrutura-de-dados)
-3. [Modos de Conexão Suportados](#-modos-de-conexão-suportados)
-4. [Roteamento no Backend (Rust)](#-roteamento-no-backend-rust)
-5. [Sistema de Proteção e Diagnóstico de Falhas na Tela de Login](#-sistema-de-proteção-e-diagnóstico-de-falhas-na-tela-de-login)
-6. [Ferramenta de Testes Locais (`scripts/test_proxy_server.py`)](#-ferramenta-de-testes-locais)
-7. [Integração com VPNs e Redes Mesh (Tailscale, WireGuard)](#-integração-com-vpns-e-redes-mesh)
+This documentation details the architecture, data models, traffic flow and error handling of Litecord's **Network and Proxy** system.
 
 ---
 
-## 🚀 Visão Geral
-
-O Litecord foi projetado para operar com latência mínima e máxima confiabilidade de conexão, mesmo em cenários de rede com restrições severas, como:
-- Redes corporativas e escolares com bloqueio de portas do Discord.
-- Provedores com bloqueios governamentais ou censura de tráfego.
-- Usuários que necessitam de isolamento de IP e anonimização via SOCKS5/Tor/Shadowsocks/V2Ray.
-
-Ao contrário do cliente oficial em Electron (que depende das variáveis de ambiente do sistema e do Chromium), o Litecord implementa um **motor de rede nativo em Rust** com controle granular por sessão, suporte a múltiplos tipos de proxy e recarregamento sem reinicialização da aplicação.
+## 📑 Table of Contents
+1. [Overview](#-overview)
+2. [Models and Data Structure](#-models-and-data-structure)
+3. [Supported Connection Modes](#-supported-connection-modes)
+4. [Backend Routing (Rust)](#-backend-routing-rust)
+5. [Login Screen Failure Protection and Diagnostics System](#-login-screen-failure-protection-and-diagnostics-system)
+6. [Local Testing Tool (`scripts/test_proxy_server.py`)](#-local-testing-tool)
+7. [Integration with VPNs and Mesh Networks (Tailscale, WireGuard)](#-integration-with-vpns-and-mesh-networks)
 
 ---
 
-## 🗄️ Modelos e Estrutura de Dados
+## 🚀 Overview
 
-### 1. Arquivo de Persistência Local
-As configurações de rede são gravadas em formato JSON no arquivo `.litecord_network_settings.json` na raiz do executável:
+Litecord was designed to operate with minimal latency and maximum connection reliability, even in severely restricted network scenarios such as:
+- Corporate and school networks that block Discord ports.
+- Providers with government blocking or traffic censorship.
+- Users who need IP isolation and anonymization via SOCKS5/Tor/Shadowsocks/V2Ray.
+
+Unlike the official Electron client (which depends on system environment variables and Chromium), Litecord implements a **native network engine in Rust** with granular per-session control, support for multiple proxy types and reloading without restarting the application.
+
+---
+
+## 🗄️ Models and Data Structure
+
+### 1. Local Persistence File
+Network settings are saved in JSON format in the `.litecord_network_settings.json` file at the root of the executable:
 
 ```json
 {
@@ -42,40 +42,40 @@ As configurações de rede são gravadas em formato JSON no arquivo `.litecord_n
 }
 ```
 
-### 2. Estrutura Rust (`NetworkSettings`)
-No módulo `src/utils/network_settings.rs`:
+### 2. Rust Structure (`NetworkSettings`)
+In the `src/utils/network_settings.rs` module:
 
 ```rust
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct NetworkSettings {
     pub proxy_mode: String,       // "off", "http", "socks5", "system"
-    pub proxy_host: String,       // Ex: "127.0.0.1" ou "proxy.empresa.com"
-    pub proxy_port: u16,          // Ex: 8080, 1080
-    pub proxy_username: String,   // Autenticação opcional (Basic Auth)
-    pub proxy_password: String,   // Senha opcional
-    pub route_media: bool,        // Roteamento seletivo de mídias pesadas
+    pub proxy_host: String,       // E.g.: "127.0.0.1" or "proxy.company.com"
+    pub proxy_port: u16,          // E.g.: 8080, 1080
+    pub proxy_username: String,   // Optional authentication (Basic Auth)
+    pub proxy_password: String,   // Optional password
+    pub route_media: bool,        // Selective routing of heavy media
 }
 ```
 
-* **Thread-Safety:** A configuração em memória é mantida sob um `Mutex<NetworkSettings>` estático global, acessível através das funções `get_network_settings()`, `save_network_settings()` e `update_network_settings()`.
+* **Thread-Safety:** The in-memory configuration is kept under a global static `Mutex<NetworkSettings>`, accessible through the functions `get_network_settings()`, `save_network_settings()` and `update_network_settings()`.
 
 ---
 
-## 🔌 Modos de Conexão Suportados
+## 🔌 Supported Connection Modes
 
-| Modo | Identificador | Protocolos Suportados | Caso de Uso Típico |
+| Mode | Identifier | Supported Protocols | Typical Use Case |
 | :--- | :--- | :--- | :--- |
-| **Desativado** | `"off"` | Conexão direta TCP/UDP | Padrão. Bypassa qualquer proxy de ambiente (`no_proxy`). |
-| **Proxy HTTP / HTTPS** | `"http"` | TCP (CONNECT Tunneling) | Redes empresariais, firewalls corporativos, Fiddler, Burp Suite. |
-| **Proxy SOCKS5** | `"socks5"` | TCP e UDP | Shadowsocks, V2Ray, Xray, Tor (`127.0.0.1:9050`), roteamento anônimo. |
-| **Proxy do Sistema** | `"system"` | Conforme OS | Respeita as variáveis de ambiente `HTTP_PROXY` / `HTTPS_PROXY` / `ALL_PROXY`. |
+| **Disabled** | `"off"` | Direct TCP/UDP connection | Default. Bypasses any environment proxy (`no_proxy`). |
+| **HTTP / HTTPS Proxy** | `"http"` | TCP (CONNECT Tunneling) | Enterprise networks, corporate firewalls, Fiddler, Burp Suite. |
+| **SOCKS5 Proxy** | `"socks5"` | TCP and UDP | Shadowsocks, V2Ray, Xray, Tor (`127.0.0.1:9050`), anonymous routing. |
+| **System Proxy** | `"system"` | Depends on the OS | Respects the `HTTP_PROXY` / `HTTPS_PROXY` / `ALL_PROXY` environment variables. |
 
 ---
 
-## ⚙️ Roteamento no Backend (Rust)
+## ⚙️ Backend Routing (Rust)
 
-### 1. Injeção de Proxy no Cliente HTTP (`apply_proxy_to_builder`)
-Toda requisição HTTP REST (`https://discord.com/api/v10/...`) passa pelo construtor centralizado:
+### 1. Proxy Injection into the HTTP Client (`apply_proxy_to_builder`)
+Every REST HTTP request (`https://discord.com/api/v10/...`) goes through the centralized builder:
 
 ```rust
 pub fn apply_proxy_to_builder(mut builder: reqwest::ClientBuilder) -> reqwest::ClientBuilder {
@@ -99,72 +99,72 @@ pub fn apply_proxy_to_builder(mut builder: reqwest::ClientBuilder) -> reqwest::C
                 builder = builder.proxy(p);
             }
         }
-        "system" => { /* Usa variáveis do sistema */ }
+        "system" => { /* Uses system variables */ }
         _ => { builder = builder.no_proxy(); }
     }
     builder
 }
 ```
 
-### 2. Recarregamento em Tempo Real (Zero Downtime)
-Ao clicar em **"Salvar Configurações"** na interface, o callback `on_save_proxy_settings` em `src/main.rs`:
-1. Salva o arquivo JSON de configurações.
-2. Reconstrói a instância de `DiscordHttpClient` com os novos parâmetros sem derrubar a sessão ativa ou reiniciar o processo.
-3. Se o proxy for desativado (`mode == "off"`), limpa imediatamente qualquer alerta de erro pendente na interface.
+### 2. Real-Time Reload (Zero Downtime)
+When clicking **"Save Settings"** in the interface, the `on_save_proxy_settings` callback in `src/main.rs`:
+1. Saves the JSON settings file.
+2. Rebuilds the `DiscordHttpClient` instance with the new parameters without dropping the active session or restarting the process.
+3. If the proxy is disabled (`mode == "off"`), immediately clears any pending error alert in the interface.
 
-### 3. Teste de Conexão com Diagnóstico de Latência
-A função `test_proxy_connection()` dispara um `GET` assíncrono para `https://discord.com/api/v10/gateway` com timeout de 6 segundos:
-- Cronometra a latência real de ida e volta (`Instant::now().elapsed()`).
-- Retorna código HTTP e tempo em milissegundos para a UI (exibido na caixa verde).
-- Em caso de falha, captura o erro original do sistema operacional (ex: erro `10061` no Windows ou `111` no Linux) e formata uma mensagem clara.
+### 3. Connection Test with Latency Diagnostics
+The `test_proxy_connection()` function fires an asynchronous `GET` to `https://discord.com/api/v10/gateway` with a 6-second timeout:
+- Times the real round-trip latency (`Instant::now().elapsed()`).
+- Returns the HTTP code and time in milliseconds to the UI (shown in the green box).
+- On failure, captures the original operating system error (e.g. error `10061` on Windows or `111` on Linux) and formats a clear message.
 
 ---
 
-## 🛡️ Sistema de Proteção e Diagnóstico de Falhas na Tela de Login
+## 🛡️ Login Screen Failure Protection and Diagnostics System
 
-Um dos maiores problemas enfrentados por usuários de proxy é abrir o aplicativo com o proxy configurado desligado, o que travava o login sem explicações claras.
+One of the biggest problems faced by proxy users is opening the application with the configured proxy turned off, which used to block login without a clear explanation.
 
-O Litecord resolve isso com um sistema triplo de detecção:
+Litecord solves this with a triple detection system:
 
 ```mermaid
 graph TD
-    A[Inicialização do Litecord / Tentativa de Login] --> B{Proxy ativado? proxy_mode != 'off'}
-    B -- Não --> C[Conexão direta ao Discord]
-    B -- Sim --> D[Executa requisição via Proxy]
-    D --> E{Sucesso?}
-    E -- Sim --> F[Conecta normalmente]
-    E -- Não --> G{is_proxy_error?}
-    G -- Sim: Conexão Recusada / Timeout / DNS --> H[Exibe Banner Vermelho na Tela de Login com Atalho]
-    G -- Não: 401 Unauthorized --> I[Alerta de Token / Credencial Inválida]
-    H --> J[Usuário clica no Banner]
-    J --> K[Abre Configurações direto na Aba 6: Rede & Proxy]
-    K --> L[Troca para 'Desativado']
-    L --> M[Banner de erro é limpo instantaneamente]
+    A[Litecord Startup / Login Attempt] --> B{Proxy enabled? proxy_mode != 'off'}
+    B -- No --> C[Direct connection to Discord]
+    B -- Yes --> D[Runs request through Proxy]
+    D --> E{Success?}
+    E -- Yes --> F[Connects normally]
+    E -- No --> G{is_proxy_error?}
+    G -- Yes: Connection Refused / Timeout / DNS --> H[Shows Red Banner on the Login Screen with Shortcut]
+    G -- No: 401 Unauthorized --> I[Invalid Token / Credential Alert]
+    H --> J[User clicks the Banner]
+    J --> K[Opens Settings directly on Tab 6: Network & Proxy]
+    K --> L[Switches to 'Disabled']
+    L --> M[Error banner is cleared instantly]
 ```
 
-### Principais Recursos de UI do Banner:
-* **Responsividade Dinâmica:** Altura elástica (`min-height: 38px`) e quebra de palavras (`wrap: word-wrap`) para que mensagens de erro detalhadas nunca sejam cortadas.
-* **Ação em 1 Clique:** Clicar em qualquer ponto do banner abre a janela de configurações instantaneamente na aba de **Rede & Proxy** (`settings_active_tab = 6`).
-* **Acesso Global pelo Título:** O ícone de engrenagem ⚙️ na barra de título do aplicativo permanece acessível mesmo na tela de login deslogada.
+### Main Banner UI Features:
+* **Dynamic Responsiveness:** Elastic height (`min-height: 38px`) and word wrapping (`wrap: word-wrap`) so detailed error messages are never cut off.
+* **1-Click Action:** Clicking anywhere on the banner opens the settings window instantly on the **Network & Proxy** tab (`settings_active_tab = 6`).
+* **Global Access from the Title Bar:** The gear icon ⚙️ in the application title bar remains accessible even on the signed-out login screen.
 
 ---
 
-## 🧪 Ferramenta de Testes Locais
+## 🧪 Local Testing Tool
 
-Para desenvolvedores e testes locais, o projeto inclui um servidor proxy HTTP/HTTPS completo em Python:
+For developers and local testing, the project includes a complete HTTP/HTTPS proxy server in Python:
 [`scripts/test_proxy_server.py`](../scripts/test_proxy_server.py)
 
-### Como rodar o proxy de teste:
+### How to run the test proxy:
 ```bash
 python scripts/test_proxy_server.py
 ```
-- Inicia na porta `127.0.0.1:8080`.
-- Suporta túneis `CONNECT` de alta performance com logs em tempo real do tráfego do Discord.
-- No Litecord, selecione **Proxy HTTP / HTTPS**, informe `127.0.0.1:8080` e clique em **"Testar Conexão"**.
+- Starts on port `127.0.0.1:8080`.
+- Supports high-performance `CONNECT` tunnels with real-time logs of Discord traffic.
+- In Litecord, select **HTTP / HTTPS Proxy**, enter `127.0.0.1:8080` and click **"Test Connection"**.
 
 ---
 
-## 🔗 Integração com VPNs e Redes Mesh
+## 🔗 Integration with VPNs and Mesh Networks
 
-* **Tailscale Exit Nodes:** Se você utiliza o Tailscale no computador com um Exit Node ativado, o Litecord operará em modo "Desativado" ou "Proxy do Sistema", utilizando a interface virtual WireGuard automaticamente.
-* **Nós Remotos Tailscale:** É possível apontar o Litecord para o IP Tailscale (`100.x.y.z`) de outra máquina na sua malha privada que rode um serviço de proxy (como Dante SOCKS5 ou Squid), obtendo criptografia ponta a ponta sem expor portas para a internet pública.
+* **Tailscale Exit Nodes:** If you use Tailscale on your computer with an Exit Node enabled, Litecord will operate in "Disabled" or "System Proxy" mode, using the virtual WireGuard interface automatically.
+* **Tailscale Remote Nodes:** You can point Litecord at the Tailscale IP (`100.x.y.z`) of another machine on your private mesh that runs a proxy service (such as Dante SOCKS5 or Squid), getting end-to-end encryption without exposing ports to the public internet.

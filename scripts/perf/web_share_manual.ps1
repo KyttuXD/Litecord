@@ -14,11 +14,11 @@ while ($true) {
         # of exposing a JSON parsing error or echoing private SDP to the terminal.
     }
     if ($null -ne $offer) { break }
-    Write-Host 'A área de transferência ainda não contém uma oferta WebRTC válida.'
-    $choice = Read-Host 'No navegador, selecione TODO o texto do primeiro campo e copie. Volte aqui e pressione Enter (ou Q para sair)'
+    Write-Host 'The clipboard does not contain a valid WebRTC offer yet.'
+    $choice = Read-Host 'In the browser, select ALL the text in the first field and copy it. Come back here and press Enter (or Q to quit)'
     if ($choice -match '^\s*q\s*$') { return }
 }
 $reply = Send-Litecord $Port (@{ cmd = 'web_share_answer'; offer = $offer } | ConvertTo-Json -Depth 8 -Compress)
 if (-not $reply.ok) { throw $reply.error }
 Set-Clipboard ($reply.answer | ConvertTo-Json -Depth 8 -Compress)
-Write-Output 'Resposta copiada. Cole no segundo campo da página e clique em Conectar.'
+Write-Output 'Answer copied. Paste it into the second field of the page and click Connect.'

@@ -9,7 +9,7 @@ use windows::Win32::System::Com::*;
 
 fn main() -> Result<()> {
     println!("============================================================");
-    println!("🚀 TESTE: HARDWARE DIRECT MFT ENCODER (IMFTransform)");
+    println!("🚀 TEST: HARDWARE DIRECT MFT ENCODER (IMFTransform)");
     println!("============================================================");
 
     unsafe {
@@ -41,7 +41,7 @@ fn main() -> Result<()> {
         println!("👉 MFTEnumEx (SYNCMFT): {:?} (Count: {})", hr, count);
 
         if count == 0 || pp_activate.is_null() {
-            println!("⚠️ Nenhum MFT de hardware encontrado com filtro NV12. Tentando sem filtro de entrada...");
+            println!("⚠️ No hardware MFT found with the NV12 filter. Trying without an input filter...");
             let _ = MFTEnumEx(
                 MFT_CATEGORY_VIDEO_ENCODER,
                 MFT_ENUM_FLAG_HARDWARE | MFT_ENUM_FLAG_SORTANDFILTER,
@@ -50,7 +50,7 @@ fn main() -> Result<()> {
                 &mut pp_activate,
                 &mut count,
             );
-            println!("👉 MFTEnumEx genérico: Count = {}", count);
+            println!("👉 MFTEnumEx generic: Count = {}", count);
         }
 
         if count > 0 && !pp_activate.is_null() {
@@ -61,11 +61,11 @@ fn main() -> Result<()> {
                     let _ = act.GetString(&MFT_FRIENDLY_NAME_Attribute, &mut name_buf, None);
                     let name = String::from_utf16_lossy(&name_buf).trim_matches('\0').trim().to_string();
                     println!("--------------------------------------------------");
-                    println!("🎯 Testando MFT #{}: '{}'", idx, name);
+                    println!("🎯 Testing MFT #{}: '{}'", idx, name);
 
                     let transform_res = act.ActivateObject::<IMFTransform>();
                     if let Ok(transform) = transform_res {
-                        println!("✅ IMFTransform ativado com sucesso!");
+                        println!("✅ IMFTransform activated successfully!");
 
                         if let Ok(mut attrs) = transform.GetAttributes() {
                             let _ = attrs.SetUINT32(&MF_TRANSFORM_ASYNC_UNLOCK, 1);
@@ -79,7 +79,7 @@ fn main() -> Result<()> {
                             unsafe { attrs.SetUINT64(key, ((num as u64) << 32) | (den as u64)) }
                         }
 
-                        // Configurar Saída H.264
+                        // Configure H.264 output
                         let out_media_type = MFCreateMediaType()?;
                         out_media_type.SetGUID(&MF_MT_MAJOR_TYPE, &MFMediaType_Video)?;
                         out_media_type.SetGUID(&MF_MT_SUBTYPE, &MFVideoFormat_H264)?;
@@ -93,7 +93,7 @@ fn main() -> Result<()> {
                         let hr_out = transform.SetOutputType(0, &out_media_type, 0);
                         println!("👉 SetOutputType (H264 1080p 60 FPS): {:?}", hr_out);
 
-                        // Configurar Entrada NV12
+                        // Configure NV12 input
                         let in_media_type = MFCreateMediaType()?;
                         in_media_type.SetGUID(&MF_MT_MAJOR_TYPE, &MFMediaType_Video)?;
                         in_media_type.SetGUID(&MF_MT_SUBTYPE, &MFVideoFormat_NV12)?;
@@ -136,7 +136,7 @@ fn main() -> Result<()> {
                             let _ = transform.ProcessMessage(MFT_MESSAGE_NOTIFY_BEGIN_STREAMING, 0);
                             let _ = transform.ProcessMessage(MFT_MESSAGE_NOTIFY_START_OF_STREAM, 0);
 
-                            println!("🚀 Pipeline MFT pronta e iniciada!");
+                            println!("🚀 MFT pipeline ready and started!");
 
                             let nv12_size = 1920 * 1080 + (1920 * 1080 / 2);
                             let dummy_nv12 = vec![128u8; nv12_size];
@@ -158,7 +158,7 @@ fn main() -> Result<()> {
                             let t0 = Instant::now();
                             let hr_input = transform.ProcessInput(0, &in_sample, 0);
                             let dur_in = t0.elapsed();
-                            println!("👉 ProcessInput: {:?} (Tempo: {:?})", hr_input, dur_in);
+                            println!("👉 ProcessInput: {:?} (Time: {:?})", hr_input, dur_in);
 
                             let stream_info = transform.GetOutputStreamInfo(0).unwrap_or(MFT_OUTPUT_STREAM_INFO::default());
                             let out_buf_size = stream_info.cbSize.max(1024 * 1024);
@@ -180,11 +180,11 @@ fn main() -> Result<()> {
                             let hr_output = transform.ProcessOutput(0, &mut out_data_buffer, &mut status);
                             let dur_out = t1.elapsed();
 
-                            println!("👉 ProcessOutput: {:?} (Tempo: {:?})", hr_output, dur_out);
+                            println!("👉 ProcessOutput: {:?} (Time: {:?})", hr_output, dur_out);
 
                             if let Some(ref sample) = *out_data_buffer[0].pSample {
                                 let total_len = sample.GetTotalLength().unwrap_or(0);
-                                println!("🎉 SUCESSO! H.264 NAL extraído com sucesso! Tamanho: {} bytes", total_len);
+                                println!("🎉 SUCCESS! H.264 NAL extracted successfully! Size: {} bytes", total_len);
                             }
                         }
                     }

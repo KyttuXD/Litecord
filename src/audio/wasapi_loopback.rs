@@ -192,7 +192,7 @@ unsafe extern "system" fn ch_activate_completed(this: *mut c_void, operation: *m
         if hr == 0 && hr_res == 0 && !unk.is_null() {
             *handler.client_slot.lock().unwrap_or_else(|e| e.into_inner()) = Some(unk);
         } else {
-            warn!("⚠️ [WASAPI LOOPBACK] ActivateCompleted falhou: hr=0x{:08x}, hr_res=0x{:08x}", hr, hr_res);
+            warn!("⚠️ [WASAPI LOOPBACK] ActivateCompleted failed: hr=0x{:08x}, hr_res=0x{:08x}", hr, hr_res);
         }
     }
     if !handler.event_handle.is_null() {
@@ -272,7 +272,7 @@ pub fn start_wasapi_isolated_loopback(
 
         let mmdevapi = windows_sys::Win32::System::LibraryLoader::LoadLibraryA(b"mmdevapi.dll\0".as_ptr());
         if mmdevapi.is_null() {
-            return Err("Falha ao carregar mmdevapi.dll".to_string());
+            return Err("Failed to load mmdevapi.dll".to_string());
         }
 
         let activate_fn_ptr = windows_sys::Win32::System::LibraryLoader::GetProcAddress(
@@ -281,11 +281,11 @@ pub fn start_wasapi_isolated_loopback(
         );
         let activate_fn: FnActivateAudioInterfaceAsync = match activate_fn_ptr {
             Some(f) => std::mem::transmute(f),
-            None => return Err("ActivateAudioInterfaceAsync não encontrada no mmdevapi.dll".to_string()),
+            None => return Err("ActivateAudioInterfaceAsync not found in mmdevapi.dll".to_string()),
         };
 
         let my_pid = windows_sys::Win32::System::Threading::GetCurrentProcessId();
-        info!("🛡️ [WASAPI LOOPBACK] Configurando captura de áudio excluindo PID do Litecord ({}) da gravação...", my_pid);
+        info!("🛡️ [WASAPI LOOPBACK] Setting up audio capture excluding the Litecord PID ({}) from the recording...", my_pid);
 
         let mut act_params = AUDIOCLIENT_ACTIVATION_PARAMS {
             ActivationType: 1, // AUDIOCLIENT_ACTIVATION_TYPE_PROCESS_LOOPBACK
@@ -308,7 +308,7 @@ pub fn start_wasapi_isolated_loopback(
         let vad_path: Vec<u16> = "VAD\\Process_Loopback\0".encode_utf16().collect();
         let event = windows_sys::Win32::System::Threading::CreateEventW(std::ptr::null_mut(), 0, 0, std::ptr::null_mut());
         if event.is_null() {
-            return Err("Falha ao criar evento de sincronização COM".to_string());
+            return Err("Failed to create COM synchronization event".to_string());
         }
 
         let client_slot: Arc<Mutex<Option<*mut c_void>>> = Arc::new(Mutex::new(None));
@@ -335,10 +335,10 @@ pub fn start_wasapi_isolated_loopback(
         if hr != 0 {
             ch_release(handler as *mut c_void);
             windows_sys::Win32::Foundation::CloseHandle(event);
-            return Err(format!("ActivateAudioInterfaceAsync retornou erro hr=0x{:08x}", hr));
+            return Err(format!("ActivateAudioInterfaceAsync returned error hr=0x{:08x}", hr));
         }
 
-        // Aguarda a ativação do IAudioClient (máximo 2 segundos)
+        // Wait for IAudioClient activation (2 seconds maximum)
         let wait_res = windows_sys::Win32::System::Threading::WaitForSingleObject(event, 2000);
         windows_sys::Win32::Foundation::CloseHandle(event);
         ch_release(handler as *mut c_void);
@@ -349,12 +349,12 @@ pub fn start_wasapi_isolated_loopback(
         }
 
         if wait_res != 0 {
-            return Err(format!("Timeout aguardando ativação assíncrona do WASAPI (wait=0x{:08x})", wait_res));
+            return Err(format!("Timeout waiting for WASAPI asynchronous activation (wait=0x{:08x})", wait_res));
         }
 
         let client_ptr = match client_slot.lock().unwrap_or_else(|e| e.into_inner()).take() {
             Some(p) => p as *mut IAudioClient,
-            None => return Err("Ponteiro IAudioClient não foi recebido no callback de ativação".to_string()),
+            None => return Err("IAudioClient pointer was not received in the activation callback".to_string()),
         };
 
         let client_vtbl = (*client_ptr).vtbl;
@@ -374,7 +374,7 @@ pub fn start_wasapi_isolated_loopback(
         let stream_event = windows_sys::Win32::System::Threading::CreateEventW(std::ptr::null_mut(), 0, 0, std::ptr::null_mut());
         if stream_event.is_null() {
             let _ = ((*client_vtbl).Release)(client_ptr as *mut c_void);
-            return Err("Falha ao criar evento do stream de áudio".to_string());
+            return Err("Failed to create audio stream event".to_string());
         }
 
         // AUDCLNT_STREAMFLAGS_LOOPBACK (0x00020000) | AUDCLNT_STREAMFLAGS_EVENTCALLBACK (0x00040000)
@@ -393,14 +393,14 @@ pub fn start_wasapi_isolated_loopback(
         if hr_init != 0 {
             windows_sys::Win32::Foundation::CloseHandle(stream_event);
             let _ = ((*client_vtbl).Release)(client_ptr as *mut c_void);
-            return Err(format!("Initialize falhou com hr=0x{:08x}", hr_init));
+            return Err(format!("Initialize failed with hr=0x{:08x}", hr_init));
         }
 
         let hr_set = ((*client_vtbl).SetEventHandle)(client_ptr as *mut c_void, stream_event);
         if hr_set != 0 {
             windows_sys::Win32::Foundation::CloseHandle(stream_event);
             let _ = ((*client_vtbl).Release)(client_ptr as *mut c_void);
-            return Err(format!("SetEventHandle falhou com hr=0x{:08x}", hr_set));
+            return Err(format!("SetEventHandle failed with hr=0x{:08x}", hr_set));
         }
 
         let mut capture_ptr: *mut c_void = std::ptr::null_mut();
@@ -408,7 +408,7 @@ pub fn start_wasapi_isolated_loopback(
         if hr_svc != 0 || capture_ptr.is_null() {
             windows_sys::Win32::Foundation::CloseHandle(stream_event);
             let _ = ((*client_vtbl).Release)(client_ptr as *mut c_void);
-            return Err(format!("GetService IAudioCaptureClient falhou com hr=0x{:08x}", hr_svc));
+            return Err(format!("GetService IAudioCaptureClient failed with hr=0x{:08x}", hr_svc));
         }
 
         let hr_start = ((*client_vtbl).Start)(client_ptr as *mut c_void);
@@ -417,11 +417,11 @@ pub fn start_wasapi_isolated_loopback(
             let _ = ((*(*capture).vtbl).Release)(capture as *mut c_void);
             windows_sys::Win32::Foundation::CloseHandle(stream_event);
             let _ = ((*client_vtbl).Release)(client_ptr as *mut c_void);
-            return Err(format!("Start falhou com hr=0x{:08x}", hr_start));
+            return Err(format!("Start failed with hr=0x{:08x}", hr_start));
         }
 
         info!(
-            "🔊 [WASAPI LOOPBACK] Captura iniciada com sucesso (48000Hz, 2 canais PCM 16-bit) com EXCLUSÃO do processo Litecord!"
+            "🔊 [WASAPI LOOPBACK] Capture started successfully (48000Hz, 2 channels PCM 16-bit) with the Litecord process EXCLUDED!"
         );
 
         let client_addr = client_ptr as usize;
@@ -490,12 +490,12 @@ pub fn start_wasapi_isolated_loopback(
                     }
                 }
 
-                info!("🔇 [WASAPI LOOPBACK] Parando captura isolada...");
+                info!("🔇 [WASAPI LOOPBACK] Stopping isolated capture...");
                 let _ = ((*client_vtbl).Stop)(client as *mut c_void);
                 let _ = ((*capture_vtbl).Release)(capture as *mut c_void);
                 let _ = ((*client_vtbl).Release)(client as *mut c_void);
                 windows_sys::Win32::Foundation::CloseHandle(event_handle);
-                info!("🔇 [WASAPI LOOPBACK] Stream isolado finalizado com sucesso.");
+                info!("🔇 [WASAPI LOOPBACK] Isolated stream finished successfully.");
             })
             .ok();
 

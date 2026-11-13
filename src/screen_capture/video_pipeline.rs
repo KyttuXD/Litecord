@@ -23,7 +23,7 @@ pub fn fit_bgra_to_canvas(
         return;
     }
 
-    // Calcula o stride real por linha da textura (GPU D3D11 Texture2D pitch)
+    // Compute the real per-row stride of the texture (GPU D3D11 Texture2D pitch)
     let src_stride_bytes = if src_h > 0 && src_bgra.len() >= (src_h as usize) {
         src_bgra.len() / (src_h as usize)
     } else {
@@ -50,7 +50,7 @@ pub fn fit_bgra_to_canvas(
     let canvas_u32: &mut [u32] = unsafe {
         std::slice::from_raw_parts_mut(out_bgra.as_mut_ptr() as *mut u32, total_pixels)
     };
-    canvas_u32.fill(0xFF111214); // Fundo escuro (#111214) estilo Discord/YouTube
+    canvas_u32.fill(0xFF111214); // Dark background (#111214), Discord/YouTube style
 
     let scale_w = canvas_w as f32 / src_w as f32;
     let scale_h = canvas_h as f32 / src_h as f32;
@@ -271,13 +271,13 @@ pub fn extract_sps_pps_annex_b(data: &[u8]) -> Option<Vec<u8>> {
     }
 }
 
-/// Garante que o bitstream esteja rigorosamente no padrão Annex B (00 00 00 01)
+/// Makes sure the bitstream strictly follows the Annex B format (00 00 00 01)
 pub fn ensure_annex_b(peer_uid: u64, data: &[u8]) -> std::borrow::Cow<'_, [u8]> {
     if data.len() < 4 {
         return std::borrow::Cow::Borrowed(data);
     }
 
-    // Varredura de metadados avcC (ISO/IEC 14496-15) em cabeçalhos MP4/WMF para extração dos parâmetros SPS/PPS
+    // Scan for avcC metadata (ISO/IEC 14496-15) in MP4/WMF headers to extract the SPS/PPS parameters
     if let Some(avcc_pos) = data.windows(4).position(|w| w == b"avcC") {
         let payload = &data[avcc_pos + 4..];
         if payload.len() >= 7 {
@@ -316,7 +316,7 @@ pub fn ensure_annex_b(peer_uid: u64, data: &[u8]) -> std::borrow::Cow<'_, [u8]> 
         }
     }
 
-    // Pular caixas de contêiner MP4 (ex: ftyp, moov, free, mdat) se existirem
+    // Skip MP4 container boxes (e.g. ftyp, moov, free, mdat) if present
     let mut offset = 0;
     while offset + 8 <= data.len() {
         let box_size = u32::from_be_bytes(data[offset..offset + 4].try_into().unwrap()) as usize;
@@ -360,7 +360,7 @@ pub fn ensure_annex_b(peer_uid: u64, data: &[u8]) -> std::borrow::Cow<'_, [u8]> 
         };
     }
 
-    // Converte AVCC (prefixos de tamanho de 4 bytes) para Annex B (00 00 00 01)
+    // Convert AVCC (4-byte length prefixes) to Annex B (00 00 00 01)
     let mut out = Vec::with_capacity(slice.len() + 64);
     let mut pos = 0;
     while pos + 4 <= slice.len() {
@@ -476,11 +476,11 @@ pub fn decode_video_frame(decoders: &mut StreamDecoders, peer_uid: u64, frame_da
             std::collections::hash_map::Entry::Occupied(e) => Some(e.into_mut()),
             std::collections::hash_map::Entry::Vacant(v) => match GpuDecoder::new(peer_uid) {
                 Ok(d) => {
-                    log::info!("🎞️ [DECODER RX] Decodificando a transmissão do peer {} pela GPU", peer_uid);
+                    log::info!("🎞️ [DECODER RX] Decoding the stream from peer {} on the GPU", peer_uid);
                     Some(v.insert(d))
                 }
                 Err(e) => {
-                    log::info!("🎞️ [DECODER RX] Sem decodificação pela GPU ({:?}); peer {} vai pela CPU", e, peer_uid);
+                    log::info!("🎞️ [DECODER RX] No GPU decoding ({:?}); peer {} goes through the CPU", e, peer_uid);
                     decoders.cpu_only.insert(peer_uid);
                     None
                 }
@@ -502,13 +502,13 @@ pub fn decode_video_frame(decoders: &mut StreamDecoders, peer_uid: u64, frame_da
                 Err(HwError::NeedKeyframe(why)) => {
                     static WAITING: crate::utils::logger::LogThrottle = crate::utils::logger::LogThrottle::new(1000);
                     if let Some(n) = WAITING.hit() {
-                        log::info!("⏳ [DECODER RX] GPU aguardando keyframe do peer {} ({}; {} quadro(s) desde o último aviso)", peer_uid, why, n);
+                        log::info!("⏳ [DECODER RX] GPU waiting for a keyframe from peer {} ({}; {} frame(s) since the last notice)", peer_uid, why, n);
                     }
                     if has_idr(&annex_b) {
                         let misses = decoders.gpu_keyframe_misses.entry(peer_uid).or_insert(0);
                         *misses += 1;
                         if *misses >= GPU_KEYFRAME_MISSES {
-                            log::warn!("🎞️ [DECODER RX] A GPU não conseguiu começar de {} keyframes do peer {} ({}); ele vai pela CPU", misses, peer_uid, why);
+                            log::warn!("🎞️ [DECODER RX] The GPU could not start from {} keyframes from peer {} ({}); it goes through the CPU", misses, peer_uid, why);
                             decoders.gpu.remove(&peer_uid);
                             decoders.cpu_only.insert(peer_uid);
                         }
@@ -518,7 +518,7 @@ pub fn decode_video_frame(decoders: &mut StreamDecoders, peer_uid: u64, frame_da
                 Err(e) => {
                     // Unsupported stream or a GPU failure: this stream goes to the CPU from
                     // its next keyframe on.
-                    log::warn!("🎞️ [DECODER RX] Decodificação pela GPU desligada para o peer {}: {:?}", peer_uid, e);
+                    log::warn!("🎞️ [DECODER RX] GPU decoding turned off for peer {}: {:?}", peer_uid, e);
                     decoders.gpu.remove(&peer_uid);
                     decoders.cpu_only.insert(peer_uid);
                     decoders.cpu.remove(&peer_uid);
@@ -545,7 +545,7 @@ fn decode_on_cpu(
 ) -> Option<(SharedPixelBuffer<Rgba8Pixel>, u32, u32)> {
     use openh264::formats::YUVSource;
     let decoder = decoders.entry(peer_uid).or_insert_with(|| {
-        openh264::decoder::Decoder::new().expect("Falha ao criar Decoder H.264")
+        openh264::decoder::Decoder::new().expect("Failed to create H.264 Decoder")
     });
 
     match decoder.decode(annex_b) {
@@ -638,13 +638,13 @@ fn decode_on_cpu(
         Ok(None) => {
             static WAITING_IDR: crate::utils::logger::LogThrottle = crate::utils::logger::LogThrottle::new(1000);
             if let Some(n) = WAITING_IDR.hit() {
-                log::info!("⏳ [DECODER RX] OpenH264 aguardando IDR Keyframe para peer {} ({} quadro(s) desde o último aviso, len={})", peer_uid, n, annex_b.len());
+                log::info!("⏳ [DECODER RX] OpenH264 waiting for an IDR Keyframe for peer {} ({} frame(s) since the last notice, len={})", peer_uid, n, annex_b.len());
             }
         }
         Err(e) => {
             static DROPPED: crate::utils::logger::LogThrottle = crate::utils::logger::LogThrottle::new(1000);
             if let Some(n) = DROPPED.hit() {
-                log::warn!("⚠️ [DECODER RX] {} frame(s) descartado(s) por erro/falta de referência desde o último aviso, peer {}: {:?} (len={}, header={:02X?})",
+                log::warn!("⚠️ [DECODER RX] {} frame(s) dropped because of an error/missing reference since the last notice, peer {}: {:?} (len={}, header={:02X?})",
                     n, peer_uid, e, annex_b.len(), &annex_b[..annex_b.len().min(8)]);
             }
         }

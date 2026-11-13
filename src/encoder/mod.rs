@@ -1,12 +1,12 @@
 // ============================================================================
 // 🚀 LITECORD GPU HARDWARE ACCELERATED VIDEO ENCODER ENGINE (SUNSHINE-GRADE)
 // ============================================================================
-// Provedor unificado de codificação de vídeo com suporte a:
+// Unified video encoding provider with support for:
 // 1. NVIDIA NVENC (GeForce / Quadro Hardware Acceleration via nvEncodeAPI64 / FFmpeg)
 // 2. AMD AMF (Radeon Hardware Acceleration via amfrt64 Zero-Copy)
 // 3. Windows Media Foundation D3D11 (Universal Windows GPU Acceleration)
-// 4. OpenH264 SIMD Multi-threading com Rayon Paralelizado (Fallback Universal CPU)
-// 5. Bitrate Dinâmico Adaptativo (Sunshine/WebRTC AIMD Rate Control)
+// 4. OpenH264 SIMD Multi-threading with Parallelized Rayon (Universal CPU Fallback)
+// 5. Adaptive Dynamic Bitrate (Sunshine/WebRTC AIMD Rate Control)
 // ============================================================================
 #![allow(dead_code, non_snake_case, non_camel_case_types)]
 
@@ -36,24 +36,24 @@ pub use software::OpenH264Encoder;
 
 use log::{info, warn};
 
-/// Interface unificada para qualquer engine de codificação de vídeo
+/// Unified interface for any video encoding engine
 pub trait VideoEncoder: Send {
-    /// Codifica um frame BGRA para stream H.264 NAL units
+    /// Encodes a BGRA frame into an H.264 NAL unit stream
     fn encode(&mut self, bgra_data: &[u8], width: u32, height: u32) -> Option<Vec<u8>>;
 
-    /// Força a geração imediata de um IDR / Keyframe (PLI Recovery)
+    /// Forces immediate generation of an IDR / Keyframe (PLI Recovery)
     fn force_intra_frame(&mut self);
 
-    /// Ajusta dinamicamente a taxa de bits (Adaptive Bitrate)
+    /// Dynamically adjusts the bitrate (Adaptive Bitrate)
     fn set_bitrate_bps(&mut self, bitrate_bps: u32);
 
-    /// Retorna a taxa de bits atual configurada em bps
+    /// Returns the currently configured bitrate in bps
     fn get_bitrate_bps(&self) -> u32;
 
-    /// Retorna o nome amigável do backend ativo
+    /// Returns the friendly name of the active backend
     fn name(&self) -> &'static str;
 
-    /// Indica se está rodando em hardware dedicado de GPU
+    /// Indicates whether it is running on dedicated GPU hardware
     fn is_hardware_accelerated(&self) -> bool;
 }
 
@@ -118,9 +118,9 @@ pub fn detect_gpu_hardware() -> GpuHardwareType {
     GpuHardwareType::SoftwareOnly
 }
 
-/// Cria a melhor instância de codificador de vídeo disponível para a plataforma
+/// Creates the best video encoder instance available for the platform
 pub fn create_best_encoder(target_fps: u32, is_screen_content: bool) -> Box<dyn VideoEncoder> {
-    info!("🔍 [VIDEO CODEC FACTORY] Avaliando melhor engine de codificação para o sistema...");
+    info!("🔍 [VIDEO CODEC FACTORY] Evaluating the best encoding engine for the system...");
 
     #[cfg(target_os = "windows")]
     let selection = crate::screen_capture::gpu_tx::encoder_choice();
@@ -137,15 +137,15 @@ pub fn create_best_encoder(target_fps: u32, is_screen_content: bool) -> Box<dyn 
     #[cfg(not(target_os = "windows"))]
     let manual_selection = selection.as_str();
     if manual_selection != "auto" {
-        info!("🎯 [VIDEO CODEC FACTORY] Codificador manual configurado pelo usuário: '{}'", manual_selection);
+        info!("🎯 [VIDEO CODEC FACTORY] Manual encoder configured by the user: '{}'", manual_selection);
         match manual_selection {
             "nvenc" | "ffmpeg" => {
                 match nvenc::FfmpegNvencEncoder::try_new(target_fps, is_screen_content) {
                     Ok(enc) => {
-                        info!("🚀 [VIDEO CODEC FACTORY] Codificador manual NVIDIA NVENC ativado com sucesso!");
+                        info!("🚀 [VIDEO CODEC FACTORY] Manual NVIDIA NVENC encoder enabled successfully!");
                         return Box::new(enc);
                     }
-                    Err(e) => warn!("⚠️ [VIDEO CODEC FACTORY] NVENC manual indisponível ({}), executando detecção automática...", e),
+                    Err(e) => warn!("⚠️ [VIDEO CODEC FACTORY] Manual NVENC unavailable ({}), running automatic detection...", e),
                 }
             }
             "amf" => {
@@ -153,10 +153,10 @@ pub fn create_best_encoder(target_fps: u32, is_screen_content: bool) -> Box<dyn 
                 {
                     match amd_amf::AmdAmfZeroCopyEncoder::try_new(target_fps, is_screen_content) {
                         Ok(enc) => {
-                            info!("🚀 [VIDEO CODEC FACTORY] Codificador manual AMD AMF Zero-Copy ativado com sucesso!");
+                            info!("🚀 [VIDEO CODEC FACTORY] Manual AMD AMF Zero-Copy encoder enabled successfully!");
                             return Box::new(enc);
                         }
-                        Err(e) => warn!("⚠️ [VIDEO CODEC FACTORY] AMF Zero-Copy manual falhou ({}), executando detecção automática...", e),
+                        Err(e) => warn!("⚠️ [VIDEO CODEC FACTORY] Manual AMF Zero-Copy failed ({}), running automatic detection...", e),
                     }
                 }
             }
@@ -165,17 +165,17 @@ pub fn create_best_encoder(target_fps: u32, is_screen_content: bool) -> Box<dyn 
                 {
                     match wmf::WmfGpuEncoder::try_new(target_fps, is_screen_content) {
                         Ok(enc) => {
-                            info!("🚀 [VIDEO CODEC FACTORY] Codificador manual WMF GPU ativado com sucesso!");
+                            info!("🚀 [VIDEO CODEC FACTORY] Manual WMF GPU encoder enabled successfully!");
                             return Box::new(enc);
                         }
-                        Err(e) => warn!("⚠️ [VIDEO CODEC FACTORY] WMF GPU manual indisponível ({}), executando detecção automática...", e),
+                        Err(e) => warn!("⚠️ [VIDEO CODEC FACTORY] Manual WMF GPU unavailable ({}), running automatic detection...", e),
                     }
                 }
             }
             "openh264" => {
-                info!("🎯 [VIDEO CODEC FACTORY] Inicializando Cisco OpenH264 CPU manual...");
+                info!("🎯 [VIDEO CODEC FACTORY] Initializing manual Cisco OpenH264 CPU...");
                 if let Ok(enc) = OpenH264Encoder::new(target_fps, is_screen_content) {
-                    info!("🚀 [VIDEO CODEC FACTORY] Cisco OpenH264 CPU manual ativado com sucesso!");
+                    info!("🚀 [VIDEO CODEC FACTORY] Manual Cisco OpenH264 CPU enabled successfully!");
                     return Box::new(enc);
                 }
             }
@@ -186,29 +186,29 @@ pub fn create_best_encoder(target_fps: u32, is_screen_content: bool) -> Box<dyn 
     #[cfg(target_os = "windows")]
     {
         let hw = detect_gpu_hardware();
-        info!("🎯 [VIDEO CODEC FACTORY] Hardware detectado no sistema: {:?}", hw);
+        info!("🎯 [VIDEO CODEC FACTORY] Hardware detected on the system: {:?}", hw);
 
         if let GpuHardwareType::AmdAmf = hw {
-            info!("🎯 [VIDEO CODEC FACTORY] GPU AMD Detectada! Inicializando AMF Native Zero-Copy Engine (AMFVideoConverter + VCE, 0% CPU)...");
+            info!("🎯 [VIDEO CODEC FACTORY] AMD GPU detected! Initializing AMF Native Zero-Copy Engine (AMFVideoConverter + VCE, 0% CPU)...");
             match amd_amf::AmdAmfZeroCopyEncoder::try_new(target_fps, is_screen_content) {
                 Ok(enc) => {
-                    info!("🚀 [VIDEO CODEC FACTORY] AMF Native Zero-Copy Engine ativado com sucesso (Placa: {})!", enc.gpu_name);
+                    info!("🚀 [VIDEO CODEC FACTORY] AMF Native Zero-Copy Engine enabled successfully (Card: {})!", enc.gpu_name);
                     return Box::new(enc);
                 }
                 Err(e) => {
-                    warn!("⚠️ [VIDEO CODEC FACTORY] AMF Native indisponível ({}), usando fallback...", e);
+                    warn!("⚠️ [VIDEO CODEC FACTORY] AMF Native unavailable ({}), using fallback...", e);
                 }
             }
         }
 
-        info!("🎯 [VIDEO CODEC FACTORY] Tentando Hardware GPU NVIDIA NVENC Engine (OBS / Sunshine Grade)...");
+        info!("🎯 [VIDEO CODEC FACTORY] Trying NVIDIA NVENC Hardware GPU Engine (OBS / Sunshine Grade)...");
         match nvenc::FfmpegNvencEncoder::try_new(target_fps, is_screen_content) {
             Ok(enc) => {
-                info!("🚀 [VIDEO CODEC FACTORY] NVIDIA NVENC Engine ativado com sucesso!");
+                info!("🚀 [VIDEO CODEC FACTORY] NVIDIA NVENC Engine enabled successfully!");
                 return Box::new(enc);
             }
             Err(e) => {
-                warn!("⚠️ [VIDEO CODEC FACTORY] NVIDIA NVENC indisponível ({}), usando fallback OpenH264 SIMD...", e);
+                warn!("⚠️ [VIDEO CODEC FACTORY] NVIDIA NVENC unavailable ({}), using OpenH264 SIMD fallback...", e);
             }
         }
     }
@@ -216,30 +216,30 @@ pub fn create_best_encoder(target_fps: u32, is_screen_content: bool) -> Box<dyn 
     #[cfg(target_os = "linux")]
     {
         let hw = detect_gpu_hardware();
-        info!("🎯 [VIDEO CODEC FACTORY] Hardware detectado no sistema: {:?}", hw);
+        info!("🎯 [VIDEO CODEC FACTORY] Hardware detected on the system: {:?}", hw);
 
-        info!("🎯 [VIDEO CODEC FACTORY] Tentando Hardware GPU Engine via FFmpeg (NVENC / AMF / QSV)...");
+        info!("🎯 [VIDEO CODEC FACTORY] Trying Hardware GPU Engine via FFmpeg (NVENC / AMF / QSV)...");
         match nvenc::FfmpegNvencEncoder::try_new(target_fps, is_screen_content) {
             Ok(enc) => {
-                info!("🚀 [VIDEO CODEC FACTORY] Hardware GPU Engine via FFmpeg ativado com sucesso!");
+                info!("🚀 [VIDEO CODEC FACTORY] Hardware GPU Engine via FFmpeg enabled successfully!");
                 return Box::new(enc);
             }
             Err(e) => {
-                warn!("⚠️ [VIDEO CODEC FACTORY] FFmpeg GPU indisponível ({}), usando fallback OpenH264...", e);
+                warn!("⚠️ [VIDEO CODEC FACTORY] FFmpeg GPU unavailable ({}), using OpenH264 fallback...", e);
             }
         }
     }
 
-    info!("🎯 [VIDEO CODEC FACTORY] Inicializando OpenH264 SIMD AVX2 (Universal CPU Engine)...");
+    info!("🎯 [VIDEO CODEC FACTORY] Initializing OpenH264 SIMD AVX2 (Universal CPU Engine)...");
     match OpenH264Encoder::new(target_fps, is_screen_content) {
         Ok(enc) => {
-            info!("🚀 [VIDEO CODEC FACTORY] Encoder {} ativado com sucesso ({} threads, {:.1} Mbps)!",
+            info!("🚀 [VIDEO CODEC FACTORY] Encoder {} enabled successfully ({} threads, {:.1} Mbps)!",
                 enc.name(), enc.num_threads, enc.get_bitrate_bps() as f64 / 1_000_000.0);
             Box::new(enc)
         }
         Err(e) => {
-            warn!("⚠️ [VIDEO CODEC FACTORY] Falha ao inicializar OpenH264: {}. Tentando modo básico...", e);
-            Box::new(OpenH264Encoder::new(target_fps, false).expect("Falha crítica no encoder H.264"))
+            warn!("⚠️ [VIDEO CODEC FACTORY] Failed to initialize OpenH264: {}. Trying basic mode...", e);
+            Box::new(OpenH264Encoder::new(target_fps, false).expect("Critical failure in the H.264 encoder"))
         }
     }
 }
@@ -264,11 +264,11 @@ impl GpuVideoEncoder for nvenc_d3d11::NvencD3d11Encoder {
     }
     fn set_bitrate(&mut self, bitrate_bps: u32) {
         if let Err(e) = nvenc_d3d11::NvencD3d11Encoder::set_bitrate(self, bitrate_bps) {
-            warn!("⚠️ [NVENC D3D11] Não foi possível mudar a taxa: {}", e);
+            warn!("⚠️ [NVENC D3D11] Could not change the bitrate: {}", e);
         }
     }
     fn name(&self) -> &'static str {
-        "NVIDIA NVENC (GPU, sem cópia)"
+        "NVIDIA NVENC (GPU, zero-copy)"
     }
 }
 
@@ -286,7 +286,7 @@ impl GpuVideoEncoder for wmf::WmfGpuEncoder {
         }
     }
     fn name(&self) -> &'static str {
-        "Media Foundation (GPU, sem cópia)"
+        "Media Foundation (GPU, zero-copy)"
     }
 }
 
@@ -302,7 +302,7 @@ impl GpuVideoEncoder for amd_amf::AmfD3d11Encoder {
         amd_amf::AmfD3d11Encoder::set_bitrate(self, bitrate_bps)
     }
     fn name(&self) -> &'static str {
-        "AMD AMF (GPU, sem cópia)"
+        "AMD AMF (GPU, zero-copy)"
     }
 }
 
@@ -330,15 +330,15 @@ pub fn create_gpu_encoder(
 ) -> Result<Box<dyn GpuVideoEncoder>, String> {
     if vendor_id == 0x10de {
         let enc = nvenc_d3d11::NvencD3d11Encoder::new(device, width, height, fps, bitrate_bps)?;
-        info!("🚀 [VIDEO CODEC FACTORY] NVENC direto pela GPU ativado ({}x{} {} FPS, {:.1} Mbps), sem passar quadros pela CPU", width, height, fps, bitrate_bps as f64 / 1e6);
+        info!("🚀 [VIDEO CODEC FACTORY] NVENC directly on the GPU enabled ({}x{} {} FPS, {:.1} Mbps), without passing frames through the CPU", width, height, fps, bitrate_bps as f64 / 1e6);
         return Ok(Box::new(enc));
     }
     if vendor_id == 0x1002 && gpu_encoder_supports(vendor_id) {
         let enc = amd_amf::AmfD3d11Encoder::new(device, width, height, fps, bitrate_bps)?;
-        info!("🚀 [VIDEO CODEC FACTORY] AMD AMF pela GPU ativado ({}x{} {} FPS, {:.1} Mbps), sem passar quadros pela CPU", width, height, fps, bitrate_bps as f64 / 1e6);
+        info!("🚀 [VIDEO CODEC FACTORY] AMD AMF on the GPU enabled ({}x{} {} FPS, {:.1} Mbps), without passing frames through the CPU", width, height, fps, bitrate_bps as f64 / 1e6);
         return Ok(Box::new(enc));
     }
     let enc = wmf::WmfGpuEncoder::for_device(device, vendor_id, width, height, fps, bitrate_bps).map_err(|e| e.to_string())?;
-    info!("🚀 [VIDEO CODEC FACTORY] '{}' pela GPU ativado ({}x{} {} FPS, {:.1} Mbps), sem passar quadros pela CPU", enc.gpu_name, width, height, fps, bitrate_bps as f64 / 1e6);
+    info!("🚀 [VIDEO CODEC FACTORY] '{}' on the GPU enabled ({}x{} {} FPS, {:.1} Mbps), without passing frames through the CPU", enc.gpu_name, width, height, fps, bitrate_bps as f64 / 1e6);
     Ok(Box::new(enc))
 }

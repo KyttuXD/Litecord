@@ -31,8 +31,8 @@ Add-Type -AssemblyName System.Speech
 $ref = Join-Path $OutDir "reference.wav"
 $tts = New-Object System.Speech.Synthesis.SpeechSynthesizer
 $tts.SetOutputToWaveFile($ref)
-$text = "Teste de voz do Litecord. Um, dois, tres, quatro, cinco, seis, sete, oito, nove, dez. " +
-        "O rato roeu a roupa do rei de Roma. Agora uma frase mais longa, sem pausas, para ver se a voz chega inteira do outro lado."
+$text = "Litecord voice test. One, two, three, four, five, six, seven, eight, nine, ten. " +
+        "She sells sea shells by the sea shore. Now a longer sentence, without pauses, to see whether the voice arrives whole on the other side."
 for ($i = 0; $i -lt $SpeechRepeats; $i++) { $tts.Speak($text) }
 $tts.Dispose()
 

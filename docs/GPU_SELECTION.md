@@ -1,120 +1,120 @@
-# GPU da transmissão no Windows
+# Streaming GPU on Windows
 
-Em **Configurações → Vídeo e Interface → Codificador de vídeo**, o aplicativo lista
-as placas encontradas nesta máquina, além de **Automático** e **CPU (OpenH264)**.
-A escolha vale para a próxima transmissão; trocar uma preferência enquanto alguém
-assiste não recria a captura nem o codificador da sessão atual.
+Under **Settings → Video & Interface → Video encoder**, the app lists
+the graphics cards found on this machine, along with **Automatic** and **CPU (OpenH264)**.
+The choice applies to the next stream; changing the preference while someone
+is watching does not recreate the capture or the encoder of the current session.
 
-## Escolha automática
+## Automatic selection
 
-O aplicativo cria o dispositivo D3D11 na placa ligada ao monitor capturado. Para uma
-janela, usa o monitor onde ela está ao iniciar a transmissão. Em notebooks com a tela
-na Intel, isso permite usar Quick Sync e deixar a NVIDIA disponível para o jogo.
-Em um monitor conectado à NVIDIA, o automático pode usar NVENC na própria NVIDIA.
-Mover a janela para outro monitor durante a sessão não troca o dispositivo.
+The app creates the D3D11 device on the card connected to the captured monitor. For a
+window, it uses the monitor where the window is when the stream starts. On laptops with the screen
+on the Intel GPU, this allows using Quick Sync and leaving the NVIDIA card available for the game.
+On a monitor connected to the NVIDIA card, Automatic may use NVENC on the NVIDIA card itself.
+Moving the window to another monitor during the session does not change the device.
 
-Para capturar um monitor, tenta primeiro **DXGI Desktop Duplication**, que exige um
-dispositivo da placa à qual esse monitor está conectado. Se não conseguir, tenta
-**Windows Graphics Capture (WGC)** no mesmo dispositivo. Para capturar uma janela,
-usa WGC. Essa exigência do DXGI está na [documentação da Microsoft](https://learn.microsoft.com/en-us/windows/win32/api/dxgi1_2/nf-dxgi1_2-idxgioutput1-duplicateoutput).
+To capture a monitor, it first tries **DXGI Desktop Duplication**, which requires a
+device from the card that monitor is connected to. If that fails, it tries
+**Windows Graphics Capture (WGC)** on the same device. To capture a window, it
+uses WGC. This DXGI requirement is in the [Microsoft documentation](https://learn.microsoft.com/en-us/windows/win32/api/dxgi1_2/nf-dxgi1_2-idxgioutput1-duplicateoutput).
 
-O automático evita uma transferência entre placas na configuração usual; não é
-garantia contra falhas de driver, troca de monitor, conteúdo protegido ou falta de
-suporte do codificador. Se a captura com dispositivo explícito não iniciar, o
-aplicativo recorre à captura anterior, incluindo a reserva por GDI. Se a conversão
-ou codificação de texturas falhar, a sessão continua pelo caminho com cópia para a
-CPU. Na AMD, texturas direto no AMF continuam restritas à seleção manual até haver
-validação em uma placa real.
+Automatic avoids a transfer between cards in the usual setup; it is not a
+guarantee against driver failures, monitor changes, protected content or lack of
+encoder support. If capture with an explicit device does not start, the
+app falls back to the previous capture, including the GDI fallback. If texture
+conversion or encoding fails, the session continues on the path that copies to the
+CPU. On AMD, textures straight into AMF remain restricted to manual selection until
+they are validated on a real card.
 
-## Seleção manual
+## Manual selection
 
-- **Intel:** usa Quick Sync por Media Foundation no dispositivo escolhido.
-- **NVIDIA:** usa a API NVENC do driver no dispositivo escolhido.
-- **AMD:** tenta AMF por textura; ainda precisa de validação em hardware AMD.
-- **CPU (OpenH264):** mantém a captura compatível e codifica por software.
+- **Intel:** uses Quick Sync through Media Foundation on the chosen device.
+- **NVIDIA:** uses the driver's NVENC API on the chosen device.
+- **AMD:** tries AMF by texture; it still needs validation on AMD hardware.
+- **CPU (OpenH264):** keeps the compatible capture and encodes in software.
 
-Quando a placa escolhida não é a do monitor, a captura usa WGC nessa placa. O
-Windows pode transferir a imagem entre as GPUs. As etapas de conversão e codificação
-permanecem no dispositivo de captura, sem que o aplicativo leia os quadros completos
-de volta para a memória;
-a miniatura local continua sendo lida em tamanho reduzido. Isso não significa que
-as GPUs deixem de compartilhar banda ou energia com o jogo.
+When the chosen card is not the monitor's, capture uses WGC on that card. Windows
+may transfer the image between the GPUs. The conversion and encoding steps
+stay on the capture device, without the app reading the full frames
+back into memory;
+the local thumbnail is still read at a reduced size. This does not mean
+the GPUs stop sharing bandwidth or power with the game.
 
-Durante a captura com dispositivo explícito, as configurações mostram o nome da
-placa, **DXGI/WGC** e se o processamento permanece na GPU ou passou ao modo de
-compatibilidade. A informação muda por eventos de início, reserva e parada, sem
-timer de atualização quando o app está ocioso.
+During capture with an explicit device, the settings show the card
+name, **DXGI/WGC** and whether processing stays on the GPU or has moved to
+compatibility mode. The information changes on start, fallback and stop events, with no
+refresh timer when the app is idle.
 
-As preferências são gravadas como `gpu:VVVV:DDDD` (IDs PCI do fabricante e modelo).
-Valores antigos continuam aceitos: `nvenc` e `ffmpeg` escolhem NVIDIA, `wmf` escolhe
-Intel, `amf` escolhe AMD e `openh264` escolhe CPU. Não há regravação automática das
-preferências. Se a placa salva não existir, ela aparece como indisponível na lista
-e a captura usa o automático. Duas placas de modelo idêntico compartilham a mesma
-opção; escolher uma instância específica desse modelo não está implementado.
+Preferences are saved as `gpu:VVVV:DDDD` (PCI vendor and device IDs).
+Old values are still accepted: `nvenc` and `ffmpeg` choose NVIDIA, `wmf` chooses
+Intel, `amf` chooses AMD and `openh264` chooses CPU. Preferences are not rewritten
+automatically. If the saved card does not exist, it appears as unavailable in the list
+and capture uses Automatic. Two cards of the same model share the same
+option; choosing a specific instance of that model is not implemented.
 
-## Validação local
+## Local validation
 
-Build com `--features automation`, worker local já iniciado em `127.0.0.1:8787`:
+Build with `--features automation`, with the local worker already running at `127.0.0.1:8787`:
 
 ```powershell
 cargo build --release --target-dir target --features automation -j 2
 node scripts/perf/gpu_selection.cjs
-# Opcional: comparar com uma cópia do executável integrado anterior.
-node scripts/perf/gpu_selection.cjs --baseline=D:/caminho/litecord.exe --seconds=10
+# Optional: compare with a copy of the previous integrated executable.
+node scripts/perf/gpu_selection.cjs --baseline=D:/path/litecord.exe --seconds=10
 ```
 
-O roteiro usa as contas de teste Marido/Henrique somente no servidor
-`Ricogames_ e MariaJulia_`, canal `fofocas`. Silencia a saída do aplicativo, não
-captura áudio da tela e encerra somente os processos que iniciou. Uma janela do
-Chrome mostra conteúdo animado real para a captura do monitor. Não publica o worker.
+The script uses the Marido/Henrique test accounts only on the server
+`Ricogames_ e MariaJulia_`, channel `fofocas`. It mutes the app's output, does not
+capture screen audio and only terminates the processes it started. A Chrome window
+shows real animated content for the monitor capture. It does not publish the worker.
 
-Verifica transmissão e decodificação reais com seleção automática, cada GPU
-encontrada, CPU e uma GPU salva inexistente; captura de uma janela por WGC; troca
-de preferência durante a sessão; limpeza do estado e tempo de resposta ao parar;
-e as opções traduzidas em sete idiomas. Mede ciclos de
-CPU de quem transmite e memória, gravando os resultados e as capturas das
-configurações em `target/gpu-selection/`. O percentual é de **um núcleo de 3 GHz**,
-como nos demais roteiros de desempenho, e não do processador inteiro.
+It checks real streaming and decoding with automatic selection, each GPU
+found, CPU and a nonexistent saved GPU; window capture through WGC; preference
+change during the session; state cleanup and response time on stop;
+and the options translated into seven languages. It measures the CPU cycles
+of the sender and memory, saving the results and the screenshots of the
+settings in `target/gpu-selection/`. The percentage is of **one 3 GHz core**,
+as in the other performance scripts, not of the whole processor.
 
-O roteiro exige que cada GPU listada tenha codificação por textura funcional. Para
-placas sem suporte, a reserva deve ser validada manualmente. Não cobre HDR, rotação
-do monitor, troca de GPU por remoção física, perda de dispositivo, várias placas do
-mesmo modelo, Linux ou comportamento dentro de um jogo específico.
+The script requires each listed GPU to have working texture encoding. For
+cards without support, the fallback must be validated manually. It does not cover HDR, monitor
+rotation, GPU switching by physical removal, device loss, several cards of the
+same model, Linux or behavior inside a specific game.
 
-## Resultado em 19/10/2026
+## Result on 19/10/2026
 
-Windows 11, i5-13450HX, 8 GB de RAM, Intel UHD ligada à tela 1920×1080 e RTX 3050
-Laptop 6 GB. Duas contas na mesma máquina, captura real animada, pedido de 1080p60,
-saída silenciada e aplicativo transmissor na bandeja. Amostras de oito segundos,
-CPU contada em ciclos e normalizada para um núcleo de 3 GHz:
+Windows 11, i5-13450HX, 8 GB of RAM, Intel UHD connected to the 1920×1080 screen and RTX 3050
+Laptop 6 GB. Two accounts on the same machine, real animated capture, a 1080p60 request,
+output muted and the sending app in the tray. Eight-second samples,
+CPU counted in cycles and normalized to a 3 GHz core:
 
-| Seleção | Captura observada | CPU de quem transmite | FPS recebidos |
+| Selection | Observed capture | Sender CPU | FPS received |
 |---|---|---:|---:|
-| Automático | Intel / DXGI / Quick Sync | 14,2% | 59,9 |
-| Intel manual | Intel / DXGI / Quick Sync | 15,7% | 59,9 |
-| NVIDIA manual | NVIDIA / WGC / NVENC | 11,2% | 60,0 |
-| GPU salva inexistente | Intel / DXGI / Quick Sync | 16,6% | 60,0 |
-| CPU | captura compatível / OpenH264 | 76,6% | 58,1 |
-| Janela, automático | Intel / WGC / Quick Sync | 15,0% | 59,7 |
-| Sem transmitir, em chamada | — | 1,3% | 0 |
-| Depois de parar a NVIDIA | — | 1,6% | 0 |
+| Automatic | Intel / DXGI / Quick Sync | 14.2% | 59.9 |
+| Intel manual | Intel / DXGI / Quick Sync | 15.7% | 59.9 |
+| NVIDIA manual | NVIDIA / WGC / NVENC | 11.2% | 60.0 |
+| Nonexistent saved GPU | Intel / DXGI / Quick Sync | 16.6% | 60.0 |
+| CPU | compatible capture / OpenH264 | 76.6% | 58.1 |
+| Window, automatic | Intel / WGC / Quick Sync | 15.0% | 59.7 |
+| Not streaming, in a call | — | 1.3% | 0 |
+| After stopping NVIDIA | — | 1.6% | 0 |
 
-A cópia anterior do executável (identificada como `5efda85`) transmitiu com 16,1%
-de um núcleo e aproximadamente 60 FPS. Em outra rodada da seleção nova, automático
-ficou em 12,5% e Intel manual em 15,4%. São amostras curtas, com variação entre
-rodadas; não demonstram ganho em jogos nem que uma GPU será sempre mais econômica.
-O resultado principal é a escolha previsível da placa com os caminhos de hardware
-funcionando. A NVIDIA pode disputar recursos e energia com o jogo.
+The previous copy of the executable (identified as `5efda85`) streamed at 16.1%
+of one core and approximately 60 FPS. In another round of the new selection, automatic
+came in at 12.5% and Intel manual at 15.4%. These are short samples, with variation between
+rounds; they do not demonstrate a gain in games or that one GPU will always be more economical.
+The main result is the predictable choice of the card with the hardware paths
+working. NVIDIA may compete with the game for resources and power.
 
-Na rodada final, seis paradas responderam em cerca de 7–12 ms pelo controle local,
-incluindo a parada da janela. Nenhuma imagem chegou depois de parar a transmissão
-durante a amostra; o processamento por GPU foi desativado e o estado da captura foi
-limpo. A alteração de preferência durante uma sessão permaneceu para a seguinte.
-Os sete idiomas tiveram nomes das opções conferidos e capturas da interface salvas.
+In the final round, six stops responded in about 7–12 ms through the local control,
+including the window stop. No image arrived after stopping the stream
+during the sample; GPU processing was disabled and the capture state was
+cleared. A preference change during a session was kept for the next one.
+The seven languages had their option names checked and interface screenshots saved.
 
-Passaram 85 testes unitários normais e seis testes de hardware executados
-explicitamente (conversão, cores, escala, NVENC, Quick Sync e quadros-chave). A
-fixture de navegador marcada como ignorada não foi executada nesta rodada.
-Artefatos locais: `target/gpu-selection/2026-10-19T04-00-19-548Z` (comparação inicial)
-e `target/gpu-selection/2026-10-19T04-09-29-350Z` (versão final). AMD e Linux continuam
-sem validação local, assim como desempenho e latência durante um jogo pesado.
+85 normal unit tests passed, along with six hardware tests run
+explicitly (conversion, colors, scaling, NVENC, Quick Sync and keyframes). The
+browser fixture marked as ignored was not run in this round.
+Local artifacts: `target/gpu-selection/2026-10-19T04-00-19-548Z` (initial comparison)
+and `target/gpu-selection/2026-10-19T04-09-29-350Z` (final version). AMD and Linux remain
+without local validation, as do performance and latency during a heavy game.

@@ -70,7 +70,7 @@ fn request_screen_access_once() {
         let preflight: unsafe extern "C" fn() -> bool = std::mem::transmute(preflight);
         let request: unsafe extern "C" fn() -> bool = std::mem::transmute(request);
         if !preflight() {
-            log::warn!("🖥️ [MACOS CAPTURE] Sem permissão de Gravação de Tela: pedindo ao sistema (Preferências do Sistema > Segurança e Privacidade).");
+            log::warn!("🖥️ [MACOS CAPTURE] No Screen Recording permission: asking the system (System Preferences > Security & Privacy).");
             let _ = request();
         }
     }
@@ -86,7 +86,7 @@ pub fn list_screens() -> Vec<MonitorItemInfo> {
             let is_primary = id == main;
             MonitorItemInfo {
                 id: i as i32,
-                name: if is_primary { format!("Tela {} (Principal)", i + 1) } else { format!("Tela {}", i + 1) },
+                name: if is_primary { format!("Screen {} (Primary)", i + 1) } else { format!("Screen {}", i + 1) },
                 resolution: format!("{} × {}", w, h),
                 is_primary,
                 hwnd: id as isize,

@@ -25,7 +25,7 @@ pub fn lookup(channel_id: &str) -> Option<(String, String)> {
 }
 
 /// Rewrites `<#id>` mentions as links to the channel, `[#name](https://discord.com/channels/guild/id)`,
-/// so the line parser shows them as clickable links. Unknown channels read `#canal`, as before.
+/// so the line parser shows them as clickable links. Unknown channels read `#channel`, as before.
 pub fn link_channel_mentions(input: &str) -> String {
     if !input.contains("<#") {
         return input.to_string();
@@ -44,7 +44,7 @@ pub fn link_channel_mentions(input: &str) -> String {
                         let label = name.replace(']', ")");
                         out.push_str(&format!("[#{label}](https://discord.com/channels/{guild_id}/{id})"));
                     }
-                    None => out.push_str("#canal"),
+                    None => out.push_str("#channel"),
                 }
                 rest = &after[end + 1..];
             }
@@ -77,11 +77,11 @@ mod tests {
     use super::*;
 
     #[test]
-    fn known_mentions_become_links_and_unknown_ones_read_canal() {
-        remember("900", [("901", "🔗|links-úteis")]);
+    fn known_mentions_become_links_and_unknown_ones_read_channel() {
+        remember("900", [("901", "🔗|useful-links")]);
         assert_eq!(
-            link_channel_mentions("<#901> Para encontrar <#999> e <#abc>"),
-            "[#🔗|links-úteis](https://discord.com/channels/900/901) Para encontrar #canal e <#abc>"
+            link_channel_mentions("<#901> To find <#999> and <#abc>"),
+            "[#🔗|useful-links](https://discord.com/channels/900/901) To find #channel and <#abc>"
         );
     }
 

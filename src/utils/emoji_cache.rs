@@ -39,7 +39,7 @@ pub fn get_emoji_cache() -> Arc<EmojiCache> {
         disk_dir.push("emojis");
 
         if let Err(e) = std::fs::create_dir_all(&disk_dir) {
-            warn!("Não foi possível criar diretório de cache de emojis: {}", e);
+            warn!("Could not create the emoji cache directory: {}", e);
         }
 
         Arc::new(EmojiCache {
@@ -285,7 +285,7 @@ fn decode_bytes_to_rgba(bytes: &[u8]) -> Option<DecodedEmoji> {
     if let Ok(dyn_img) = image::load_from_memory(bytes) {
         let (w, h) = (dyn_img.width(), dyn_img.height());
         if w > 1024 || h > 1024 {
-            log::warn!("Emoji com dimensões excessivas rejeitado: {}x{}", w, h);
+            log::warn!("Emoji with excessive dimensions rejected: {}x{}", w, h);
             return None;
         }
         let rgba = dyn_img.to_rgba8();

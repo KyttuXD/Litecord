@@ -42,7 +42,7 @@ impl OpenH264Encoder {
             openh264::OpenH264API::from_source(),
             enc_config,
         ).or_else(|_| openh264::encoder::Encoder::new())
-        .map_err(|e| format!("Falha ao instanciar OpenH264: {:?}", e))?;
+        .map_err(|e| format!("Failed to instantiate OpenH264: {:?}", e))?;
 
         Ok(Self {
             encoder,
@@ -79,7 +79,7 @@ impl VideoEncoder for OpenH264Encoder {
                 yuv_buffer.resize(total_yuv, 0);
             }
 
-            // Conversão direta ultrarrápida vetorizada SIMD BGRA -> YUV420P (< 0.25ms, 0 context switches)
+            // Ultra-fast direct SIMD-vectorized BGRA -> YUV420P conversion (< 0.25ms, 0 context switches)
             {
                 let (y_plane, uv_plane) = yuv_buffer.split_at_mut(u_base);
                 let (u_plane, v_plane) = uv_plane.split_at_mut(v_base);
@@ -147,7 +147,7 @@ impl VideoEncoder for OpenH264Encoder {
     fn set_bitrate_bps(&mut self, bitrate_bps: u32) {
         let clamped = bitrate_bps.clamp(1_500_000, 6_000_000);
         if (self.current_bitrate_bps as i32 - clamped as i32).abs() >= 1_500_000 && self.last_reconfig.elapsed() >= std::time::Duration::from_millis(15000) {
-            info!("🎛️ [ABR Engine] Ajustando taxa de bits do encoder de {:.2} Mbps para {:.2} Mbps",
+            info!("🎛️ [ABR Engine] Adjusting encoder bitrate from {:.2} Mbps to {:.2} Mbps",
                 self.current_bitrate_bps as f64 / 1_000_000.0,
                 clamped as f64 / 1_000_000.0
             );

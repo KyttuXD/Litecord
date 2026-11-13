@@ -1,85 +1,85 @@
-# Plano Arquitetural: Transmissão de Vídeo P2P 1080p 60 FPS (Litecord)
+# Architecture Plan: 1080p 60 FPS P2P Video Streaming (Litecord)
 
-Este documento descreve a arquitetura, o diagnóstico técnico e o plano de implementação para o sistema de transmissão de vídeo e compartilhamento de tela próprio do Litecord, permitindo transmissões em **Full HD 1080p a 60 FPS** entre quaisquer usuários conectados no mesmo canal de voz pela internet, com **zero dependência de infraestrutura de vídeo do Discord**.
+This document describes the architecture, the technical diagnosis and the implementation plan for Litecord's own video streaming and screen sharing system, enabling **Full HD 1080p at 60 FPS** streams between any users connected to the same voice channel over the internet, with **zero dependency on Discord's video infrastructure**.
 
 ---
 
-## 1. Diagnóstico do Sistema Atual (Por que não funciona na Internet a 1080p 60 FPS)
+## 1. Diagnosis of the Current System (Why it does not work over the Internet at 1080p 60 FPS)
 
-| Fator | Arquitetura Atual (MJPEG / Broadcast UDP) | Impacto / Causa Raiz |
+| Factor | Current Architecture (MJPEG / UDP Broadcast) | Impact / Root Cause |
 | :--- | :--- | :--- |
-| **Descoberta de Peers** | Envio para `255.255.255.255` e sub-redes locais. | Roteadores e ISPs descartam pacotes de broadcast na internet. O método `register_remote_peer` existe no código, mas nunca é chamado por falta de canal de sinalização. |
-| **Codec de Imagem** | MJPEG (compressão de fotos JPEG completas via software). | Cada quadro pesa ~60 a 100 KB. A 60 FPS, gera **35 a 50 Mbps** de upload constante, inviável para conexões residenciais normais. |
-| **Fragmentação UDP** | Quadros divididos em ~60 pacotes UDP (MTU 1350). | A 60 FPS são ~3.600 pacotes/s. Se **1 único pacote** for perdido na rota da internet, o quadro inteiro é descartado, gerando tela cinza ou congelamento. |
-| **Consumo de CPU** | `jpeg_encoder` via software na CPU. | Leva de 15ms a 25ms por quadro em 1080p. O tempo limite para 60 FPS é de **16.6ms**, forçando um cap de segurança em 30 FPS no código. |
+| **Peer Discovery** | Sends to `255.255.255.255` and local subnets. | Routers and ISPs drop broadcast packets on the internet. The `register_remote_peer` method exists in the code, but is never called for lack of a signaling channel. |
+| **Image Codec** | MJPEG (compression of complete JPEG photos in software). | Each frame weighs ~60 to 100 KB. At 60 FPS, this generates a constant **35 to 50 Mbps** of upload, unfeasible for normal home connections. |
+| **UDP Fragmentation** | Frames split into ~60 UDP packets (MTU 1350). | At 60 FPS that is ~3,600 packets/s. If **a single packet** is lost on the internet route, the whole frame is discarded, producing a gray screen or freezing. |
+| **CPU Usage** | Software `jpeg_encoder` on the CPU. | Takes 15ms to 25ms per frame at 1080p. The time limit for 60 FPS is **16.6ms**, forcing a safety cap at 30 FPS in the code. |
 
 ---
 
-## 2. Visão Geral da Nova Arquitetura
+## 2. Overview of the New Architecture
 
 ```mermaid
 flowchart TD
-    subgraph Signaling["1. Descoberta & Sinalização Automática"]
-        A[Transmissor: Inicia Stream] -->|1. Consulta STUN| STUN[Servidores STUN Públicos Google / Cloudflare]
-        STUN -->|Retorna IP:Porta Público| A
-        A -->|2. Envia Sinalização com IP:Porta| SIG[Canal de Sinalização P2P]
-        SIG -->|3. Entrega Endereço do Transmissor| B[Receptores na Mesma Sala de Áudio]
+    subgraph Signaling["1. Automatic Discovery & Signaling"]
+        A[Sender: Starts Stream] -->|1. Queries STUN| STUN[Public STUN Servers Google / Cloudflare]
+        STUN -->|Returns Public IP:Port| A
+        A -->|2. Sends Signaling with IP:Port| SIG[P2P Signaling Channel]
+        SIG -->|3. Delivers Sender Address| B[Receivers in the Same Audio Room]
     end
 
-    subgraph HolePunch["2. NAT Hole Punching Bidirecional"]
-        B -->|4. Dispara Heartbeat UDP no IP:Porta| A
-        A -->|5. Confirma Handshake UDP| B
-        Note1["Pinhole do Firewall/NAT aberto com sucesso!"]
+    subgraph HolePunch["2. Bidirectional NAT Hole Punching"]
+        B -->|4. Fires UDP Heartbeat at IP:Port| A
+        A -->|5. Confirms UDP Handshake| B
+        Note1["Firewall/NAT pinhole opened successfully!"]
     end
 
-    subgraph VideoPipeline["3. Pipeline de Vídeo 1080p 60 FPS"]
-        Cap[Captura de Tela / Câmera 60 FPS] --> Enc[Encoder H.264 Hardware / Ultra-Fast]
-        Enc -->|3.0 a 5.0 Mbps de Bitrate| NAL[Fragmentação de NAL Units RFC 6184]
-        NAL -->|Envio P2P Direto| UDP[Socket UDP P2P]
-        UDP --> Dec[Decoder H.264 Baixa Latência]
-        Dec --> UI[Renderização Slint / Popout Window]
+    subgraph VideoPipeline["3. 1080p 60 FPS Video Pipeline"]
+        Cap[Screen / Camera Capture 60 FPS] --> Enc[H.264 Hardware Encoder / Ultra-Fast]
+        Enc -->|3.0 to 5.0 Mbps Bitrate| NAL[NAL Unit Fragmentation RFC 6184]
+        NAL -->|Direct P2P Send| UDP[P2P UDP Socket]
+        UDP --> Dec[Low-Latency H.264 Decoder]
+        Dec --> UI[Slint Rendering / Popout Window]
     end
 ```
 
 ---
 
-## 3. As 4 Etapas do Plano de Implementação
+## 3. The 4 Stages of the Implementation Plan
 
-### Etapa 1: Sinalização e Furação de NAT (Signaling & NAT Traversal)
-- **Descoberta de IP Público:** Utilizar servidores STUN públicos já integrados (`stun.l.google.com:19302`, `stun.cloudflare.com:3478`) para obter o par `IP_Público:Porta_UDP`.
-- **Canal de Sinalização sem Custos:** Transmitir metadados de conexão `LTP_P2P:{user_id}:{ip}:{port}` para todos os clientes conectados no canal de voz ativo.
-- **Registro e Handshake:** Chamar automaticamente `register_remote_peer(uid, addr)` e disparar handshake UDP de mão dupla para furar NATs e firewalls residenciais.
-
----
-
-### Etapa 2: Migração de MJPEG para Codec H.264
-- **Compressão Temporal (I-Frames e P-Frames):** Apenas os pixels alterados entre quadros são transmitidos.
-- **Comparativo de Desempenho:**
-  - **Bitrate 1080p 60 FPS:** Cai de **45 Mbps** para **3.5 ~ 5.0 Mbps**.
-  - **Pacotes UDP:** Cai de **3.600 pacotes/s** para **~180 a 300 pacotes/s**.
-  - **Tempo de Codificação:** Cai de **20 ms** para **1.5 ~ 4 ms** com aceleração por hardware (GPU) ou perfil *zerolatency*.
-- **Suporte Multiplataforma:**
-  - **Windows:** Media Foundation H.264 Hardware Encoder (NVENC / AMF / Intel QSV) com fallback para `openh264`.
-  - **Linux:** Pipeline GStreamer nativo (`vaapih264enc` / `x264enc tune=zerolatency speed-preset=ultrafast`).
+### Stage 1: Signaling and NAT Traversal
+- **Public IP Discovery:** Use the public STUN servers already integrated (`stun.l.google.com:19302`, `stun.cloudflare.com:3478`) to obtain the `Public_IP:UDP_Port` pair.
+- **Zero-Cost Signaling Channel:** Transmit `LTP_P2P:{user_id}:{ip}:{port}` connection metadata to all clients connected to the active voice channel.
+- **Registration and Handshake:** Automatically call `register_remote_peer(uid, addr)` and fire a two-way UDP handshake to punch through residential NATs and firewalls.
 
 ---
 
-### Etapa 3: Transporte Resiliente e Recuperação Rápida (PLI / Keyframe on Demand)
-- **Fragmentação NAL (RFC 6184):** P-frames compactos são enviados em apenas 1 ou 2 pacotes UDP.
+### Stage 2: Migration from MJPEG to the H.264 Codec
+- **Temporal Compression (I-Frames and P-Frames):** Only the pixels that changed between frames are transmitted.
+- **Performance Comparison:**
+  - **1080p 60 FPS Bitrate:** Drops from **45 Mbps** to **3.5 ~ 5.0 Mbps**.
+  - **UDP Packets:** Drops from **3,600 packets/s** to **~180 to 300 packets/s**.
+  - **Encoding Time:** Drops from **20 ms** to **1.5 ~ 4 ms** with hardware (GPU) acceleration or the *zerolatency* profile.
+- **Cross-Platform Support:**
+  - **Windows:** Media Foundation H.264 Hardware Encoder (NVENC / AMF / Intel QSV) with fallback to `openh264`.
+  - **Linux:** Native GStreamer pipeline (`vaapih264enc` / `x264enc tune=zerolatency speed-preset=ultrafast`).
+
+---
+
+### Stage 3: Resilient Transport and Fast Recovery (PLI / Keyframe on Demand)
+- **NAL Fragmentation (RFC 6184):** Compact P-frames are sent in just 1 or 2 UDP packets.
 - **Picture Loss Indication (PLI):**
-  - Caso um receptor entre no meio da transmissão ou ocorra perda de pacotes, o receptor envia um pacote de 1 byte: `OP_KEYFRAME_REQUEST`.
-  - O transmissor força a emissão imediata de um Keyframe (I-Frame), restaurando o vídeo do receptor em menos de **30 ms**.
+  - If a receiver joins mid-stream or packets are lost, the receiver sends a 1-byte packet: `OP_KEYFRAME_REQUEST`.
+  - The sender forces the immediate emission of a Keyframe (I-Frame), restoring the receiver's video in under **30 ms**.
 
 ---
 
-### Etapa 4: Desbloqueio e Otimização da UI
-- **Remoção de Limitadores:** Desbloquear o limitador de 30 FPS presente no código de captura, habilitando 60 FPS reais em 1080p.
-- **Buffer Zero-Copy:** Compartilhar o frame decodificado diretamente com o componente Slint de visualização e com a janela destacada (*Popout*).
+### Stage 4: UI Unlocking and Optimization
+- **Removal of Limiters:** Unlock the 30 FPS limiter present in the capture code, enabling real 60 FPS at 1080p.
+- **Zero-Copy Buffer:** Share the decoded frame directly with the Slint viewing component and with the detached window (*Popout*).
 
 ---
 
-## 4. Ordem de Execução
+## 4. Execution Order
 
-1. **Fase 1:** Implementar o canal de sinalização e registro automático de peers pela internet.
-2. **Fase 2:** Integrar o encoder e decoder H.264 de baixa latência em substituição ao JPEG.
-3. **Fase 3:** Implementar o mecanismo de `OP_KEYFRAME_REQUEST` e liberar 1080p 60 FPS na interface.
+1. **Phase 1:** Implement the signaling channel and automatic registration of peers over the internet.
+2. **Phase 2:** Integrate the low-latency H.264 encoder and decoder to replace JPEG.
+3. **Phase 3:** Implement the `OP_KEYFRAME_REQUEST` mechanism and unlock 1080p 60 FPS in the interface.

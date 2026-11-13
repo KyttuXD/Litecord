@@ -1,119 +1,119 @@
-# Assistir sob demanda (protocolo 3)
+# Watch on demand (protocol 3)
 
-Quem transmite só envia para quem está assistindo, e só codifica enquanto alguém
-assiste (no app ou pelo navegador). Quem está na chamada sem assistir não recebe
-nada da transmissão.
+The sender only sends to whoever is watching, and only encodes while someone
+is watching (in the app or in the browser). Anyone in the call who is not watching receives
+nothing of the stream.
 
-## Como era (protocolo 2)
+## How it was (protocol 2)
 
-- O transmissor mandava cada quadro e o áudio da transmissão para **todos** os pares
-  que se anunciaram na sala de sinalização nos últimos 60 s, assistindo ou não.
-- Vídeo, áudio e presença eram cifrados com uma chave derivada do **ID do canal**.
-  O ID não é segredo: qualquer pessoa que o conhecesse podia entrar na sala do
-  worker, anunciar presença, passar a receber a transmissão e decifrá-la. A troca
-  X25519 que existia era calculada e nunca usada.
-- A taxa só diminuía (perda > 8% → −20%), nunca voltava a subir e não era
-  reiniciada entre transmissões.
-- Em chamada, todos trocavam heartbeats a cada 1,5 s e faziam broadcast na rede local.
+- The sender sent every frame and the stream audio to **all** peers
+  that had announced themselves in the signaling room in the last 60 s, watching or not.
+- Video, audio and presence were encrypted with a key derived from the **channel ID**.
+  The ID is not a secret: anyone who knew it could join the worker's room,
+  announce presence, start receiving the stream and decrypt it. The X25519
+  exchange that existed was computed and never used.
+- The bitrate only decreased (loss > 8% → −20%), never went back up and was not
+  reset between streams.
+- In a call, everyone exchanged heartbeats every 1.5 s and broadcast on the local network.
 
-## Como fica
+## How it works now
 
-### Pedido de assistir
+### Watch request
 
-- Uma transmissão nova aparece **sem vídeo**, com o botão **Assistir** (como no
-  Discord). Assistir, fechar a transmissão e "esconder" passam a significar começar
-  ou parar de receber.
-- Enquanto quem assiste quer a transmissão **e alguma janela pode mostrá-la**, o app
-  manda `OP_WATCH` ao transmissor uma vez por segundo, pelo socket P2P. Na bandeja,
-  minimizado ou com a transmissão escondida, o pedido para; ao voltar, recomeça e o
-  transmissor gera um quadro-chave na hora.
-- `OP_WATCH` leva a chave pública X25519 de quem assiste. O transmissor só aceita
-  quem está **no mesmo canal de voz do Discord** (estado de voz do gateway).
-- O pedido vale por 4 s. Sem renovação, quem assiste sai da lista. `OP_UNWATCH`
-  encerra na hora.
+- A new stream appears **without video**, with the **Watch** button (as on
+  Discord). Watching, closing the stream and "hiding" now mean starting
+  or stopping reception.
+- While the viewer wants the stream **and some window can show it**, the app
+  sends `OP_WATCH` to the sender once per second, over the P2P socket. In the tray,
+  minimized or with the stream hidden, the request stops; on return, it starts again and the
+  sender generates a keyframe immediately.
+- `OP_WATCH` carries the viewer's X25519 public key. The sender only accepts
+  people who are **in the same Discord voice channel** (gateway voice state).
+- The request is valid for 4 s. Without renewal, the viewer leaves the list. `OP_UNWATCH`
+  ends it immediately.
 
-### Chave por transmissão
+### Per-stream key
 
-- Cada transmissão sorteia uma chave AES-256 nova. Vídeo, FEC e áudio da transmissão
-  são cifrados com ela, uma vez por pacote, para todos os espectadores.
-- O transmissor responde a cada pedido com `OP_WATCH_ACK`: sua chave pública e a
-  chave da transmissão cifrada com a chave do par (X25519 + SHA-256, a mesma dos dois
-  lados). Só quem fez o pedido consegue abri-la.
-- Quem não pediu, ou foi recusado, não recebe pacotes e não teria como decifrá-los.
+- Each stream draws a new AES-256 key. Video, FEC and stream audio
+  are encrypted with it, once per packet, for all viewers.
+- The sender answers each request with `OP_WATCH_ACK`: its public key and the
+  stream key encrypted with the peer key (X25519 + SHA-256, the same on both
+  sides). Only whoever made the request can open it.
+- Whoever did not ask, or was refused, receives no packets and would have no way to decrypt them.
 
-**Limite:** o Discord não oferece um jeito de um cliente provar a outro quem é. Um
-atacante que conheça o ID do canal ainda pode fingir ser alguém **que está no canal
-de voz** e pedir a transmissão em nome dele. O transmissor associa cada pessoa à
-primeira chave pública que aparecer na transmissão e recusa outra chave para o
-mesmo ID. Isso fecha o caso comum (quem nem está na chamada), mas não é uma prova de
-identidade.
+**Limit:** Discord offers no way for one client to prove to another who it is. An
+attacker who knows the channel ID can still pretend to be someone **who is in the voice
+channel** and request the stream on their behalf. The sender associates each person with the
+first public key that shows up for the stream and refuses another key for the
+same ID. This closes the common case (someone who is not even in the call), but it is not a proof of
+identity.
 
-### Taxa
+### Bitrate
 
-- Reiniciada no valor configurado a cada transmissão.
-- Decidida pelo **pior espectador** com relatório nos últimos 3 s. Quem sai deixa de
-  contar quando o pedido expira.
-- Perda acima de 8%: −20% (mínimo 3 Mbps). Perda abaixo de 2% por 5 s seguidos:
-  +0,5 Mbps, até o valor configurado.
+- Reset to the configured value on every stream.
+- Decided by the **worst viewer** with a report in the last 3 s. A viewer who leaves stops
+  counting when the request expires.
+- Loss above 8%: −20% (minimum 3 Mbps). Loss below 2% for 5 s in a row:
+  +0.5 Mbps, up to the configured value.
 
-### Temporizadores
+### Timers
 
-- Sem espectador: o transmissor não codifica nem envia vídeo e áudio, e a captura
-  cai para o ritmo da pré-visualização local (4 quadros por segundo). O anúncio do
-  transmissor (a cada 1,5 s) continua, para que quem chega possa encontrá-lo.
-- Os heartbeats entre pares ficam só onde há transmissão: entre quem assiste e quem
-  transmite (o próprio `OP_WATCH`). O broadcast na rede local só acontece quando a
-  sinalização está fora do ar.
-- O relatório de perda só vai para transmissões assistidas.
+- With no viewer: the sender neither encodes nor sends video and audio, and capture
+  drops to the pace of the local preview (4 frames per second). The sender's
+  announcement (every 1.5 s) continues, so that newcomers can find it.
+- Heartbeats between peers exist only where there is a stream: between the viewer and the
+  sender (the `OP_WATCH` itself). The local network broadcast only happens when
+  signaling is down.
+- The loss report is only sent for streams that are being watched.
 
-### Navegador
+### Browser
 
-A transmissão pela web já é sob demanda: o vídeo só é copiado para a sessão WebRTC
-com espectadores conectados. Agora ela também conta como espectador para o
-codificador: com só o navegador assistindo, o app codifica e não envia nada pelo P2P.
+Web streaming is already on demand: the video is only copied into the WebRTC session
+when viewers are connected. It now also counts as a viewer for the
+encoder: with only the browser watching, the app encodes and sends nothing over P2P.
 
-## Compatibilidade
+## Compatibility
 
-Versões antigas mandam para todos com a chave do canal e não sabem pedir. Elas não
-conseguem assistir a quem usa o protocolo 3, e vice-versa. Por isso a versão que
-traz o protocolo 3 é **atualização obrigatória**: o worker passa a exigir `v=3`
-(`MIN_PROTOCOL = 3`) e estaciona as versões antigas, como na 1.2.0. O app antigo
-para de achar pares pela internet até atualizar.
+Old versions send to everyone with the channel key and do not know how to ask. They cannot
+watch anyone using protocol 3, and vice versa. That is why the version that
+brings protocol 3 is a **mandatory update**: the worker now requires `v=3`
+(`MIN_PROTOCOL = 3`) and parks old versions, as in 1.2.0. The old app
+stops finding peers over the internet until it updates.
 
-Publicar o worker antes da versão nova deixaria todos sem transmissão até a
-atualização; o worker deve ir junto com a release.
+Publishing the worker before the new version would leave everyone without streaming until
+they update; the worker must go out together with the release.
 
-## Medido (Windows 11, 1080p60, duas contas no mesmo PC)
+## Measured (Windows 11, 1080p60, two accounts on the same PC)
 
 `scripts/perf/watch_on_demand.ps1`:
 
-| Situação | Quem assiste recebe | CPU de quem transmite |
+| Situation | What the viewer receives | Sender CPU |
 |---|---|---|
-| Ninguém assistindo | nada | 4,5–5,9% de um núcleo (antes: 25–33%, capturando a 60 FPS) |
-| Assistindo | ~60 FPS | 45–49% |
-| Transmissão escondida | nada | 5–6% |
-| Quem assiste na bandeja | nada | 5–6% |
+| Nobody watching | nothing | 4.5–5.9% of a core (before: 25–33%, capturing at 60 FPS) |
+| Watching | ~60 FPS | 45–49% |
+| Stream hidden | nothing | 5–6% |
+| Viewer in the tray | nothing | 5–6% |
 
-A primeira imagem chega 0,2–0,7 s depois de **Assistir**; ao voltar da bandeja ou
-mostrar de novo, 0,1–0,45 s (antes 0,12 s, porque o vídeo continuava chegando).
-Quem assiste gasta 1,3–1,5% de um núcleo na bandeja (antes 2,2%), porque nada chega.
-Com só um navegador assistindo, o app codifica normalmente (Chrome, Edge e Firefox
-recebem 1080p60 da captura real); sem ninguém, nativo ou web, a captura fica em 4 FPS.
+The first image arrives 0.2–0.7 s after **Watch**; when returning from the tray or
+showing it again, 0.1–0.45 s (before 0.12 s, because the video kept arriving).
+The viewer spends 1.3–1.5% of a core in the tray (before 2.2%), because nothing arrives.
+With only a browser watching, the app encodes normally (Chrome, Edge and Firefox
+receive 1080p60 from real capture); with nobody, native or web, capture stays at 4 FPS.
 
-## Limites que continuam
+## Limits that remain
 
-- A presença na sinalização (endereços IP e "estou transmitindo") ainda é cifrada
-  com a chave do canal: quem souber o ID do canal e entrar na sala do worker vê os
-  endereços de quem está nela, mas não recebe nem decifra a transmissão.
-- `OP_STOP` não é autenticado: alguém na mesma rede poderia fazer a transmissão de
-  outra pessoa sumir da tela de quem assiste até o próximo anúncio.
-- Sem TURN: redes que bloqueiam UDP ou NAT simétrico nos dois lados não conectam.
+- Presence in signaling (IP addresses and "I'm streaming") is still encrypted
+  with the channel key: anyone who knows the channel ID and joins the worker's room sees the
+  addresses of those in it, but does not receive or decrypt the stream.
+- `OP_STOP` is not authenticated: someone on the same network could make another
+  person's stream disappear from the viewer's screen until the next announcement.
+- No TURN: networks that block UDP or have symmetric NAT on both sides do not connect.
 
-## Testes
+## Tests
 
-- Unitários: derivação da chave do par (igual dos dois lados), embrulho da chave da
-  transmissão, expiração dos pedidos, recusa de quem não está no canal ou troca de
-  chave, ajuste de taxa.
-- Ponta a ponta (`scripts/perf/watch_on_demand.ps1`): sem assistir, o transmissor não
-  codifica e o receptor não recebe nada; ao assistir, a imagem chega; ao esconder,
-  para; ao voltar, a imagem reaparece; e a regressão de `stream_e2e.ps1`.
+- Unit: peer key derivation (the same on both sides), wrapping of the stream
+  key, request expiry, refusal of anyone not in the channel or who changes
+  key, bitrate adjustment.
+- End to end (`scripts/perf/watch_on_demand.ps1`): without watching, the sender does not
+  encode and the receiver receives nothing; on watching, the image arrives; on hiding, it
+  stops; on returning, the image reappears; and the `stream_e2e.ps1` regression.

@@ -51,8 +51,8 @@ fn main() {
         }
     }
 
-    println!("📡 Destino UDP: {}", target_addr);
-    println!("🎧 Porta Local: {}", local_port);
+    println!("📡 UDP target: {}", target_addr);
+    println!("🎧 Local Port: {}", local_port);
 
     unsafe {
         let candidate_dirs = [
@@ -75,7 +75,7 @@ fn main() {
             for dll_name in dll_names {
                 avcodec_dll = windows_sys::Win32::System::LibraryLoader::LoadLibraryA(dll_name.as_ptr());
                 if !avcodec_dll.is_null() {
-                    println!("✅ Carregado {} de '{}'", String::from_utf8_lossy(dll_name), dir);
+                    println!("✅ Loaded {} from '{}'", String::from_utf8_lossy(dll_name), dir);
                     break;
                 }
             }
@@ -84,7 +84,7 @@ fn main() {
                 for util_name in util_names {
                     avutil_dll = windows_sys::Win32::System::LibraryLoader::LoadLibraryA(util_name.as_ptr());
                     if !avutil_dll.is_null() {
-                        println!("✅ Carregado {} de '{}'", String::from_utf8_lossy(util_name), dir);
+                        println!("✅ Loaded {} from '{}'", String::from_utf8_lossy(util_name), dir);
                         break;
                     }
                 }
@@ -93,7 +93,7 @@ fn main() {
         }
 
         if avcodec_dll.is_null() || avutil_dll.is_null() {
-            eprintln!("❌ Falha ao carregar FFmpeg DLLs (avcodec / avutil)");
+            eprintln!("❌ Failed to load FFmpeg DLLs (avcodec / avutil)");
             return;
         }
 
@@ -154,13 +154,13 @@ fn main() {
             if !codec.is_null() {
                 chosen_codec = codec;
                 chosen_name = name;
-                println!("🎉 GPU Encoder selecionado: {}", name);
+                println!("🎉 GPU Encoder selected: {}", name);
                 break;
             }
         }
 
         if chosen_codec.is_null() {
-            eprintln!("❌ Nenhum GPU encoder encontrado!");
+            eprintln!("❌ No GPU encoder found!");
             return;
         }
 
@@ -215,7 +215,7 @@ fn main() {
         let open_res = open2_fn(codec_ctx, chosen_codec, &mut opts);
         dict_free_fn(&mut opts);
         if open_res < 0 {
-            eprintln!("❌ Falha ao abrir encoder {} (res={})", chosen_name, open_res);
+            eprintln!("❌ Failed to open encoder {} (res={})", chosen_name, open_res);
             return;
         }
 
@@ -238,7 +238,7 @@ fn main() {
             }
         }
 
-        println!("✅ Encoder {} inicializado com sucesso!", chosen_name);
+        println!("✅ Encoder {} initialized successfully!", chosen_name);
 
         let frame = frame_alloc_fn();
         let frame_u8 = frame as *mut u8;
@@ -246,9 +246,9 @@ fn main() {
         *(frame_u8.add(108) as *mut i32) = height;
         *(frame_u8.add(116) as *mut i32) = 23; // NV12
         let buf_res = frame_get_buf_fn(frame, 32);
-        println!("📦 frame_get_buffer resultado: {}", buf_res);
+        println!("📦 frame_get_buffer result: {}", buf_res);
         if buf_res < 0 {
-            eprintln!("❌ Falha ao alocar buffers do AVFrame");
+            eprintln!("❌ Failed to allocate AVFrame buffers");
             return;
         }
 
@@ -256,9 +256,9 @@ fn main() {
 
         let socket = UdpSocket::bind(format!("0.0.0.0:{}", local_port))
             .or_else(|_| UdpSocket::bind("0.0.0.0:0"))
-            .expect("Falha ao abrir socket UDP");
-        println!("🎧 Socket vinculado na porta: {:?}", socket.local_addr().unwrap().port());
-        socket.set_nonblocking(true).expect("Falha ao setar nonblocking");
+            .expect("Failed to open UDP socket");
+        println!("🎧 Socket bound to port: {:?}", socket.local_addr().unwrap().port());
+        socket.set_nonblocking(true).expect("Failed to set nonblocking");
 
         let mut force_pli = false;
 
@@ -272,7 +272,7 @@ fn main() {
         let mut seq = 0u32;
         let mut last_idr = Instant::now() - Duration::from_secs(1);
 
-        println!("🎬 Transmissão ao vivo iniciada para {} a 60 FPS...", target_addr);
+        println!("🎬 Live transmission started to {} at 60 FPS...", target_addr);
 
         let frame_interval = Duration::from_micros(16666);
         let mut next_frame_time = Instant::now();
@@ -290,16 +290,16 @@ fn main() {
         println!("📊 Buffer info: y_ptr={:p}, uv_ptr={:p}, y_linesize={}, uv_linesize={}", y_ptr, uv_ptr, y_linesize, uv_linesize);
 
         if y_ptr.is_null() || uv_ptr.is_null() || y_linesize == 0 || uv_linesize == 0 {
-            eprintln!("❌ Ponteiros ou strides do AVFrame inválidos!");
+            eprintln!("❌ Invalid AVFrame pointers or strides!");
             return;
         }
 
         loop {
-            // Checa PLI requests recebidos do receptor (offset 4 ou offset 8)
+            // Checks PLI requests received from the receiver (offset 4 or offset 8)
             let mut rx_buf = [0u8; 1500];
             while let Ok((n, _src)) = socket.recv_from(&mut rx_buf) {
                 if n >= 5 && &rx_buf[..4] == MAGIC_V3 && (rx_buf[4] == OP_KEYFRAME_REQ || (n >= 9 && rx_buf[8] == OP_KEYFRAME_REQ)) {
-                    println!("🔄 [PLI RX] Pedido de Keyframe recebido do receptor! Forçando IDR...");
+                    println!("🔄 [PLI RX] Keyframe request received from the receiver! Forcing IDR...");
                     force_pli = true;
                 }
             }
@@ -310,7 +310,7 @@ fn main() {
                 force_pli = false;
             }
 
-            // Anima padrão YUV de teste com gradiente em movimento
+            // Animates a test YUV pattern with a moving gradient
             let offset = (seq * 4) as u8;
             for (idx, b) in y_plane.iter_mut().enumerate() {
                 let x = (idx % width as usize) as u8;
@@ -318,7 +318,7 @@ fn main() {
                 *b = x.wrapping_add(y).wrapping_add(offset);
             }
 
-            // Copia para buffers do AVFrame
+            // Copy into the AVFrame buffers
             for row in 0..height as usize {
                 let src_offset = row * width as usize;
                 let dst_offset = row * y_linesize;
@@ -392,7 +392,7 @@ fn main() {
                     }
                     final_payload.extend_from_slice(&out_buffer);
 
-                    // Fragmenta e envia pacotes UDP no formato oficial do Litecord (37 bytes header)
+                    // Fragments and sends UDP packets in the official Litecord format (37-byte header)
                     let payload = if final_payload.is_empty() { &out_buffer } else { &final_payload };
                     let total_chunks = ((payload.len() + MAX_UDP_PAYLOAD - 1) / MAX_UDP_PAYLOAD).max(1);
                     for (chunk_idx, slice) in payload.chunks(MAX_UDP_PAYLOAD).enumerate() {

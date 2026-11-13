@@ -366,7 +366,7 @@ pub fn confirm() {
 pub fn give_up(why: &str) {
     let changed = MODE.swap(CPU, Ordering::Relaxed) != CPU;
     if changed {
-        log::warn!("🎞️ [GPU TX] Transmissão volta a passar pela CPU: {}", why);
+        log::warn!("🎞️ [GPU TX] Stream goes back through the CPU: {}", why);
     }
     *LATEST.lock().unwrap_or_else(|e| e.into_inner()) = None;
     if changed { super::gpu_capture::status_changed(); }
@@ -430,7 +430,7 @@ impl CaptureSide {
             match vendor_of(device) {
                 Some(v) if crate::encoder::gpu_encoder_supports(v) => {}
                 v => {
-                    give_up(&format!("nenhum codificador lê texturas desta placa (fabricante {:04x?})", v));
+                    give_up(&format!("no encoder reads textures from this card (vendor {:04x?})", v));
                     return false;
                 }
             }
@@ -441,7 +441,7 @@ impl CaptureSide {
                     *NEW_DEVICE.lock().unwrap_or_else(|e| e.into_inner()) = Some((device.clone(), self.out.0 & !1, self.out.1 & !1));
                 }
                 Err(e) => {
-                    give_up(&format!("conversão pela GPU indisponível ({e})"));
+                    give_up(&format!("GPU conversion unavailable ({e})"));
                     return false;
                 }
             }
@@ -466,7 +466,7 @@ impl CaptureSide {
                 // The encoder still holds every texture: this picture is skipped.
                 Ok(None) => {}
                 Err(e) => {
-                    give_up(&format!("falha ao converter na GPU ({e})"));
+                    give_up(&format!("failed to convert on the GPU ({e})"));
                     return false;
                 }
             }

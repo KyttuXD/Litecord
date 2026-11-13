@@ -266,14 +266,14 @@ struct NvEncLockBitstreamParams {
 
 fn main() {
     println!("============================================================");
-    println!("🚀 TESTE ISOLADO: HARDWARE ENCODER NVIDIA NVENC + DIRECT3D 11");
+    println!("🚀 ISOLATED TEST: NVIDIA NVENC HARDWARE ENCODER + DIRECT3D 11");
     println!("============================================================");
 
     unsafe {
-        // 1. Carregar DXGI para enumerar adaptadores
+        // 1. Load DXGI to enumerate adapters
         let dxgi_dll = windows_sys::Win32::System::LibraryLoader::LoadLibraryA(b"dxgi.dll\0".as_ptr());
         if dxgi_dll.is_null() {
-            println!("❌ Falha ao carregar dxgi.dll");
+            println!("❌ Failed to load dxgi.dll");
             return;
         }
 
@@ -283,7 +283,7 @@ fn main() {
         let create_factory = match create_dxgi_factory1 {
             Some(f) => f,
             None => {
-                println!("❌ CreateDXGIFactory1 não encontrado na dxgi.dll");
+                println!("❌ CreateDXGIFactory1 not found in dxgi.dll");
                 return;
             }
         };
@@ -291,19 +291,19 @@ fn main() {
         let mut factory: *mut c_void = std::ptr::null_mut();
         let hr = create_factory(&IID_IDXGIFACTORY1, &mut factory);
         if hr != 0 || factory.is_null() {
-            println!("❌ CreateDXGIFactory1 falhou com hr = 0x{:08X}", hr);
+            println!("❌ CreateDXGIFactory1 failed with hr = 0x{:08X}", hr);
             return;
         }
 
         let factory_vtbl = *(factory as *mut *const IDXGIFactory1Vtbl);
-        println!("✅ IDXGIFactory1 instanciada com sucesso!");
+        println!("✅ IDXGIFactory1 instantiated successfully!");
 
-        // 2. Enumerar todos os adaptadores gráficos
+        // 2. Enumerate all graphics adapters
         let mut adapter_idx = 0u32;
         let mut nvidia_adapter: *mut c_void = std::ptr::null_mut();
         let mut nvidia_name = String::new();
 
-        println!("\n🔍 ENUMERANDO PLACAS DE VÍDEO DO SISTEMA:");
+        println!("\n🔍 ENUMERATING THE SYSTEM GRAPHICS CARDS:");
         loop {
             let mut adapter: *mut c_void = std::ptr::null_mut();
             let hr = ((*factory_vtbl).enum_adapters1)(factory, adapter_idx, &mut adapter);
@@ -331,16 +331,16 @@ fn main() {
         }
 
         if nvidia_adapter.is_null() {
-            println!("❌ Nenhuma GPU NVIDIA (Vendor ID 0x10DE) encontrada no sistema.");
+            println!("❌ No NVIDIA GPU (Vendor ID 0x10DE) found on the system.");
             return;
         }
 
-        println!("\n🎯 GPU NVIDIA SELECIONADA: '{}' (Vendor ID: 0x10DE)", nvidia_name);
+        println!("\n🎯 NVIDIA GPU SELECTED: '{}' (Vendor ID: 0x10DE)", nvidia_name);
 
-        // 3. Criar dispositivo Direct3D 11 diretamente no adaptador NVIDIA
+        // 3. Create a Direct3D 11 device directly on the NVIDIA adapter
         let d3d11_dll = windows_sys::Win32::System::LibraryLoader::LoadLibraryA(b"d3d11.dll\0".as_ptr());
         if d3d11_dll.is_null() {
-            println!("❌ Falha ao carregar d3d11.dll");
+            println!("❌ Failed to load d3d11.dll");
             return;
         }
 
@@ -361,12 +361,12 @@ fn main() {
             windows_sys::Win32::System::LibraryLoader::GetProcAddress(d3d11_dll, b"D3D11CreateDevice\0".as_ptr())
         );
 
-        let create_device = create_device_fn.expect("D3D11CreateDevice não encontrado");
+        let create_device = create_device_fn.expect("D3D11CreateDevice not found");
         let mut d3d11_device: *mut c_void = std::ptr::null_mut();
         let mut d3d11_context: *mut c_void = std::ptr::null_mut();
         let mut feature_level: u32 = 0;
 
-        // D3D_DRIVER_TYPE_UNKNOWN (0) é obrigatório ao especificar um pAdapter explícito
+        // D3D_DRIVER_TYPE_UNKNOWN (0) is mandatory when specifying an explicit pAdapter
         let hr = create_device(
             nvidia_adapter,
             0, // D3D_DRIVER_TYPE_UNKNOWN
@@ -381,11 +381,11 @@ fn main() {
         );
 
         if hr != 0 || d3d11_device.is_null() {
-            println!("❌ Falha ao criar Direct3D 11 Device na GPU NVIDIA! HR = 0x{:08X}", hr);
+            println!("❌ Failed to create a Direct3D 11 Device on the NVIDIA GPU! HR = 0x{:08X}", hr);
             return;
         }
 
-        // 4. Testar CUDA Context nativo da NVIDIA (nvcuda.dll)
+        // 4. Test the native NVIDIA CUDA Context (nvcuda.dll)
         let cuda_dll = windows_sys::Win32::System::LibraryLoader::LoadLibraryA(b"nvcuda.dll\0".as_ptr());
         let mut cuda_context: *mut c_void = std::ptr::null_mut();
         if !cuda_dll.is_null() {
@@ -406,18 +406,18 @@ fn main() {
                 let r3 = ctx_create(&mut cuda_context, 0, cu_dev);
                 if let Some(set_curr) = cu_ctx_set_current {
                     let r4 = set_curr(cuda_context);
-                    println!("\n🟢 CONTEXTO CUDA ATIVADO NA THREAD: init={}, dev={}, ctx_create={}, set_current={} -> Context: {:p}", r1, cu_dev, r3, r4, cuda_context);
+                    println!("\n🟢 CUDA CONTEXT ACTIVATED ON THE THREAD: init={}, dev={}, ctx_create={}, set_current={} -> Context: {:p}", r1, cu_dev, r3, r4, cuda_context);
                 } else {
-                    println!("\n🟢 INICIALIZANDO CONTEXTO CUDA: init={}, dev_get={} (dev={}), ctx_create={} -> Context: {:p}", r1, r2, cu_dev, r3, cuda_context);
+                    println!("\n🟢 INITIALIZING CUDA CONTEXT: init={}, dev_get={} (dev={}), ctx_create={} -> Context: {:p}", r1, r2, cu_dev, r3, cuda_context);
                 }
             }
         }
-        println!("✅ Dispositivo Direct3D 11 criado no silício da NVIDIA! Feature Level: 0x{:04X} | Handle: {:p}", feature_level, d3d11_device);
+        println!("✅ Direct3D 11 device created on the NVIDIA silicon! Feature Level: 0x{:04X} | Handle: {:p}", feature_level, d3d11_device);
 
-        // 4. Carregar nvEncodeAPI64.dll e inicializar sessão
+        // 4. Load nvEncodeAPI64.dll and initialize the session
         let nvenc_dll = windows_sys::Win32::System::LibraryLoader::LoadLibraryA(b"nvEncodeAPI64.dll\0".as_ptr());
         if nvenc_dll.is_null() {
-            println!("❌ Falha ao carregar nvEncodeAPI64.dll");
+            println!("❌ Failed to load nvEncodeAPI64.dll");
             return;
         }
 
@@ -425,16 +425,16 @@ fn main() {
         let create_instance_fn: Option<FnNvEncodeAPICreateInstance> = std::mem::transmute(
             windows_sys::Win32::System::LibraryLoader::GetProcAddress(nvenc_dll, b"NvEncodeAPICreateInstance\0".as_ptr())
         );
-        let create_instance = create_instance_fn.expect("NvEncodeAPICreateInstance não encontrado");
+        let create_instance = create_instance_fn.expect("NvEncodeAPICreateInstance not found");
 
         let mut fn_list: NV_ENCODE_API_FUNCTION_LIST = std::mem::zeroed();
         fn_list.version = (314 << 24) | (2 & 0xFFFFFF);
         let status = create_instance(&mut fn_list);
         if status != 0 {
-            println!("❌ NvEncodeAPICreateInstance falhou com status {}", status);
+            println!("❌ NvEncodeAPICreateInstance failed with status {}", status);
             return;
         }
-        println!("✅ NV_ENCODE_API_FUNCTION_LIST inicializada com sucesso! (version=0x{:08X})", fn_list.version);
+        println!("✅ NV_ENCODE_API_FUNCTION_LIST initialized successfully! (version=0x{:08X})", fn_list.version);
         let ptr_slice = std::slice::from_raw_parts(&fn_list as *const _ as *const usize, 40);
         for (i, &p) in ptr_slice.iter().enumerate() {
             if i >= 1 && i <= 35 {
@@ -444,10 +444,10 @@ fn main() {
 
         let open_session_fn = fn_list.nvEncOpenEncodeSessionEx.expect("nvEncOpenEncodeSessionEx");
 
-        // 5. Testar abertura de sessão com o dispositivo NVIDIA
-        println!("\n🔍 ABRINDO SESSÃO NVENC NO DISPOSITIVO D3D11 DA NVIDIA:");
+        // 5. Test opening a session with the NVIDIA device
+        println!("\n🔍 OPENING NVENC SESSION ON THE NVIDIA D3D11 DEVICE:");
 
-        // Macro oficial NVIDIA: ((uint32_t)NVENCAPI_VERSION | ((ver)<<16) | (0x7 << 28))
+        // Official NVIDIA macro: ((uint32_t)NVENCAPI_VERSION | ((ver)<<16) | (0x7 << 28))
         let make_struct_ver = |ver: u32, major: u32, minor: u32| -> u32 {
             let api_ver = major | (minor << 24);
             api_ver | (ver << 16) | (0x7 << 28)
@@ -482,7 +482,7 @@ fn main() {
                 let legacy_status = open_legacy_fn(cuda_context, 1, &mut h_enc);
                 println!("   -> nvEncOpenEncodeSession (CUDA context, dev_type=1) -> STATUS: {}", legacy_status);
                 if legacy_status == 0 && !h_enc.is_null() {
-                    println!("🎉 SESSÃO DE HARDWARE ABERTA VIA nvEncOpenEncodeSession (CUDA)! Handle: {:p}", h_enc);
+                    println!("🎉 HARDWARE SESSION OPENED VIA nvEncOpenEncodeSession (CUDA)! Handle: {:p}", h_enc);
                     encoder_handle = h_enc;
                 }
             }
@@ -491,14 +491,14 @@ fn main() {
                 let legacy_status = open_legacy_fn(d3d11_device, dt, &mut h_enc);
                 println!("   -> nvEncOpenEncodeSession (D3D11, dev_type={}) -> STATUS: {}", dt, legacy_status);
                 if legacy_status == 0 && !h_enc.is_null() && encoder_handle.is_null() {
-                    println!("🎉 SESSÃO DE HARDWARE ABERTA VIA nvEncOpenEncodeSession (dev_type={})! Handle: {:p}", dt, h_enc);
+                    println!("🎉 HARDWARE SESSION OPENED VIA nvEncOpenEncodeSession (dev_type={})! Handle: {:p}", dt, h_enc);
                     encoder_handle = h_enc;
                     break;
                 }
             }
         }
 
-        // Fórmula oficial da NVIDIA do header nvEncodeAPI.h:
+        // Official NVIDIA formula from the nvEncodeAPI.h header:
         // #define NVENCAPI_VERSION (NVENCAPI_MAJOR_VERSION | (NVENCAPI_MINOR_VERSION << 24))
         // #define NVENCAPI_STRUCT_VERSION(ver) ((uint32_t)NVENCAPI_VERSION | ((ver)<<16) | (0x7 << 28))
         let nvenc_struct_version = |ver: u32, major: u32, minor: u32, is_flagged: bool| -> u32 {
@@ -507,8 +507,8 @@ fn main() {
             if is_flagged { s_v | (1 << 31) } else { s_v }
         };
 
-        // Testar inicialização de sessão com versões canônicas da NVIDIA
-        println!("\n🔍 ABRINDO SESSÃO NVENC NO SILÍCIO DA NVIDIA:");
+        // Test session initialization with canonical NVIDIA versions
+        println!("\n🔍 OPENING NVENC SESSION ON THE NVIDIA SILICON:");
         let mut encoder_handle: *mut c_void = std::ptr::null_mut();
         let mut matched_major = 10u32;
         let mut matched_minor = 1u32;
@@ -526,7 +526,7 @@ fn main() {
                 let mut h: *mut c_void = std::ptr::null_mut();
                 let status = open_session_ex(&mut open_params as *mut _ as *mut c_void, &mut h);
                 if status == 0 && !h.is_null() {
-                    println!("🎉 SESSÃO DE HARDWARE ABERTA COM SUCESSO! (D3D11) struct=0x{:08X}, api=0x{:08X} -> Handle: {:p}",
+                    println!("🎉 HARDWARE SESSION OPENED SUCCESSFULLY! (D3D11) struct=0x{:08X}, api=0x{:08X} -> Handle: {:p}",
                         s_ver, api_ver, h);
                     encoder_handle = h;
                     break;
@@ -536,36 +536,36 @@ fn main() {
         }
 
         if encoder_handle.is_null() {
-            println!("❌ Falha ao abrir sessão NVENC.");
+            println!("❌ Failed to open NVENC session.");
             return;
         }
 
-        println!("\n🔍 CONSULTANDO CODECS SUPORTADOS NO SILÍCIO (Slots 2 & 3):");
+        println!("\n🔍 QUERYING CODECS SUPPORTED ON THE SILICON (Slots 2 & 3):");
         let get_guid_count_fn: unsafe extern "system" fn(encoder: *mut c_void, count: *mut u32) -> u32 = std::mem::transmute(ptr_slice[2]);
         let get_guids_fn: unsafe extern "system" fn(encoder: *mut c_void, guids: *mut GUID, count: u32, out_count: *mut u32) -> u32 = std::mem::transmute(ptr_slice[3]);
 
         let mut guid_count = 0u32;
         let c_status = get_guid_count_fn(encoder_handle, &mut guid_count);
-        println!("   -> nvEncGetEncodeGUIDCount status: {} | Total de Codecs na GPU: {}", c_status, guid_count);
+        println!("   -> nvEncGetEncodeGUIDCount status: {} | Total Codecs on the GPU: {}", c_status, guid_count);
 
         if guid_count > 0 {
             let mut guids = vec![GUID::default(); guid_count as usize];
             let mut actual_count = 0u32;
             let g_status = get_guids_fn(encoder_handle, guids.as_mut_ptr(), guid_count, &mut actual_count);
-            println!("   -> nvEncGetEncodeGUIDs status: {} | Codecs retornados: {}", g_status, actual_count);
+            println!("   -> nvEncGetEncodeGUIDs status: {} | Codecs returned: {}", g_status, actual_count);
             for (idx, g) in guids.iter().enumerate() {
                 let is_h264 = g.data1 == NV_ENC_CODEC_H264_GUID.data1;
                 println!("      [{}] GUID: 0x{:08X}-{:04X}-{:04X} {}", idx, g.data1, g.data2, g.data3, if is_h264 { "🎯 (H.264 CODEC)" } else { "" });
             }
         }
 
-        // Consultar Presets Suportados (Slots 9 & 10)
+        // Query Supported Presets (Slots 9 & 10)
         let get_preset_count_fn: unsafe extern "system" fn(encoder: *mut c_void, encode_guid: GUID, count: *mut u32) -> u32 = std::mem::transmute(ptr_slice[9]);
         let get_preset_guids_fn: unsafe extern "system" fn(encoder: *mut c_void, encode_guid: GUID, presets: *mut GUID, count: u32, out_count: *mut u32) -> u32 = std::mem::transmute(ptr_slice[10]);
 
         let mut preset_count = 0u32;
         let pr_c_status = get_preset_count_fn(encoder_handle, NV_ENC_CODEC_H264_GUID, &mut preset_count);
-        println!("\n🔍 CONSULTANDO PRESETS DE H.264 (Slots 9 & 10): status={}, count={}", pr_c_status, preset_count);
+        println!("\n🔍 QUERYING H.264 PRESETS (Slots 9 & 10): status={}, count={}", pr_c_status, preset_count);
 
         let mut selected_preset_guid = NV_ENC_PRESET_P1_GUID;
         if preset_count > 0 {
@@ -581,7 +581,7 @@ fn main() {
             }
         }
 
-        // 7. Alocar buffers de VRAM
+        // 7. Allocate VRAM buffers
         let create_in_fn: unsafe extern "system" fn(encoder: *mut c_void, in_params: *mut c_void) -> u32 = std::mem::transmute(ptr_slice[13]);
         let mut in_params: NvEncCreateInputBufferParams = std::mem::zeroed();
         in_params.version = nvenc_struct_version(1, matched_major, matched_minor, false);
@@ -598,8 +598,8 @@ fn main() {
         let bs_status = create_bs_fn(encoder_handle, &mut bs_params as *mut _ as *mut c_void);
         println!("   -> nvEncCreateBitstreamBuffer status: {} | VRAM Bitstream: {:p}", bs_status, bs_params.bitstream_buffer);
 
-        // 8. Teste de Codificação de 60 Quadros a 1080p 60 FPS
-        println!("\n⚡ TESTANDO CODIFICAÇÃO DE 60 QUADROS REAIS (1920x1080) NA GPU:");
+        // 8. Encoding Test of 60 Frames at 1080p 60 FPS
+        println!("\n⚡ TESTING ENCODING OF 60 REAL FRAMES (1920x1080) ON THE GPU:");
         let lock_in_fn: unsafe extern "system" fn(encoder: *mut c_void, lock_params: *mut c_void) -> u32 = std::mem::transmute(ptr_slice[20]);
         let unlock_in_fn: unsafe extern "system" fn(encoder: *mut c_void, buffer: *mut c_void) -> u32 = std::mem::transmute(ptr_slice[21]);
         let encode_pic_fn: unsafe extern "system" fn(encoder: *mut c_void, pic_params: *mut c_void) -> u32 = std::mem::transmute(ptr_slice[17]);
@@ -656,7 +656,7 @@ fn main() {
                         let elapsed_us = start.elapsed().as_micros();
                         total_encode_us += elapsed_us;
                         if frame_idx % 10 == 0 {
-                            println!("   [Frame {:02}] Tamanho NAL H.264: {} bytes | Latência GPU: {:.2} ms ({} µs)", 
+                            println!("   [Frame {:02}] H.264 NAL size: {} bytes | GPU latency: {:.2} ms ({} µs)", 
                                 frame_idx, bytes, elapsed_us as f64 / 1000.0, elapsed_us);
                         }
                     }
@@ -666,8 +666,8 @@ fn main() {
 
         let avg_latency_ms = (total_encode_us as f64 / 60.0) / 1000.0;
         println!("\n============================================================");
-        println!("🏆 SUCESSO TOTAL! 60 QUADROS CODIFICADOS NA GPU NVIDIA!");
-        println!("📊 Latência média por quadro: {:.2} ms ({:.0} FPS de capacidade teórica de hardware!)", 
+        println!("🏆 TOTAL SUCCESS! 60 FRAMES ENCODED ON THE NVIDIA GPU!");
+        println!("📊 Average latency per frame: {:.2} ms ({:.0} FPS of theoretical hardware capacity!)", 
             avg_latency_ms, 1000.0 / avg_latency_ms.max(0.001));
         println!("============================================================");
     }

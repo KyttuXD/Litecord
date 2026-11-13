@@ -1,58 +1,58 @@
 # 📚 Litecord Documentation & Wiki Hub
 
-Bem-vindo à central de documentação e engenharia do **Litecord**!
+Welcome to the **Litecord** documentation and engineering hub!
 
-Este diretório contém as especificações técnicas, planos arquiteturais, relatórios de auditoria e diretrizes de desenvolvimento da plataforma.
+This directory contains the platform's technical specifications, architecture plans, audit reports and development guidelines.
 
 ---
 
-## 📑 Índice de Documentação
+## 📑 Documentation Index
 
-### 🚀 Arquitetura & Pipelines de Alta Performance
-* **[Rede & Proxy de Alta Performance](NETWORK_AND_PROXY.md)**:
-  * Suporte nativo a Proxy HTTP/HTTPS, SOCKS5 e Proxy do Sistema Operacional.
-  * Injeção dinâmica no cliente `reqwest` e túneis HTTPS `CONNECT`.
-  * Sistema inteligente de proteção contra falhas e timeout com atalhos de 1 clique na tela de login.
-  * Diagnóstico de latência (ping em tempo real para o Gateway do Discord).
+### 🚀 Architecture & High-Performance Pipelines
+* **[High-Performance Network & Proxy](NETWORK_AND_PROXY.md)**:
+  * Native support for HTTP/HTTPS proxies, SOCKS5 and the operating system proxy.
+  * Dynamic injection into the `reqwest` client and HTTPS `CONNECT` tunnels.
+  * Smart failure and timeout protection with 1-click shortcuts on the login screen.
+  * Latency diagnostics (real-time ping to the Discord Gateway).
 * **[P2P Video Streaming Architecture](P2P_VIDEO_STREAMING_PLAN.md)**:
-  * Diagnóstico do sistema de transmissão Full HD (1080p @ 60 FPS).
-  * Protocolo de sinalização via Gateway Discord e NAT Hole Punching (STUN RFC 5389 / Google / Cloudflare).
-  * Fragmentação de NAL Units RFC 6184 para H.264 sobre UDP P2P de baixa latência.
-  * Pipeline de aceleração por GPU (NVENC, AMD AMF, Intel/Windows Media Foundation MFT e fallback FFmpeg).
+  * Diagnosis of the Full HD (1080p @ 60 FPS) streaming system.
+  * Signaling protocol via the Discord Gateway and NAT Hole Punching (STUN RFC 5389 / Google / Cloudflare).
+  * RFC 6184 NAL Unit fragmentation for H.264 over low-latency P2P UDP.
+  * GPU acceleration pipeline (NVENC, AMD AMF, Intel/Windows Media Foundation MFT and FFmpeg fallback).
 
-### 🛡️ Segurança, Criptografia & Auditorias
-* **[Relatório de Auditoria de Segurança](SECURITY_AUDIT.md)**:
-  * Análise aprofundada de superfície de ataque e modelos de ameaça.
-  * Criptografia E2EE (Discord DAVE Protocol & MLS - Messaging Layer Security).
-  * Armazenamento seguro de tokens com criptografia DPAPI no Windows.
-  * Validação de memória e rotinas seguras em Rust nativo.
-* **[Relatório de Auditoria Técnica de Código](CODE_AUDIT_REPORT.md)**:
-  * Diagnóstico de concorrência, mapeamento de mutexes e mitigação de *mutex poisoning*.
-  * Gerenciamento de ciclo de vida de threads e isolamento dinâmico de bibliotecas gráficas.
-  * Otimizações de pipeline de áudio WASAPI e VAD de baixa latência.
+### 🛡️ Security, Encryption & Audits
+* **[Security Audit Report](SECURITY_AUDIT.md)**:
+  * In-depth analysis of the attack surface and threat models.
+  * E2EE encryption (Discord DAVE Protocol & MLS - Messaging Layer Security).
+  * Secure token storage with DPAPI encryption on Windows.
+  * Memory validation and safe routines in native Rust.
+* **[Technical Code Audit Report](CODE_AUDIT_REPORT.md)**:
+  * Concurrency diagnosis, mutex mapping and *mutex poisoning* mitigation.
+  * Thread lifecycle management and dynamic isolation of graphics libraries.
+  * WASAPI audio pipeline optimizations and low-latency VAD.
 
-### 👥 Governança & Comunidade
-* **[Security Policy](../SECURITY.md)**: Diretrizes de reporte de vulnerabilidades e suporte de segurança.
-* **[Contributing Guidelines](../CONTRIBUTING.md)**: Guia de desenvolvimento, padrões de código e submissão de Pull Requests.
-* **[Code of Conduct](../CODE_OF_CONDUCT.md)**: Código de conduta para colaboradores e membros da comunidade.
-* **[Changelog](../CHANGELOG.md)**: Histórico completo de versões, lançamentos e notas de atualização.
+### 👥 Governance & Community
+* **[Security Policy](../SECURITY.md)**: Vulnerability reporting guidelines and security support.
+* **[Contributing Guidelines](../CONTRIBUTING.md)**: Development guide, code standards and Pull Request submission.
+* **[Code of Conduct](../CODE_OF_CONDUCT.md)**: Code of conduct for contributors and community members.
+* **[Changelog](../CHANGELOG.md)**: Complete history of versions, releases and release notes.
 
 ---
 
-## 🏗️ Estrutura do Repositório
+## 🏗️ Repository Structure
 
 ```text
 Litecord/
-├── src/                      # Código-fonte Rust nativo
-│   ├── encoder/              # Motores de aceleração por hardware (NVENC, AMF, WMF, FFmpeg)
-│   ├── gateway/              # Cliente Gateway Discord (WebSocket, REST, DAVE E2EE)
-│   ├── p2p/                  # Protocolo P2P de vídeo/áudio e STUN NAT Hole Punching
-│   ├── screen_capture/       # Captura de tela DXGI Desktop Duplication & GDI
-│   ├── voice/                # Pipeline de áudio WASAPI, Loopback e Opus codec
-│   └── main.rs               # Ponto de entrada e orquestração do Slint UI
-├── ui/                       # Interface gráfica nativa Slint (GPU-accelerated)
-│   └── appwindow.slint       # Design da UI, abas, sala de vídeo e componentes visuais
-├── assets/                   # Ícones vetoriais SVG, assets gráficos e fontes
-├── docs/                     # Documentação técnica e artigos da Wiki
-└── Cargo.toml                # Dependências e manifesto do projeto
+├── src/                      # Native Rust source code
+│   ├── encoder/              # Hardware acceleration engines (NVENC, AMF, WMF, FFmpeg)
+│   ├── gateway/              # Discord Gateway client (WebSocket, REST, DAVE E2EE)
+│   ├── p2p/                  # P2P video/audio protocol and STUN NAT Hole Punching
+│   ├── screen_capture/       # DXGI Desktop Duplication & GDI screen capture
+│   ├── voice/                # WASAPI audio pipeline, Loopback and Opus codec
+│   └── main.rs               # Entry point and Slint UI orchestration
+├── ui/                       # Native Slint graphical interface (GPU-accelerated)
+│   └── appwindow.slint       # UI design, tabs, video room and visual components
+├── assets/                   # SVG vector icons, graphic assets and fonts
+├── docs/                     # Technical documentation and Wiki articles
+└── Cargo.toml                # Dependencies and project manifest
 ```

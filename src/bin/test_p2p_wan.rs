@@ -67,20 +67,20 @@ fn main() {
     let target_str = args.get(3).map(|s| s.as_str());
 
     println!("==================================================================");
-    println!("🌐 TEST_P2P_WAN: Teste Direto pela Internet Pública (Modo: {})", mode.to_uppercase());
+    println!("🌐 TEST_P2P_WAN: Direct Test over the Public Internet (Mode: {})", mode.to_uppercase());
     println!("==================================================================");
 
     let socket = UdpSocket::bind(format!("0.0.0.0:{}", local_port))
         .or_else(|_| UdpSocket::bind("0.0.0.0:0"))
-        .expect("Falha ao abrir socket UDP local");
+        .expect("Failed to open local UDP socket");
     socket.set_read_timeout(Some(Duration::from_millis(10))).unwrap();
-    println!("🎧 Porta Local Vinculada: {}", socket.local_addr().unwrap().port());
+    println!("🎧 Local Port Bound: {}", socket.local_addr().unwrap().port());
 
-    // Resolve IP público via STUN
+    // Resolve public IP via STUN
     let mut my_wan_addr = None;
     for server in ["stun.l.google.com:19302", "stun.cloudflare.com:3478"] {
         if let Some(wan) = query_stun_server(&socket, server) {
-            println!("🌐 [STUN] Meu IP:Porta Público (WAN): {}", wan);
+            println!("🌐 [STUN] My Public IP:Port (WAN): {}", wan);
             my_wan_addr = Some(wan);
             break;
         }
@@ -90,10 +90,10 @@ fn main() {
 
     if let Some(target_addr_str) = target_str {
         if let Ok(target_addr) = target_addr_str.parse::<SocketAddr>() {
-            println!("🎯 Endereço de destino configurado: {}", target_addr);
+            println!("🎯 Target address configured: {}", target_addr);
 
             // 1. Hole Punching Burst
-            println!("🥊 Enviando pacotes de Hole Punching para {}...", target_addr);
+            println!("🥊 Sending Hole Punching packets to {}...", target_addr);
             let mut punch_pkt = Vec::new();
             punch_pkt.extend_from_slice(MAGIC);
             punch_pkt.push(OP_PUNCH);
@@ -109,7 +109,7 @@ fn main() {
             let start = Instant::now();
 
             if is_sender {
-                println!("🎥 Transmitindo fluxo H.264 720p/60fps com Sunshine Pacing via WAN Pública...");
+                println!("🎥 Streaming H.264 720p/60fps with Sunshine Pacing over the public WAN...");
                 let config = EncoderConfig::new()
                     .bitrate(openh264::encoder::BitRate::from_bps(4_500_000));
                 let mut encoder = Encoder::with_api_config(OpenH264API::from_source(), config).unwrap();
@@ -126,13 +126,13 @@ fn main() {
                     if let Ok((len, src)) = socket.recv_from(&mut recv_buf) {
                         if len >= 5 && &recv_buf[0..4] == MAGIC {
                             if src != remote_peer {
-                                println!("🎯 [SENDER] Peer remoto conectado via WAN: {}", src);
+                                println!("🎯 [SENDER] Remote peer connected via WAN: {}", src);
                                 remote_peer = src;
                             }
                         }
                     }
 
-                    // Dinâmica de bitrate a cada 3 segundos
+                    // Bitrate dynamics every 3 seconds
                     if seq == 60 {
                         cur_bitrate = 3_500_000;
                         let cfg = EncoderConfig::new()
@@ -140,7 +140,7 @@ fn main() {
                         if let Ok(new_enc) = Encoder::with_api_config(OpenH264API::from_source(), cfg) {
                             encoder = new_enc;
                             encoder.force_intra_frame();
-                            println!("📉 [BITRATE ADAPTATIVO] Ajustando taxa para 3.50 Mbps...");
+                            println!("📉 [ADAPTIVE BITRATE] Adjusting rate to 3.50 Mbps...");
                         }
                     } else if seq == 180 {
                         cur_bitrate = 5_000_000;
@@ -149,7 +149,7 @@ fn main() {
                         if let Ok(new_enc) = Encoder::with_api_config(OpenH264API::from_source(), cfg) {
                             encoder = new_enc;
                             encoder.force_intra_frame();
-                            println!("📈 [BITRATE ADAPTATIVO] Ajustando taxa para 5.00 Mbps...");
+                            println!("📈 [ADAPTIVE BITRATE] Adjusting rate to 5.00 Mbps...");
                         }
                     }
 
@@ -183,7 +183,7 @@ fn main() {
 
                             let _ = socket.send_to(&pkt, remote_peer);
 
-                            // Sunshine micro-pacing: pausa microscópica a cada 4 pacotes
+                            // Sunshine micro-pacing: microscopic pause every 4 packets
                             if (idx + 1) % 4 == 0 && (idx + 1) < total_chunks as usize {
                                 std::thread::yield_now();
                             }
@@ -191,9 +191,9 @@ fn main() {
                     }
                     std::thread::sleep(Duration::from_micros(16666));
                 }
-                println!("🏁 Envio concluído com sucesso!");
+                println!("🏁 Send completed successfully!");
             } else {
-                println!("📥 Aguardando e decodificando fluxo de vídeo pela Internet...");
+                println!("📥 Waiting for and decoding the video stream over the Internet...");
                 let mut decoder = Decoder::new().unwrap();
                 let mut in_flight: HashMap<u32, (u16, HashMap<u16, Vec<u8>>)> = HashMap::new();
                 let mut frames_ok = 0u32;
@@ -245,7 +245,7 @@ fn main() {
                         }
                     }
                 }
-                println!("🏁 Recepção finalizada! Total de frames decodificados com sucesso: {}", frames_ok);
+                println!("🏁 Reception finished! Total frames decoded successfully: {}", frames_ok);
             }
         }
     }

@@ -106,7 +106,7 @@ pub fn start_window_border_overlay(target_hwnd: isize) {
 
                 let get_window_bounds = |h: HWND| -> RECT {
                     let mut rc: RECT = std::mem::zeroed();
-                    // DWMWA_EXTENDED_FRAME_BOUNDS = 9: Obtém as dimensões visíveis exatas da janela, excluindo sombras invisíveis do DWM
+                    // DWMWA_EXTENDED_FRAME_BOUNDS = 9: Gets the exact visible dimensions of the window, excluding invisible DWM shadows
                     let hr = DwmGetWindowAttribute(
                         h,
                         9,
@@ -211,7 +211,7 @@ pub fn start_window_border_overlay(target_hwnd: isize) {
                 }
             }
         })
-        .expect("Falha ao criar thread de overlay da borda de janela");
+        .expect("Failed to create window border overlay thread");
 }
 
 #[cfg(not(windows))]

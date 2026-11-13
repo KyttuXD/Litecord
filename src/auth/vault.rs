@@ -316,8 +316,8 @@ pub fn load_account_vault() -> AccountVault {
             accounts: vec![SavedAccount {
                 token: clean,
                 user_id: String::new(),
-                username: "Conta 1".to_string(),
-                tag: "Conta 1".to_string(),
+                username: "Account 1".to_string(),
+                tag: "Account 1".to_string(),
                 avatar_initials: "C".to_string(),
                 is_active: true,
             }],
@@ -552,7 +552,7 @@ pub fn auto_detect_discord_tokens() -> Vec<String> {
                                                                             if let Ok(token) = String::from_utf8(decrypted) {
                                                                                 let token_clean = token.trim().to_string();
                                                                                 if is_valid_token_chars(&token_clean) && !tokens.contains(&token_clean) {
-                                                                                    info!("Candidato a token do Discord encontrado!");
+                                                                                    info!("Discord token candidate found!");
                                                                                     tokens.push(token_clean);
                                                                                 }
                                                                             }

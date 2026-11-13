@@ -43,7 +43,7 @@ fn test_nvenc() {
     unsafe {
         let nvenc_dll = windows_sys::Win32::System::LibraryLoader::LoadLibraryA(b"nvEncodeAPI64.dll\0".as_ptr());
         if nvenc_dll.is_null() {
-            println!("  NVIDIA NVENC: ❌ Não disponível nesta máquina.");
+            println!("  NVIDIA NVENC: ❌ Not available on this machine.");
             return;
         }
 
@@ -65,7 +65,7 @@ fn test_nvenc() {
             fn_list.version = struct_ver;
 
             if create_instance(&mut fn_list) == 0 {
-                println!("  NVIDIA NVENC (GeForce): ✅ 100% OPERACIONAL! (API v{}.{}, Endereço Fn: 0x{:X})", 
+                println!("  NVIDIA NVENC (GeForce): ✅ 100% OPERATIONAL! (API v{}.{}, Fn address: 0x{:X})", 
                     major, minor, fn_list.nv_enc_encode_picture);
             }
         }
@@ -77,7 +77,7 @@ fn test_amf() {
     unsafe {
         let amf_dll = windows_sys::Win32::System::LibraryLoader::LoadLibraryA(b"amfrt64.dll\0".as_ptr());
         if amf_dll.is_null() {
-            println!("  AMD AMF (Radeon):      ❌ Não disponível nesta máquina (Disponível no PC Desktop).");
+            println!("  AMD AMF (Radeon):      ❌ Not available on this machine (Available on the Desktop PC).");
             return;
         }
 
@@ -91,7 +91,7 @@ fn test_amf() {
                 let major = (version >> 48) & 0xFFFF;
                 let minor = (version >> 32) & 0xFFFF;
                 let subminor = (version >> 16) & 0xFFFF;
-                println!("  AMD AMF (Radeon):      ✅ 100% OPERACIONAL! (Versão {}.{}.{})", major, minor, subminor);
+                println!("  AMD AMF (Radeon):      ✅ 100% OPERATIONAL! (Version {}.{}.{})", major, minor, subminor);
             }
         }
     }
@@ -99,7 +99,7 @@ fn test_amf() {
 
 fn main() {
     println!("============================================================");
-    println!("🚀 VERIFICAÇÃO DE ENCODERS DE HARDWARE GPU (ESTILO SUNSHINE)");
+    println!("🚀 GPU HARDWARE ENCODER CHECK (SUNSHINE STYLE)");
     println!("============================================================");
     test_nvenc();
     test_amf();

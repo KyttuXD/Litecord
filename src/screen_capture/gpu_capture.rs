@@ -312,7 +312,7 @@ pub fn start(req: Request) -> bool {
             let device = match create_device(&adapter) {
                 Ok(d) => d,
                 Err(e) => {
-                    warn!("⚠️ [CAPTURA GPU] Não foi possível criar o dispositivo na {}: {}", gpu.name, e);
+                    warn!("⚠️ [GPU CAPTURE] Could not create the device on {}: {}", gpu.name, e);
                     let _ = ready_tx.send(false);
                     return;
                 }
@@ -329,21 +329,21 @@ pub fn start(req: Request) -> bool {
                 match display_of(HMONITOR(monitor as _)).map(|(_, _, o)| o) {
                     Some(output) => match duplicate(&device, &output) {
                         Ok(dup) => {
-                            info!("🖥️ [CAPTURA GPU] Tela capturada por DXGI na {} (placa ligada ao monitor)", gpu.name);
+                            info!("🖥️ [GPU CAPTURE] Screen captured through DXGI on {} (card connected to the monitor)", gpu.name);
                             if ready_tx.send(true).is_err() { return; }
                             report(&gpu, "DXGI", &sink.cancelled);
                             run_duplication(dup, &device, &output, &mut sink, &req);
                             return;
                         }
-                        Err(e) => warn!("⚠️ [CAPTURA GPU] DXGI indisponível na {} ({}); usando WGC", gpu.name, e),
+                        Err(e) => warn!("⚠️ [GPU CAPTURE] DXGI unavailable on {} ({}); using WGC", gpu.name, e),
                     },
-                    None => warn!("⚠️ [CAPTURA GPU] Monitor não encontrado entre as saídas da {}; usando WGC", gpu.name),
+                    None => warn!("⚠️ [GPU CAPTURE] Monitor not found among the outputs of {}; using WGC", gpu.name),
                 }
             }
             match run_wgc(&device, req.hwnd, monitor, sink, &req, &gpu, &ready_tx) {
                 Ok(()) => {}
                 Err(e) => {
-                    warn!("⚠️ [CAPTURA GPU] WGC indisponível na {}: {}", gpu.name, e);
+                    warn!("⚠️ [GPU CAPTURE] WGC unavailable on {}: {}", gpu.name, e);
                     let _ = ready_tx.send(false);
                 }
             }
@@ -369,11 +369,11 @@ fn raise_gpu_priority(device: &ID3D11Device, gpu: &str) {
     let Ok(dxgi) = device.cast::<IDXGIDevice>() else { return };
     for level in [7, 4, 1] {
         if unsafe { dxgi.SetGPUThreadPriority(level) }.is_ok() {
-            info!("⚡ [CAPTURA GPU] Prioridade de agendamento da {} elevada para {}", gpu, level);
+            info!("⚡ [GPU CAPTURE] Scheduling priority of {} raised to {}", gpu, level);
             return;
         }
     }
-    info!("ℹ️ [CAPTURA GPU] Windows não aceitou elevar a prioridade de agendamento da {}", gpu);
+    info!("ℹ️ [GPU CAPTURE] Windows did not accept raising the scheduling priority of {}", gpu);
 }
 
 /// After this long without a reason to capture, the capture stops asking for frames.
@@ -474,7 +474,7 @@ fn run_duplication(
             Err(e) if e.code() == DXGI_ERROR_WAIT_TIMEOUT => {}
             Err(e) => {
                 // Mode change, UAC prompt, full-screen switch: duplicate again.
-                warn!("⚠️ [CAPTURA GPU] Duplicação perdida ({}); recriando", e);
+                warn!("⚠️ [GPU CAPTURE] Duplication lost ({}); recreating", e);
                 // DuplicateOutput rejects a second duplication of this output in the
                 // same process. Release the lost instance before trying again.
                 duplication = None;
@@ -559,8 +559,8 @@ fn run_wgc(
         };
         let mut live = Some(open()?);
         info!(
-            "🖥️ [CAPTURA GPU] {} capturada por WGC na {}",
-            if hwnd != 0 { "Janela" } else { "Tela" },
+            "🖥️ [GPU CAPTURE] {} captured through WGC on {}",
+            if hwnd != 0 { "Window" } else { "Screen" },
             gpu.name
         );
         if ready.send(true).is_err() {
@@ -590,17 +590,17 @@ fn run_wgc(
                 if live.is_none() {
                     match open() {
                         Ok(l) => {
-                            info!("🖥️ [CAPTURA GPU] Captura WGC retomada");
+                            info!("🖥️ [GPU CAPTURE] WGC capture resumed");
                             live = Some(l);
                         }
-                        Err(e) => warn!("⚠️ [CAPTURA GPU] Não foi possível retomar o WGC: {}", e),
+                        Err(e) => warn!("⚠️ [GPU CAPTURE] Could not resume WGC: {}", e),
                     }
                 }
             } else if live.is_some() && unwanted_since.get_or_insert_with(Instant::now).elapsed() >= IDLE_CLOSE_AFTER {
                 if let Some((pool, session)) = live.take() {
                     let _ = session.Close();
                     let _ = pool.Close();
-                    info!("🖥️ [CAPTURA GPU] Captura WGC pausada: ninguém assistindo e a prévia escondida");
+                    info!("🖥️ [GPU CAPTURE] WGC capture paused: nobody watching and the preview hidden");
                 }
             }
         }
@@ -673,7 +673,7 @@ impl Sink {
         }
         self.last_copy = Some(Instant::now());
         if let Err(e) = unsafe { self.copy_to_memory(tex) } {
-            log::debug!("captura: cópia para a memória falhou: {e}");
+            log::debug!("capture: copy to memory failed: {e}");
         }
     }
 

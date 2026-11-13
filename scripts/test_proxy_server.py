@@ -27,12 +27,12 @@ def handle_client(client_socket, client_addr):
             else:
                 remote_host, remote_port = target, 443
 
-            print(f"[PROXY] Conexao HTTPS tunelada para: {remote_host}:{remote_port} (de {client_addr})")
+            print(f"[PROXY] Tunneled HTTPS connection to: {remote_host}:{remote_port} (from {client_addr})")
             
             try:
                 remote_socket = socket.create_connection((remote_host, remote_port), timeout=10)
             except Exception as e:
-                print(f"[PROXY] Falha ao conectar no destino {remote_host}:{remote_port} - {e}")
+                print(f"[PROXY] Failed to connect to the destination {remote_host}:{remote_port} - {e}")
                 client_socket.sendall(b"HTTP/1.1 502 Bad Gateway\r\n\r\n")
                 return
 
@@ -50,7 +50,7 @@ def handle_client(client_socket, client_addr):
                         return
                     other.sendall(data)
         else:
-            print(f"[PROXY] Requisicao HTTP {method}: {target}")
+            print(f"[PROXY] HTTP request {method}: {target}")
             client_socket.sendall(b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nOK")
 
     except Exception:
@@ -67,16 +67,16 @@ def main():
     try:
         server.bind((HOST, PORT))
     except Exception as e:
-        print(f"Erro ao abrir a porta {PORT}: {e}")
+        print(f"Error opening port {PORT}: {e}")
         sys.exit(1)
 
     server.listen(50)
     print("=" * 55)
-    print(" Servidor Proxy HTTP de Teste Ativo!")
-    print(f" Endereco: {HOST}")
-    print(f" Porta:    {PORT}")
-    print(f" No Litecord: Selecione 'Proxy HTTP / HTTPS', Host '127.0.0.1' e Porta '{PORT}'")
-    print(" Para parar o proxy a qualquer momento, aperte Ctrl + C")
+    print(" Test HTTP Proxy Server Active!")
+    print(f" Address: {HOST}")
+    print(f" Port:    {PORT}")
+    print(f" In Litecord: select 'HTTP / HTTPS Proxy', Host '127.0.0.1' and Port '{PORT}'")
+    print(" To stop the proxy at any time, press Ctrl + C")
     print("=" * 55)
 
     while True:
@@ -85,7 +85,7 @@ def main():
             t = threading.Thread(target=handle_client, args=(client, addr), daemon=True)
             t.start()
         except KeyboardInterrupt:
-            print("\n Proxy encerrado pelo usuario.")
+            print("\n Proxy stopped by the user.")
             break
         except Exception:
             break

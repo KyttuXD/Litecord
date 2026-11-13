@@ -4,12 +4,21 @@ Upstream is [Ak4ai/Litecord](https://github.com/Ak4ai/Litecord). This fork adds 
 ([MACOS.md](MACOS.md)) and one release workflow, and tries to touch as little of upstream as possible so
 that new upstream versions keep merging without conflicts.
 
+## The English translation (2026-11-12)
+
+Upstream writes its log messages, comments, changelog and several documents in Portuguese. In this fork
+they were all translated to English in one pass (commit "Translate the project to English"). That pass
+touches about 90 upstream files, mostly one line at a time, so **a later merge of upstream will conflict
+wherever upstream changes a line next to a translated one**. When syncing, take upstream's code and
+translate its new text; `README_PT.md` and the translation tables in `src/utils/i18n.rs` and
+`src/utils/i18n_ui.rs` are deliberately left in their languages.
+
 ## Rules for changes made here
 
 - **New things go in new files**: `.github/workflows/nightly.yml`, `docs/MACOS.md`, `docs/FORK.md`,
   `packaging/macos/`, `scripts/macos/`, `src/screen_capture/sources/macos.rs`.
-- **Upstream files are not rewritten**: `README.md`, `CHANGELOG.md`, the wiki pages and upstream's
-  workflows (`build.yml`, `ci.yml`) are left exactly as upstream has them.
+- **Upstream files are not restructured**: apart from the translation above and a few warning fixes,
+  `README.md`, the wiki pages and upstream's workflows (`build.yml`, `ci.yml`) are as upstream has them.
 - Where an upstream source file must change, the change is a small `#[cfg(target_os = "macos")]` block
   next to the existing Windows/Linux ones, never a rewrite of the surrounding code.
 

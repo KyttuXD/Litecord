@@ -48,17 +48,17 @@ fn main() {
     let received_without_0 = vec![(1, chunks[1].to_vec()), (2, chunks[2].to_vec())];
     let recovered_0 = recover_lost_chunk(&received_without_0, &parity, 0, 3, 3200, chunk_size);
     assert_eq!(recovered_0, chunks[0]);
-    println!("✅ Chunk 0 (1300 bytes) recuperado com sucesso!");
+    println!("✅ Chunk 0 (1300 bytes) recovered successfully!");
 
     // Test dropping chunk 1
     let received_without_1 = vec![(0, chunks[0].to_vec()), (2, chunks[2].to_vec())];
     let recovered_1 = recover_lost_chunk(&received_without_1, &parity, 1, 3, 3200, chunk_size);
     assert_eq!(recovered_1, chunks[1]);
-    println!("✅ Chunk 1 (1300 bytes) recuperado com sucesso!");
+    println!("✅ Chunk 1 (1300 bytes) recovered successfully!");
 
     // Test dropping chunk 2 (the shorter tail chunk of 600 bytes)
     let received_without_2 = vec![(0, chunks[0].to_vec()), (1, chunks[1].to_vec())];
     let recovered_2 = recover_lost_chunk(&received_without_2, &parity, 2, 3, 3200, chunk_size);
     assert_eq!(recovered_2, chunks[2]);
-    println!("✅ Chunk 2 (600 bytes tail) recuperado com sucesso!");
+    println!("✅ Chunk 2 (600 bytes tail) recovered successfully!");
 }

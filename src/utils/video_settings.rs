@@ -96,7 +96,7 @@ pub fn get_video_settings_store() -> &'static Mutex<VideoSettings> {
         } else {
             VideoSettings::default()
         };
-        info!("⚙️ Configurações de Vídeo e Interface carregadas: {:?}", settings);
+        info!("⚙️ Video and interface settings loaded: {:?}", settings);
         Mutex::new(settings)
     })
 }
