@@ -5,8 +5,13 @@ The normal macOS build ([MACOS.md](MACOS.md)) needs 10.12 and cannot start there
 A separate **legacy edition** (`legacy/app`) exists for these systems. It starts on the Mac Pro under
 10.6.8, opens its window and gets a QR login code from Discord; logging in, chatting and a real voice
 call have not been tried by a person yet. It has text chat (with replies, editing, deleting, reactions,
-typing notices, file uploads) and voice channels: no pictures, video, screen sharing, settings or
-notifications.
+typing notices, file uploads), voice channels, profile pictures, server icons and emoji: no attached
+images, video, screen sharing, settings or notifications.
+
+![The legacy interface, drawn with made-up content](legacy-interface.png)
+
+(That picture is `litecord-legacy --render-demo FILE.png`: the interface drawn with made-up content,
+without a window or a login. The check workflow makes one on every change.)
 This page records what has been proven and what is left.
 
 ## The legacy edition
@@ -19,10 +24,13 @@ This page records what has been proven and what is left.
 - Scan the QR code with the Discord app on a phone (Settings > Scan QR Code). The login is kept in
   `~/Library/Application Support/Litecord Legacy/session`, readable by your user only, **not encrypted**.
 - Pick a server on the left, then a channel; type and press Return to send. The mouse wheel scrolls each list.
-- Click a message for its actions on the line above the input: **Reply**, four quick reactions (`+1`,
-  `<3`, `haha`, `party`), and **Edit** / **Delete** for your own. Esc leaves a reply or edit. Reactions
-  show under a message as `[+1 3]` (a `*` marks yours); the built-in font has no emoji pictures, so they
-  are shown by name. `/upload /path/to/file` sends a file (10 MB at most).
+- Click a message for its actions on the line above the input: **Reply**, four quick reactions, and
+  **Edit** / **Delete** for your own. Esc leaves a reply or edit. Reactions show under a message as
+  chips (yours with a coloured border). `/upload /path/to/file` sends a file (10 MB at most).
+- Emoji are pictures (Twemoji for the standard ones, Discord's own for custom ones), fetched once each
+  from `cdnjs.cloudflare.com` and `cdn.discordapp.com` without the login. Profile pictures and server
+  icons come from `cdn.discordapp.com` the same way. Letters the bundled font lacks (Chinese, Japanese,
+  Korean, symbols) are drawn with the system's fonts, read the first time one is needed.
 - Click a `(voice)` channel to join it with the default microphone and speakers. A bar at the bottom of
   the channel column shows the call, who is in it, and **Mute** / **Leave**.
 - `litecord-legacy --self-test` (from Terminal) checks the voice building blocks without logging in. On
