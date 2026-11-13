@@ -1,5 +1,5 @@
 //! Litecord legacy edition: a small window for old Intel Macs (OS X 10.5 - 10.11) on top of
-//! Litecord's own network code. Text chat only for now. The interface is drawn on the CPU
+//! Litecord's own network and voice code: text chat and voice channels. The interface is drawn on the CPU
 //! into one picture and shown through OpenGL 2.1 (miniquad with the old-Mac changes of
 //! TheLastRoute), the path proven on a Mac Pro 3,1 with OS X 10.6.8.
 
@@ -172,8 +172,11 @@ struct Stage {
     input: String,
     /// Rows drawn last frame, for clicks: (y, index).
     guild_rows: Vec<(i32, usize)>,
-    channel_rows: Vec<(i32, String)>,
+    /// (y, channel id, is voice, name).
+    channel_rows: Vec<(i32, String, bool, String)>,
     logout_x: i32,
+    /// Voice bar buttons drawn last frame: (x from, x to) of Mute and Leave, and the bar's top.
+    voice_bar: Option<(i32, (i32, i32), (i32, i32))>,
 }
 
 #[repr(C)]
@@ -234,6 +237,7 @@ impl Stage {
             guild_rows: Vec::new(),
             channel_rows: Vec::new(),
             logout_x: i32::MAX,
+            voice_bar: None,
         }
     }
 
@@ -255,6 +259,7 @@ impl Stage {
         self.guild_rows.clear();
         self.channel_rows.clear();
         self.logout_x = i32::MAX;
+        self.voice_bar = None;
         let title = "Litecord (legacy edition)";
         let tw = self.canvas.text_width(title, 24.0);
         self.canvas.text((w - tw) / 2, 60, title, 24.0, WHITE, w);
@@ -327,17 +332,41 @@ impl Stage {
                 let (label, color) = if channel.is_category {
                     (channel.name.to_uppercase(), MUTED)
                 } else if channel.is_voice {
-                    (format!("(voice) {}", channel.name), MUTED)
+                    let joined = channel.id == state.voice_channel_id;
+                    (format!("(voice) {}", channel.name), if joined { ACCENT } else { TEXT })
                 } else if guild.id == "@me" {
                     (channel.name.clone(), if selected { WHITE } else { TEXT })
                 } else {
                     (format!("# {}", channel.name), if selected { WHITE } else { TEXT })
                 };
                 self.canvas.text(GUILDS_W + 12, y + 17, &label, FONT, color, GUILDS_W + CHANNELS_W - 8);
-                if !channel.is_category && !channel.is_voice {
-                    self.channel_rows.push((y, channel.id.clone()));
+                if !channel.is_category {
+                    self.channel_rows.push((y, channel.id.clone(), channel.is_voice, channel.name.clone()));
                 }
             }
+        }
+
+        // Voice bar at the bottom of the channel column while in a voice channel.
+        self.voice_bar = None;
+        if !state.voice_channel_id.is_empty() {
+            let people = state.voice_users.len().min(6) as i32;
+            let bar_h = 58 + people * LINE_H;
+            let top = h - bar_h;
+            let right = GUILDS_W + CHANNELS_W - 8;
+            self.canvas.rect(GUILDS_W, top, CHANNELS_W, bar_h, SIDEBAR);
+            let state_text = if state.voice_connected { "Voice connected" } else { "Connecting voice..." };
+            self.canvas.text(GUILDS_W + 12, top + 18, state_text, FONT, if state.voice_connected { ACCENT } else { MUTED }, right);
+            self.canvas.text(GUILDS_W + 12, top + 36, &state.voice_channel_name, FONT, TEXT, right);
+            for (i, name) in state.voice_users.iter().take(6).enumerate() {
+                self.canvas.text(GUILDS_W + 20, top + 54 + i as i32 * LINE_H, name, FONT, MUTED, right);
+            }
+            let y = h - 8;
+            let mute_label = if state.muted { "Unmute" } else { "Mute" };
+            let mute_from = GUILDS_W + 12;
+            let mute_to = self.canvas.text(mute_from, y, mute_label, FONT, if state.muted { ACCENT } else { TEXT }, right);
+            let leave_from = mute_to + 24;
+            let leave_to = self.canvas.text(leave_from, y, "Leave", FONT, TEXT, right);
+            self.voice_bar = Some((top, (mute_from, mute_to), (leave_from, leave_to)));
         }
 
         // Messages, newest at the bottom.
@@ -402,16 +431,37 @@ impl Stage {
                 self.dirty = true;
             }
         } else if x < GUILDS_W + CHANNELS_W {
-            let hit = self.channel_rows.iter().find(|(ry, _)| y >= *ry && y < *ry + ROW_H).map(|(_, id)| id.clone());
-            if let Some(channel_id) = hit {
+            if let Some((top, mute, leave)) = self.voice_bar {
+                if y >= top {
+                    // The two words on the last line of the bar are its buttons.
+                    if y >= self.canvas.h - 28 {
+                        if x >= mute.0 && x <= mute.1 {
+                            let _ = self.actions.send(Action::ToggleMute);
+                        } else if x >= leave.0 && x <= leave.1 {
+                            let _ = self.actions.send(Action::LeaveVoice);
+                        }
+                    }
+                    return;
+                }
+            }
+            let hit = self
+                .channel_rows
+                .iter()
+                .find(|(ry, ..)| y >= *ry && y < *ry + ROW_H)
+                .map(|(_, id, is_voice, name)| (id.clone(), *is_voice, name.clone()));
+            if let Some((channel_id, is_voice, name)) = hit {
                 let guild_id = self
                     .shared
                     .lock()
                     .ok()
                     .and_then(|s| s.guilds.get(self.guild).map(|g| g.id.clone()))
                     .unwrap_or_default();
-                self.message_scroll = 0;
-                let _ = self.actions.send(Action::SelectChannel { guild_id, channel_id });
+                if is_voice {
+                    let _ = self.actions.send(Action::JoinVoice { guild_id, channel_id, name });
+                } else {
+                    self.message_scroll = 0;
+                    let _ = self.actions.send(Action::SelectChannel { guild_id, channel_id });
+                }
             }
         }
     }

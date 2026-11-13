@@ -5,7 +5,9 @@
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
+use litecord_legacy::audio::engine::{start_mic_capture, MicCapture};
 use litecord_legacy::auth::{generate_qr_image, RemoteAuthEvent, RemoteAuthSession};
+use litecord_legacy::gateway;
 use litecord_legacy::gateway::{ChannelData, GatewayClient, GatewayCommand, GatewayEvent, GuildData};
 use litecord_legacy::http::DiscordHttpClient;
 use serde_json::Value;
@@ -29,6 +31,12 @@ pub struct Shared {
     pub guilds: Vec<GuildData>,
     pub channel_id: String,
     pub messages: Vec<Message>,
+    /// Voice channel joined (empty: none), its name, who is in it, and this user's mute switch.
+    pub voice_channel_id: String,
+    pub voice_channel_name: String,
+    pub voice_connected: bool,
+    pub voice_users: Vec<String>,
+    pub muted: bool,
 }
 
 pub type SharedRef = Arc<Mutex<Shared>>;
@@ -36,6 +44,9 @@ pub type SharedRef = Arc<Mutex<Shared>>;
 pub enum Action {
     SelectChannel { guild_id: String, channel_id: String },
     Send { channel_id: String, text: String },
+    JoinVoice { guild_id: String, channel_id: String, name: String },
+    LeaveVoice,
+    ToggleMute,
     LogOut,
 }
 
@@ -194,6 +205,35 @@ async fn load_direct_messages(http: &DiscordHttpClient, shared: &SharedRef) {
     });
 }
 
+/// Closes the microphone, tells Discord the channel was left and empties the audio queues,
+/// as the main app does when leaving a call.
+async fn leave_voice(shared: &SharedRef, cmd_tx: &mpsc::Sender<GatewayCommand>, mic: &mut Option<MicCapture>, guild_id: &str) {
+    let was_in_voice = shared.lock().map(|s| !s.voice_channel_id.is_empty()).unwrap_or(false);
+    *mic = None;
+    if !was_in_voice {
+        return;
+    }
+    if let Ok(mut queues) = gateway::get_speaker_pcm_queues().lock() {
+        queues.clear();
+    }
+    if let Ok(mut queue) = gateway::get_mic_pcm_queue().lock() {
+        queue.clear();
+    }
+    gateway::clear_voice_participants();
+    let _ = cmd_tx.send(GatewayCommand::UpdateVoiceState {
+        guild_id: guild_id.to_string(),
+        channel_id: None,
+        self_mute: false,
+        self_deaf: false,
+    }).await;
+    update(shared, |s| {
+        s.voice_channel_id.clear();
+        s.voice_channel_name.clear();
+        s.voice_connected = false;
+        s.voice_users.clear();
+    });
+}
+
 /// Runs one logged-in session. Returns when the user logs out or the token is refused.
 async fn run_session(token: String, shared: &SharedRef, actions: &mut mpsc::UnboundedReceiver<Action>) {
     let http = Arc::new(DiscordHttpClient::new(token.clone()));
@@ -220,13 +260,39 @@ async fn run_session(token: String, shared: &SharedRef, actions: &mut mpsc::Unbo
     let gateway_task = tokio::spawn(async move { gateway.start(cmd_rx).await });
     load_direct_messages(&http, shared).await;
 
+    // Voice: the open microphone and the guild of the joined channel. The voice connection
+    // itself (signalling, DAVE encryption, Opus, playback) is Litecord's src/gateway/voice.rs.
+    let mut mic: Option<MicCapture> = None;
+    let mut voice_guild = String::new();
+    let mut voice_refresh = tokio::time::interval(std::time::Duration::from_secs(1));
+
     loop {
         tokio::select! {
+            _ = voice_refresh.tick() => {
+                // Who is in the channel and whether the call is up change without an event here.
+                let (channel_id, was_connected, known) = match shared.lock() {
+                    Ok(s) => (s.voice_channel_id.clone(), s.voice_connected, s.voice_users.clone()),
+                    Err(_) => continue,
+                };
+                if channel_id.is_empty() {
+                    continue;
+                }
+                let connected = gateway::is_connected_to_voice();
+                let users: Vec<String> = gateway::get_voice_channel_participants(&channel_id).into_iter().map(|(_, name)| name).collect();
+                if connected != was_connected || users != known {
+                    update(shared, |s| {
+                        s.voice_connected = connected;
+                        s.voice_users = users;
+                    });
+                }
+            }
             event = event_rx.recv() => {
                 let Some(event) = event else { break };
                 match event {
                     GatewayEvent::Connected { user_tag } => update(shared, |s| s.status = format!("Connected as {user_tag}")),
                     GatewayEvent::Disconnected { reason } => update(shared, |s| s.status = format!("Disconnected: {reason}")),
+                    GatewayEvent::VoiceStatesUpdated => update(shared, |_| {}),
+                    GatewayEvent::VoiceDisconnected => update(shared, |s| s.voice_connected = false),
                     GatewayEvent::GuildLoaded { guild } => update(shared, |s| {
                         match s.guilds.iter_mut().find(|g| g.id == guild.id) {
                             Some(existing) => *existing = guild,
@@ -285,7 +351,51 @@ async fn run_session(token: String, shared: &SharedRef, actions: &mut mpsc::Unbo
                             update(shared, |s| s.status = format!("Message not sent: {e}"));
                         }
                     }
+                    Action::JoinVoice { guild_id, channel_id, name } => {
+                        if mic.is_none() {
+                            // The level meter is not shown here; the receiver just has to exist.
+                            let (level_tx, mut level_rx) = mpsc::channel::<f32>(8);
+                            tokio::spawn(async move { while level_rx.recv().await.is_some() {} });
+                            mic = Some(start_mic_capture(String::new(), level_tx));
+                        }
+                        voice_guild = guild_id.clone();
+                        let muted = shared.lock().map(|s| s.muted).unwrap_or(false);
+                        let _ = cmd_tx.send(GatewayCommand::UpdateVoiceState {
+                            guild_id,
+                            channel_id: Some(channel_id.clone()),
+                            self_mute: muted,
+                            self_deaf: false,
+                        }).await;
+                        update(shared, |s| {
+                            s.voice_channel_id = channel_id;
+                            s.voice_channel_name = name;
+                            s.voice_connected = false;
+                            s.voice_users.clear();
+                        });
+                    }
+                    Action::LeaveVoice => {
+                        leave_voice(shared, &cmd_tx, &mut mic, &voice_guild).await;
+                    }
+                    Action::ToggleMute => {
+                        let (muted, channel_id) = match shared.lock() {
+                            Ok(mut s) => {
+                                s.muted = !s.muted;
+                                s.version += 1;
+                                (s.muted, s.voice_channel_id.clone())
+                            }
+                            Err(_) => continue,
+                        };
+                        if !channel_id.is_empty() {
+                            let _ = cmd_tx.send(GatewayCommand::UpdateVoiceState {
+                                guild_id: voice_guild.clone(),
+                                channel_id: Some(channel_id),
+                                self_mute: muted,
+                                self_deaf: false,
+                            }).await;
+                        }
+                    }
                     Action::LogOut => {
+                        leave_voice(shared, &cmd_tx, &mut mic, &voice_guild).await;
                         let _ = std::fs::remove_file(token_path());
                         break;
                     }
@@ -294,7 +404,12 @@ async fn run_session(token: String, shared: &SharedRef, actions: &mut mpsc::Unbo
         }
     }
     gateway_task.abort();
+    drop(mic);
     update(shared, |s| {
+        s.voice_channel_id.clear();
+        s.voice_channel_name.clear();
+        s.voice_connected = false;
+        s.voice_users.clear();
         s.logged_in = false;
         s.guilds.clear();
         s.messages.clear();
