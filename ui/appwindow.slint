@@ -99,6 +99,14 @@ export component AppWindow inherits Window {
     callback maximize_window();
     callback close_window();
     callback login(string /* token */);
+    // Message actions (see ChatMessagesView): "reply" / "edit" / "delete" with the message id.
+    callback message_action(string, string);
+    callback toggle_reaction(string /* message id */, string /* reaction key */);
+    // Leaves the reply or edit that the next sent text would have been.
+    callback cancel_compose();
+    // "Replying to ..." / "Editing your message", and who is typing in the open channel.
+    in-out property <string> compose_notice: "";
+    in-out property <string> typing_text: "";
     // Email and password login. `password_login_stage`: "" (form), "busy", or "code" (second step).
     callback password_login(string /* email or phone */, string /* password */);
     callback password_login_code(string /* totp | sms | backup */, string /* code */);
@@ -2832,6 +2840,41 @@ export component AppWindow inherits Window {
                         download_attachment(id, fn, url) => { root.download_attachment(id, fn, url); }
                         click_command(cmd) => {
                             root.click_command(cmd);
+                        }
+                        message_action(action, id) => { root.message_action(action, id); }
+                        toggle_reaction(id, key) => { root.toggle_reaction(id, key); }
+                    }
+
+                    // Reply / edit notice, or who is typing.
+                    if root.compose_notice != "" || root.typing_text != "": HorizontalLayout {
+                        height: 22px;
+                        padding-left: 16px;
+                        padding-right: 16px;
+                        spacing: 10px;
+                        alignment: start;
+                        Text {
+                            text: root.compose_notice != "" ? root.compose_notice : root.typing_text;
+                            color: AppTheme.text-muted;
+                            font-size: TypeScale.small;
+                            vertical-alignment: center;
+                        }
+                        if root.compose_notice != "": Rectangle {
+                            width: cancel_text.preferred-width + 12px;
+                            border-radius: 6px;
+                            background: cancel_ta.has-hover ? AppTheme.interactive-hover : transparent;
+                            cancel_text := Text {
+                                text: "Cancel";
+                                color: AppTheme.text-strong;
+                                font-size: TypeScale.small;
+                                vertical-alignment: center;
+                                horizontal-alignment: center;
+                            }
+                            cancel_ta := TouchArea {
+                                mouse-cursor: pointer;
+                                clicked => {
+                                    root.cancel_compose();
+                                }
+                            }
                         }
                     }
 

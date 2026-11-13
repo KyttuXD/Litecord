@@ -805,6 +805,13 @@ pub async fn load_messages_for_channel(
     let app_weak_load = app_weak.clone();
     match http.get_channel_messages(channel_id).await {
         Ok(msgs_val) => {
+            // The channel is being opened: tell Discord it was read up to its newest message.
+            if let Some(newest) = msgs_val.first().and_then(|m| m["id"].as_str()) {
+                let (http_ack, channel_ack, newest) = (http.clone(), channel_id.to_string(), newest.to_string());
+                tokio::spawn(async move {
+                    let _ = http_ack.ack_message(&channel_ack, &newest).await;
+                });
+            }
             let has_more = msgs_val.len() >= 30;
             if let Some(oldest) = msgs_val.last() {
                 if let Some(id_str) = oldest["id"].as_str() {

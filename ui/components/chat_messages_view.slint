@@ -64,6 +64,39 @@ export struct MessageButton {
     is_disabled: bool,
 }
 
+// One reaction under a message. `key` is what the reaction requests take (the emoji, or
+// name:id for a custom one); `label` is what is shown.
+export struct MessageReaction {
+    key: string,
+    label: string,
+    count: int,
+    me: bool,
+}
+
+// A word-sized button under a clicked message (Reply, a reaction, Edit, Delete).
+component MessageAction inherits Rectangle {
+    in property <string> label;
+    in property <bool> danger: false;
+    callback activated();
+    height: 22px;
+    width: action_text.preferred-width + 14px;
+    border-radius: 6px;
+    background: action_ta.has-hover ? AppTheme.interactive-hover : AppTheme.surface-reply;
+    action_text := Text {
+        text: root.label;
+        color: root.danger ? AppTheme.danger-action : AppTheme.text-strong;
+        font-size: TypeScale.small;
+        vertical-alignment: center;
+        horizontal-alignment: center;
+    }
+    action_ta := TouchArea {
+        mouse-cursor: pointer;
+        clicked => {
+            root.activated();
+        }
+    }
+}
+
 export struct ChatMessage {
     id: string,
     author: string,
@@ -92,6 +125,9 @@ export struct ChatMessage {
     buttons: [MessageButton],
     attachments: [MessageAttachment],
     invites: [InviteCard],
+    reactions: [MessageReaction],
+    // Written by the logged-in user: it can be edited and deleted.
+    is_self: bool,
 }
 
 export component ChatMessagesView inherits Rectangle {
@@ -105,6 +141,12 @@ export component ChatMessagesView inherits Rectangle {
     callback open_link(string);
     callback download_attachment(string, string, string);
     callback click_command(string);
+    // A click on a message picks it and shows its actions under it; a second click hides them.
+    in-out property <string> selected_message_id: "";
+    // "reply", "edit", "delete", or a reaction key; then the message id.
+    callback message_action(string, string);
+    // Message id, reaction key: adds the reaction, or takes it back if it is the user's.
+    callback toggle_reaction(string, string);
 
     changed scroll_trigger => {
         root.scroll_to_bottom();
@@ -205,6 +247,9 @@ export component ChatMessagesView inherits Rectangle {
                 row_hover := TouchArea {
                     width: 100%;
                     height: 100%;
+                    clicked => {
+                        root.selected_message_id = root.selected_message_id == msg.id ? "" : msg.id;
+                    }
                 }
 
                 // Group headers already carry their full timestamp beside the name;
@@ -1240,6 +1285,71 @@ export component ChatMessagesView inherits Rectangle {
                         }
                     }
                 }
+                }
+
+                // Reactions, and the actions of the clicked message.
+                if msg.reactions.length > 0 || root.selected_message_id == msg.id: HorizontalLayout {
+                    padding-left: 56px;
+                    padding-top: 2px;
+                    padding-bottom: 4px;
+                    spacing: 6px;
+                    alignment: start;
+
+                    for reaction in msg.reactions: Rectangle {
+                        height: 22px;
+                        width: chip_text.preferred-width + 16px;
+                        border-radius: 6px;
+                        border-width: 1px;
+                        border-color: reaction.me ? AppTheme.accent : AppTheme.border-subtle;
+                        background: chip_ta.has-hover ? AppTheme.interactive-hover : (reaction.me ? AppTheme.accent-subtle : transparent);
+                        chip_text := Text {
+                            text: reaction.label + " " + reaction.count;
+                            color: AppTheme.text-strong;
+                            font-size: TypeScale.small;
+                            vertical-alignment: center;
+                            horizontal-alignment: center;
+                        }
+                        chip_ta := TouchArea {
+                            mouse-cursor: pointer;
+                            clicked => {
+                                root.toggle_reaction(msg.id, reaction.key);
+                            }
+                        }
+                    }
+
+                    if root.selected_message_id == msg.id: HorizontalLayout {
+                        spacing: 6px;
+                        alignment: start;
+                        MessageAction {
+                            label: "Reply";
+                            activated => { root.message_action("reply", msg.id); root.selected_message_id = ""; }
+                        }
+                        MessageAction {
+                            label: "👍";
+                            activated => { root.toggle_reaction(msg.id, "👍"); root.selected_message_id = ""; }
+                        }
+                        MessageAction {
+                            label: "❤️";
+                            activated => { root.toggle_reaction(msg.id, "❤️"); root.selected_message_id = ""; }
+                        }
+                        MessageAction {
+                            label: "😂";
+                            activated => { root.toggle_reaction(msg.id, "😂"); root.selected_message_id = ""; }
+                        }
+                        MessageAction {
+                            label: "🎉";
+                            activated => { root.toggle_reaction(msg.id, "🎉"); root.selected_message_id = ""; }
+                        }
+                        if msg.is_self: MessageAction {
+                            label: "Edit";
+                            activated => { root.message_action("edit", msg.id); root.selected_message_id = ""; }
+                        }
+                        if msg.is_self: MessageAction {
+                            label: "Delete";
+                            danger: true;
+                            activated => { root.message_action("delete", msg.id); root.selected_message_id = ""; }
+                        }
+                    }
                 }
             }
         }

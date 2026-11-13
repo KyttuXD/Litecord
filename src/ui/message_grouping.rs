@@ -25,6 +25,37 @@ pub fn apply_message_metadata(message: &mut ChatMessage, source: &Value) {
         .to_string()
         .into();
     message.is_bot = source["author"]["bot"].as_bool().unwrap_or(false);
+    let my_id = crate::gateway::get_my_user_id();
+    message.is_self = my_id != 0 && author_id == my_id.to_string();
+    message.reactions = reactions_model(&crate::http_messaging::reactions_from_message(source));
+}
+
+/// Reactions as the model the message row shows.
+pub fn reactions_model(list: &[crate::http_messaging::ReactionData]) -> slint::ModelRc<crate::MessageReaction> {
+    let rows: Vec<crate::MessageReaction> = list
+        .iter()
+        .map(|r| crate::MessageReaction { key: r.key.clone().into(), label: r.label.clone().into(), count: r.count as i32, me: r.me })
+        .collect();
+    slint::ModelRc::new(slint::VecModel::from(rows))
+}
+
+/// The reverse of [`reactions_model`], to apply a reaction event to a shown message.
+pub fn reactions_from_model(model: &slint::ModelRc<crate::MessageReaction>) -> Vec<crate::http_messaging::ReactionData> {
+    use slint::Model;
+    model
+        .iter()
+        .map(|r| crate::http_messaging::ReactionData { key: r.key.to_string(), label: r.label.to_string(), count: r.count.max(0) as u32, me: r.me })
+        .collect()
+}
+
+/// "Ana is typing...", "Ana, Bo are typing...", or nothing.
+pub fn typing_text(names: &[String]) -> String {
+    match names.len() {
+        0 => String::new(),
+        1 => format!("{} is typing...", names[0]),
+        2 | 3 => format!("{} are typing...", names.join(", ")),
+        _ => "Several people are typing...".to_string(),
+    }
 }
 
 /// Only construct CDN paths from validated Discord ids and hashes, never a

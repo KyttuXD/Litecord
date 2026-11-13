@@ -4303,15 +4303,109 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Send Message Callback from UI
     let http_client_msg = Arc::clone(&http_client);
     let active_channel_msg = Arc::clone(&active_channel_id);
+    // What the next sent text is: ("", "") a new message, ("reply", id) or ("edit", id).
+    let compose_state: Arc<Mutex<(String, String)>> = Arc::new(Mutex::new((String::new(), String::new())));
+
+    /// Shows a failed message action in the status line of the title bar.
+    fn report_message_error(app_weak: &slint::Weak<AppWindow>, result: Result<(), String>) {
+        if let Err(message) = result {
+            warn!("{}", message);
+            let app_weak = app_weak.clone();
+            let _ = slint::invoke_from_event_loop(move || {
+                if let Some(ui) = app_weak.upgrade() {
+                    ui.set_connection_status(message.into());
+                }
+            });
+        }
+    }
+
+    let (app_weak_send, compose_send) = (app_weak.clone(), Arc::clone(&compose_state));
     app.on_send_message(move |content: SharedString| {
         let content_str = content.to_string();
         let channel_id = active_channel_msg.lock().unwrap().clone();
         let http_opt = http_client_msg.lock().unwrap().as_ref().cloned();
+        let (mode, target) = std::mem::take(&mut *compose_send.lock().unwrap());
+        if let Some(ui) = app_weak_send.upgrade() {
+            ui.set_compose_notice("".into());
+        }
 
         if let Some(http) = http_opt {
+            let app_weak = app_weak_send.clone();
             tokio::spawn(async move {
-                let _ = http.send_message(&channel_id, &content_str).await;
+                let reply_to = if mode == "reply" { Some(target.as_str()) } else { None };
+                let result = if let Some(path) = content_str.trim().strip_prefix("/upload ") {
+                    // "/upload /path/to/file" sends that file (as a reply, if one was started).
+                    let path = path.trim().trim_matches('"').to_string();
+                    match tokio::fs::read(&path).await {
+                        Ok(bytes) => http.send_file(&channel_id, "", reply_to, &path, bytes).await,
+                        Err(e) => Err(format!("File not sent: cannot read {path} ({e})")),
+                    }
+                } else if mode == "edit" {
+                    http.edit_message(&channel_id, &target, &content_str).await
+                } else if reply_to.is_some() {
+                    http.send_message_with(&channel_id, &content_str, reply_to).await
+                } else {
+                    http.send_message(&channel_id, &content_str).await
+                };
+                report_message_error(&app_weak, result);
             });
+        }
+    });
+
+    let (app_w, compose, http_c, channel_c) = (app_weak.clone(), Arc::clone(&compose_state), Arc::clone(&http_client), Arc::clone(&active_channel_id));
+    app.on_message_action(move |action: SharedString, message_id: SharedString| {
+        let Some(ui) = app_w.upgrade() else { return };
+        let Some(message) = ui.get_messages().iter().find(|m| m.id == message_id) else { return };
+        match action.as_str() {
+            "reply" => {
+                *compose.lock().unwrap() = ("reply".to_string(), message_id.to_string());
+                ui.set_compose_notice(format!("Replying to {}", message.author).into());
+            }
+            "edit" => {
+                *compose.lock().unwrap() = ("edit".to_string(), message_id.to_string());
+                ui.set_chat_input_text(message.content.clone());
+                ui.set_compose_notice("Editing your message".into());
+            }
+            "delete" => {
+                let (http_opt, channel_id, app_weak) = (http_c.lock().unwrap().as_ref().cloned(), channel_c.lock().unwrap().clone(), app_w.clone());
+                if let Some(http) = http_opt {
+                    let message_id = message_id.to_string();
+                    tokio::spawn(async move {
+                        report_message_error(&app_weak, http.delete_message(&channel_id, &message_id).await);
+                    });
+                }
+            }
+            _ => {}
+        }
+    });
+
+    let (app_w, http_c, channel_c) = (app_weak.clone(), Arc::clone(&http_client), Arc::clone(&active_channel_id));
+    app.on_toggle_reaction(move |message_id: SharedString, key: SharedString| {
+        let Some(ui) = app_w.upgrade() else { return };
+        // Already given by this user: take it back.
+        let mine = ui.get_messages().iter().find(|m| m.id == message_id).map_or(false, |m| m.reactions.iter().any(|r| r.key == key && r.me));
+        let (http_opt, channel_id, app_weak) = (http_c.lock().unwrap().as_ref().cloned(), channel_c.lock().unwrap().clone(), app_w.clone());
+        if let Some(http) = http_opt {
+            let (message_id, key) = (message_id.to_string(), key.to_string());
+            tokio::spawn(async move {
+                let result = if mine {
+                    http.remove_reaction(&channel_id, &message_id, &key).await
+                } else {
+                    http.add_reaction(&channel_id, &message_id, &key).await
+                };
+                report_message_error(&app_weak, result);
+            });
+        }
+    });
+
+    let (app_w, compose) = (app_weak.clone(), Arc::clone(&compose_state));
+    app.on_cancel_compose(move || {
+        let (mode, _) = std::mem::take(&mut *compose.lock().unwrap());
+        if let Some(ui) = app_w.upgrade() {
+            if mode == "edit" {
+                ui.set_chat_input_text("".into());
+            }
+            ui.set_compose_notice("".into());
         }
     });
 
@@ -4351,7 +4445,24 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Handle Input Change Callback (ranked real-time autocomplete filtering)
     let app_weak_inp = app_weak.clone();
+    // The typing notice for the others, at most every eight seconds.
+    let last_typing_notice: Arc<Mutex<Option<std::time::Instant>>> = Arc::new(Mutex::new(None));
+    let (http_typing, channel_typing, compose_typing) = (Arc::clone(&http_client), Arc::clone(&active_channel_id), Arc::clone(&compose_state));
     app.on_handle_input_change(move |text: SharedString| {
+        {
+            let t = text.trim();
+            let editing = compose_typing.lock().unwrap().0 == "edit";
+            let due = last_typing_notice.lock().unwrap().map_or(true, |at| at.elapsed().as_secs() >= 8);
+            if !t.is_empty() && !t.starts_with('/') && !editing && due {
+                let (http_opt, channel_id) = (http_typing.lock().unwrap().as_ref().cloned(), channel_typing.lock().unwrap().clone());
+                if let (Some(http), false) = (http_opt, channel_id.is_empty()) {
+                    *last_typing_notice.lock().unwrap() = Some(std::time::Instant::now());
+                    tokio::spawn(async move {
+                        let _ = http.trigger_typing(&channel_id).await;
+                    });
+                }
+            }
+        }
         if let Some(ui) = app_weak_inp.upgrade() {
             let t = text.to_string();
             let trimmed = t.trim();
@@ -4635,12 +4746,35 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         std::process::exit(0);
     });
 
+    // Who is typing where: (channel id, name, since). Shown for the open channel.
+    let typing_now: Arc<Mutex<Vec<(String, String, std::time::Instant)>>> = Arc::new(Mutex::new(Vec::new()));
+
+    /// Drops typing notices older than ten seconds and shows the ones of the open channel.
+    fn refresh_typing_text(typing: &Arc<Mutex<Vec<(String, String, std::time::Instant)>>>, channel: &Arc<Mutex<String>>, app_weak: &slint::Weak<AppWindow>) {
+        let open_channel = channel.lock().unwrap().clone();
+        let names: Vec<String> = {
+            let mut list = typing.lock().unwrap();
+            list.retain(|(_, _, at)| at.elapsed().as_secs() < 10);
+            list.iter().filter(|(channel_id, _, _)| *channel_id == open_channel).map(|(_, name, _)| name.clone()).collect()
+        };
+        let text = crate::ui::message_grouping::typing_text(&names);
+        let app_weak = app_weak.clone();
+        let _ = slint::invoke_from_event_loop(move || {
+            if let Some(ui) = app_weak.upgrade() {
+                if ui.get_typing_text() != text.as_str() {
+                    ui.set_typing_text(text.into());
+                }
+            }
+        });
+    }
+
     // Handle Gateway Events in Tokio Task and Dispatch to Slint UI Thread
     let app_weak_gw_events = app_weak.clone();
     let active_guild_gw_events = Arc::clone(&active_guild_id);
     let active_channel_gw_events = Arc::clone(&active_channel_id);
     let guilds_map_gw_events = Arc::clone(&guilds_map);
     let sm_gw = Arc::clone(&screen_manager);
+    let typing_gw = Arc::clone(&typing_now);
     let active_mic_disc = Arc::clone(&active_mic_stream);
 
     tokio::spawn(async move {
@@ -4911,6 +5045,61 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             let model = std::rc::Rc::new(slint::VecModel::from(current_msgs));
                             ui.set_messages(model.into());
                         }
+                    });
+                }
+                GatewayEvent::ReactionChanged { channel_id, message_id, user_id, emoji_key, emoji_label, added } => {
+                    let current_active_ch = active_channel_inner.lock().unwrap().clone();
+                    // Hidden: the open channel is refetched when the window comes back.
+                    if channel_id != current_active_ch || !APP_IS_VISIBLE.load(Ordering::Relaxed) {
+                        continue;
+                    }
+                    let by_me = user_id == gateway::get_my_user_id().to_string();
+                    let _ = slint::invoke_from_event_loop(move || {
+                        if let Some(ui) = app_weak_inner.upgrade() {
+                            let model = ui.get_messages();
+                            if let Some(row) = model.iter().position(|m| m.id == message_id.as_str()) {
+                                if let Some(mut message) = model.row_data(row) {
+                                    let mut list = crate::ui::message_grouping::reactions_from_model(&message.reactions);
+                                    crate::http_messaging::apply_reaction(&mut list, &emoji_key, &emoji_label, added, by_me);
+                                    message.reactions = crate::ui::message_grouping::reactions_model(&list);
+                                    model.set_row_data(row, message);
+                                }
+                            }
+                        }
+                    });
+                }
+                GatewayEvent::ReactionsCleared { channel_id, message_id } => {
+                    let current_active_ch = active_channel_inner.lock().unwrap().clone();
+                    if channel_id != current_active_ch || !APP_IS_VISIBLE.load(Ordering::Relaxed) {
+                        continue;
+                    }
+                    let _ = slint::invoke_from_event_loop(move || {
+                        if let Some(ui) = app_weak_inner.upgrade() {
+                            let model = ui.get_messages();
+                            if let Some(row) = model.iter().position(|m| m.id == message_id.as_str()) {
+                                if let Some(mut message) = model.row_data(row) {
+                                    message.reactions = crate::ui::message_grouping::reactions_model(&[]);
+                                    model.set_row_data(row, message);
+                                }
+                            }
+                        }
+                    });
+                }
+                GatewayEvent::TypingStarted { channel_id, user_id, name } => {
+                    if name.is_empty() || user_id == gateway::get_my_user_id().to_string() {
+                        continue;
+                    }
+                    {
+                        let mut list = typing_gw.lock().unwrap();
+                        list.retain(|(c, n, _)| !(*c == channel_id && *n == name));
+                        list.push((channel_id, name, std::time::Instant::now()));
+                    }
+                    refresh_typing_text(&typing_gw, &active_channel_inner, &app_weak_inner);
+                    // And again when this notice has run out.
+                    let (typing_later, channel_later, app_later) = (Arc::clone(&typing_gw), Arc::clone(&active_channel_inner), app_weak_inner.clone());
+                    tokio::spawn(async move {
+                        tokio::time::sleep(std::time::Duration::from_millis(10_200)).await;
+                        refresh_typing_text(&typing_later, &channel_later, &app_later);
                     });
                 }
                 GatewayEvent::MessageDeleted { id, channel_id } => {
