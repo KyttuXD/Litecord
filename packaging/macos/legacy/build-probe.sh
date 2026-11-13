@@ -56,7 +56,9 @@ if [ "$CRATE" = app ]; then
     VERSION=$(sed -n 's/^version = "\(.*\)"$/\1/p' "$ROOT/legacy/app/Cargo.toml" | head -n 1)
     APP="$ROOT/dist/Litecord Legacy.app"
     rm -rf "$APP"
-    mkdir -p "$APP/Contents/MacOS"
+    mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
+    # Classic icon layout that OS X 10.5 / 10.6 read (made by make_icns.py, committed).
+    cp "$ROOT/packaging/macos/legacy/Litecord.icns" "$APP/Contents/Resources/Litecord.icns"
     cp "$OUT/$NAME" "$OUT/libMacportsLegacySystem.B.dylib" "$APP/Contents/MacOS/"
     sed "s/@VERSION@/$VERSION/" "$ROOT/packaging/macos/legacy/Info.plist" > "$APP/Contents/Info.plist"
     (cd "$ROOT/dist" && rm -f Litecord-Legacy-macos-10.5.zip && zip -qry Litecord-Legacy-macos-10.5.zip "Litecord Legacy.app")

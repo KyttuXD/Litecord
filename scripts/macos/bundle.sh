@@ -31,13 +31,15 @@ chmod 755 "$APP/Contents/MacOS/litecord"
 sed -e "s/@SHORT_VERSION@/$SHORT_VERSION/" -e "s/@VERSION@/$VERSION/" \
   packaging/macos/Info.plist > "$APP/Contents/Info.plist"
 
-# Icon: every size macOS asks for, from the one PNG of the project.
+# Icon: every size macOS asks for, from packaging/macos/AppIcon.png (the project's white logo
+# on a coloured tile, made by packaging/macos/legacy/make_icns.py: the bare logo is white on
+# transparent and cannot be seen in a light Dock or Finder window).
 ICONSET="$(mktemp -d)/Litecord.iconset"
 mkdir -p "$ICONSET"
 for size in 16 32 128 256 512; do
-  sips -z "$size" "$size" assets/app_icon.png --out "$ICONSET/icon_${size}x${size}.png" >/dev/null
+  sips -z "$size" "$size" packaging/macos/AppIcon.png --out "$ICONSET/icon_${size}x${size}.png" >/dev/null
   double=$((size * 2))
-  sips -z "$double" "$double" assets/app_icon.png --out "$ICONSET/icon_${size}x${size}@2x.png" >/dev/null
+  sips -z "$double" "$double" packaging/macos/AppIcon.png --out "$ICONSET/icon_${size}x${size}@2x.png" >/dev/null
 done
 iconutil -c icns "$ICONSET" -o "$APP/Contents/Resources/Litecord.icns" \
   || echo "warning: could not build the icon, the app keeps the default one" >&2

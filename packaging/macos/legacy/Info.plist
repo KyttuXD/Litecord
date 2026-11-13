@@ -10,6 +10,8 @@
     <string>io.github.kyttuxd.litecord.legacy</string>
     <key>CFBundleExecutable</key>
     <string>litecord-legacy</string>
+    <key>CFBundleIconFile</key>
+    <string>Litecord</string>
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleInfoDictionaryVersion</key>
