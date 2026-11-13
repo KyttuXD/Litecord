@@ -1123,6 +1123,40 @@ pub fn extract_commands_from_text(text: &str, commands: &mut Vec<String>) {
     }
 }
 
+/// Builds an image attachment for a Discord sticker (`sticker_items` entry).
+/// PNG/APNG stickers use the `.png` CDN rendition and GIF stickers the `.gif`
+/// one. Lottie stickers (format 3) and unknown formats return `None` so the
+/// caller keeps a text fallback.
+pub fn sticker_to_attachment(st: &Value) -> Option<MessageAttachmentData> {
+    let id = match &st["id"] {
+        Value::String(s) => s.clone(),
+        Value::Number(n) => n.to_string(),
+        _ => return None,
+    };
+    if id.is_empty() || !id.chars().all(|c| c.is_ascii_digit()) {
+        return None;
+    }
+    let (ext, content_type) = match st["format_type"].as_u64() {
+        Some(1) | Some(2) => ("png", "image/png"),
+        Some(4) => ("gif", "image/gif"),
+        _ => return None,
+    };
+    let name = st["name"].as_str().unwrap_or("sticker");
+    let url = format!("https://media.discordapp.net/stickers/{}.{}?size=160", id, ext);
+    Some(MessageAttachmentData {
+        id: format!("sticker_{}", id),
+        filename: format!("{}.{}", name, ext),
+        url: url.clone(),
+        proxy_url: url,
+        size_bytes: 0,
+        size_str: String::new(),
+        width: 160,
+        height: 160,
+        content_type: content_type.to_string(),
+        is_image: true,
+    })
+}
+
 pub fn format_discord_message_parts(m: &Value) -> (String, Vec<String>, Vec<MessageLineData>, String, Vec<MessageLineData>, String, String, String, String, String, String, Vec<LinkData>, Vec<MessageButtonData>, Vec<MessageAttachmentData>) {
     register_mentions(m);
     let mut content_parts: Vec<String> = Vec::new();
@@ -1275,15 +1309,6 @@ pub fn format_discord_message_parts(m: &Value) -> (String, Vec<String>, Vec<Mess
         let poll_str = poll_lines.join("\n");
         content_lines.extend(parse_text_into_lines(&poll_str, &mut links));
         content_parts.push(poll_str);
-    }
-
-    // Sticker handling (m["sticker_items"])
-    if let Some(stickers) = m.get("sticker_items").and_then(|s| s.as_array()) {
-        for sticker in stickers {
-            if let Some(name) = sticker.get("name").and_then(|n| n.as_str()) {
-                content_parts.push(format!("🏷️ [Figurinha: {}]", name));
-            }
-        }
     }
 
     // 2. Embeds → go into embed_content & embed_lines
@@ -1553,11 +1578,16 @@ pub fn format_discord_message_parts(m: &Value) -> (String, Vec<String>, Vec<Mess
         }
     }
 
-    // 4. Stickers → content
+    // 4. Stickers → rendered through the image attachment pipeline
     if let Some(stickers) = m["sticker_items"].as_array() {
         for st in stickers {
-            let st_name = st["name"].as_str().unwrap_or("Sticker");
-            content_parts.push(format!("[Sticker: {}]", st_name));
+            match sticker_to_attachment(st) {
+                Some(att) => attachments_list.push(att),
+                None => {
+                    let st_name = st["name"].as_str().unwrap_or("Sticker");
+                    content_parts.push(format!("[Sticker: {}]", st_name));
+                }
+            }
         }
     }
 
@@ -1912,5 +1942,19 @@ mod tests {
         let lines = parse_text_into_lines("When: soon | [RSVP now](https://example.com)", &mut links);
         assert_eq!(lines.len(), 1);
         assert_eq!(lines[0].blocks.len(), 2);
+    }
+
+    #[test]
+    fn sticker_png_gif_and_lottie() {
+        let png = sticker_to_attachment(&json!({"id":"123","name":"Wave","format_type":1})).unwrap();
+        assert_eq!(png.url, "https://media.discordapp.net/stickers/123.png?size=160");
+        assert!(png.is_image);
+        let apng = sticker_to_attachment(&json!({"id":"123","name":"Wave","format_type":2})).unwrap();
+        assert!(apng.url.contains("123.png"));
+        let gif = sticker_to_attachment(&json!({"id":"9","name":"Hi","format_type":4})).unwrap();
+        assert_eq!(gif.url, "https://media.discordapp.net/stickers/9.gif?size=160");
+        assert_eq!(gif.content_type, "image/gif");
+        assert!(sticker_to_attachment(&json!({"id":"5","name":"L","format_type":3})).is_none());
+        assert!(sticker_to_attachment(&json!({"id":"../x","format_type":1})).is_none());
     }
 }
