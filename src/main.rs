@@ -3219,8 +3219,20 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let qr_tx_logout = qr_tx.clone();
     let active_qr_logout = Arc::clone(&active_qr_session);
 
+    // What the next sent text is: ("", "") a new message, ("reply", id) or ("edit", id).
+    let compose_state: Arc<Mutex<(String, String)>> = Arc::new(Mutex::new((String::new(), String::new())));
+    let (compose_logout, app_weak_logout) = (Arc::clone(&compose_state), app_weak.clone());
+    let (compose_switch, app_weak_switch) = (Arc::clone(&compose_state), app_weak.clone());
+    let (compose_select, app_weak_select) = (Arc::clone(&compose_state), app_weak.clone());
+
     app.on_logout(move || {
         info!("User requested full Logout of all accounts...");
+        // A reply or edit or a draft never follows into another account.
+        *compose_logout.lock().unwrap() = (String::new(), String::new());
+        if let Some(ui) = app_weak_logout.upgrade() {
+            ui.set_chat_input_text("".into());
+            ui.set_compose_notice("".into());
+        }
         // 1. Remove saved vault file so all saved tokens are wiped
         delete_secure_token();
 
@@ -3301,6 +3313,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let event_tx_sw = event_tx.clone();
 
     app.on_switch_account(move |account_id: SharedString| {
+        *compose_switch.lock().unwrap() = (String::new(), String::new());
+        if let Some(ui) = app_weak_switch.upgrade() {
+            ui.set_chat_input_text("".into());
+            ui.set_compose_notice("".into());
+        }
         let acc_id_str = account_id.to_string();
         info!("🔄 Switching to the account with identifier {}...", acc_id_str);
 
@@ -3707,8 +3724,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         cmd_tx_gw_store,
                     ).await;
 
-                    let gw = Arc::new(GatewayClient::new(token_str, event_tx_gw));
-                    gw.start(cmd_rx).await;
+                    crate::gateway::start_gateway_task(Arc::new(GatewayClient::new(token_str, event_tx_gw)), cmd_rx);
                 }
                 Err(err_msg) => {
                     error!("Token validation failed: {}", err_msg);
@@ -4053,6 +4069,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let sm_chan_select = Arc::clone(&screen_manager);
 
     app.on_select_channel(move |channel_id: SharedString| {
+        // A reply or edit is for the channel it was started in.
+        *compose_select.lock().unwrap() = (String::new(), String::new());
+        if let Some(ui) = app_weak_select.upgrade() {
+            ui.set_compose_notice("".into());
+        }
         let ch_id = channel_id.to_string();
         info!("Channel selected by the user: {}", ch_id);
         *active_channel_chan_select.lock().unwrap() = ch_id.clone();
@@ -4315,8 +4336,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Send Message Callback from UI
     let http_client_msg = Arc::clone(&http_client);
     let active_channel_msg = Arc::clone(&active_channel_id);
-    // What the next sent text is: ("", "") a new message, ("reply", id) or ("edit", id).
-    let compose_state: Arc<Mutex<(String, String)>> = Arc::new(Mutex::new((String::new(), String::new())));
 
     /// Shows a failed message action in the status line of the title bar.
     fn report_message_error(app_weak: &slint::Weak<AppWindow>, result: Result<(), String>) {
@@ -4348,10 +4367,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 let result = if let Some(path) = content_str.trim().strip_prefix("/upload ") {
                     // "/upload /path/to/file" sends that file (as a reply, if one was started).
                     let path = path.trim().trim_matches('"').to_string();
-                    match tokio::fs::read(&path).await {
-                        Ok(bytes) => http.send_file(&channel_id, "", reply_to, &path, bytes).await,
-                        Err(e) => Err(format!("File not sent: cannot read {path} ({e})")),
-                    }
+                    http.send_path(&channel_id, reply_to, std::path::Path::new(&path)).await
                 } else if mode == "edit" {
                     http.edit_message(&channel_id, &target, &content_str).await
                 } else if reply_to.is_some() {
@@ -4436,12 +4452,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let channel_id = channel_pick.lock().unwrap().clone();
         let http_opt = http_pick.lock().unwrap().as_ref().cloned();
         let reply_to = {
-            let mut compose = compose_pick.lock().unwrap();
-            let reply = if compose.0 == "reply" { Some(compose.1.clone()) } else { None };
-            if reply.is_some() {
-                *compose = (String::new(), String::new());
-            }
-            reply
+            let compose = compose_pick.lock().unwrap();
+            if compose.0 == "reply" { Some(compose.1.clone()) } else { None }
         };
         let http = match http_opt {
             Some(http) if !channel_id.is_empty() => http,
@@ -4451,16 +4463,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
         };
         let app_weak = app_weak_pick.clone();
+        let compose_done = Arc::clone(&compose_pick);
         tokio::spawn(async move {
             let picked = tokio::task::spawn_blocking(|| crate::file_picker::pick_file("Choose a file to send")).await;
-            let result = match picked {
-                Ok(Ok(Some(path))) => http.send_path(&channel_id, reply_to.as_deref(), &path).await,
-                Ok(Ok(None)) => Ok(()),
-                Ok(Err(e)) => Err(e),
-                Err(e) => Err(format!("The file dialog failed: {e}")),
-            };
+            // The dialog is closed, so the next one may open while this file uploads.
             PICKER_OPEN.store(false, Ordering::SeqCst);
-            if reply_to.is_some() {
+            let (sent, result) = match picked {
+                Ok(Ok(Some(path))) => (true, http.send_path(&channel_id, reply_to.as_deref(), &path).await),
+                Ok(Ok(None)) => (false, Ok(())),
+                Ok(Err(e)) => (false, Err(e)),
+                Err(e) => (false, Err(format!("The file dialog failed: {e}"))),
+            };
+            if sent && result.is_ok() && reply_to.is_some() {
+                *compose_done.lock().unwrap() = (String::new(), String::new());
                 let clear = app_weak.clone();
                 let _ = slint::invoke_from_event_loop(move || {
                     if let Some(ui) = clear.upgrade() {

@@ -63,11 +63,14 @@ impl Store {
                 if !token.is_empty() {
                     store.accounts.push(Account { id: String::new(), name: String::new(), avatar: String::new(), token });
                     store.active = store.accounts[0].key();
-                    store.save();
-                    let _ = std::fs::remove_file(legacy_session);
+                    // The old file goes only once the new one is safely written.
+                    if store.save() {
+                        let _ = std::fs::remove_file(legacy_session);
+                    }
                 }
             }
         }
+        store.dedupe();
         // An active key that is no longer in the list falls back to the first account.
         if store.active_account().is_none() {
             store.active = store.accounts.first().map(|a| a.key()).unwrap_or_default();
@@ -85,18 +88,14 @@ impl Store {
     /// Records a successful check of `token`: the account is added or updated and becomes
     /// the active one. An empty `id` (the check failed) keeps what is known about it.
     pub fn upsert(&mut self, token: &str, id: &str, name: &str, avatar: &str) {
-        let position = self
-            .accounts
-            .iter()
-            .position(|a| a.token == token || (!id.is_empty() && a.id == id));
-        let index = match position {
-            Some(i) => i,
-            None => {
-                self.accounts.push(Account { id: String::new(), name: String::new(), avatar: String::new(), token: token.to_string() });
-                self.accounts.len() - 1
-            }
+        let by_id = if id.is_empty() { None } else { self.accounts.iter().position(|a| a.id == id) };
+        let by_token = self.accounts.iter().position(|a| a.token == token);
+        let mut account = match by_id.or(by_token) {
+            Some(i) => self.accounts[i].clone(),
+            None => Account { id: String::new(), name: String::new(), avatar: String::new(), token: token.to_string() },
         };
-        let account = &mut self.accounts[index];
+        // Every other entry for this token or user id is the same account: merged into this one.
+        self.accounts.retain(|a| !(a.token == token || (!id.is_empty() && a.id == id)));
         account.token = token.to_string();
         if !id.is_empty() {
             account.id = id.to_string();
@@ -107,8 +106,15 @@ impl Store {
         if !avatar.is_empty() {
             account.avatar = avatar.to_string();
         }
-        self.active = self.accounts[index].key();
+        self.accounts.push(account);
+        self.active = self.accounts.last().map(|a| a.key()).unwrap_or_default();
         self.save();
+    }
+
+    /// Keeps the first entry of each key (files written by earlier versions may repeat one).
+    fn dedupe(&mut self) {
+        let mut seen = std::collections::HashSet::new();
+        self.accounts.retain(|a| seen.insert(a.key()));
     }
 
     /// Makes the account with this key the active one. Unknown keys are ignored.
@@ -131,20 +137,29 @@ impl Store {
 
     /// Writes the file, readable by this user only. A failed write is not fatal: the
     /// accounts are simply not kept across a restart.
-    pub fn save(&self) {
-        let Ok(text) = serde_json::to_string_pretty(self) else { return };
+    pub fn save(&self) -> bool {
+        use std::io::Write;
+        let Ok(text) = serde_json::to_string_pretty(self) else { return false };
         if let Some(folder) = self.path.parent() {
             let _ = std::fs::create_dir_all(folder);
         }
         let temporary = self.path.with_extension("json.tmp");
-        if std::fs::write(&temporary, text).is_ok() {
+        // Removed first, so an old file with other permissions is not reused.
+        let _ = std::fs::remove_file(&temporary);
+        let written = (|| -> std::io::Result<()> {
+            let mut options = std::fs::OpenOptions::new();
+            options.write(true).create_new(true);
             #[cfg(unix)]
             {
-                use std::os::unix::fs::PermissionsExt;
-                let _ = std::fs::set_permissions(&temporary, std::fs::Permissions::from_mode(0o600));
+                use std::os::unix::fs::OpenOptionsExt;
+                options.mode(0o600);
             }
-            let _ = std::fs::rename(&temporary, &self.path);
-        }
+            let mut file = options.open(&temporary)?;
+            file.write_all(text.as_bytes())?;
+            file.sync_all()?;
+            std::fs::rename(&temporary, &self.path)
+        })();
+        written.is_ok()
     }
 }
 
@@ -235,6 +250,29 @@ mod tests {
         std::fs::write(&path, r#"{"active":"gone","accounts":[{"id":"1","token":"t1"},{"id":"2","token":"t2"}]}"#).unwrap();
         let store = Store::load(&path, &session);
         assert_eq!(store.active_account().unwrap().id, "1");
+    }
+
+        #[test]
+    fn an_id_less_entry_from_a_failed_check_merges_with_the_real_account() {
+        let (path, session) = scratch("merge");
+        let mut store = Store::load(&path, &session);
+        // The first sign-in could not be checked (offline): no user id yet.
+        store.upsert("tok-x", "", "", "");
+        // The same person adds an account whose check worked.
+        store.upsert("tok-a", "111", "Ana", "");
+        // Switching back to the first login checks it: it becomes the same account.
+        store.upsert("tok-x", "111", "", "");
+        assert_eq!(store.accounts.len(), 1, "{:?}", store.accounts);
+        store.remove("111");
+        assert!(store.accounts.is_empty(), "log out removes the account for good");
+    }
+
+    #[test]
+    fn duplicates_left_by_earlier_versions_are_dropped_on_load() {
+        let (path, session) = scratch("dupes");
+        std::fs::write(&path, r#"{"active":"111","accounts":[{"id":"111","token":"t1"},{"id":"111","token":"t2"}]}"#).unwrap();
+        let store = Store::load(&path, &session);
+        assert_eq!(store.accounts.len(), 1);
     }
 
     #[cfg(unix)]

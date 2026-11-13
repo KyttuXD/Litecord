@@ -344,12 +344,14 @@ struct Stage {
     /// "Log out" in the user panel: x from, x to, y.
     logout: (i32, i32, i32),
     /// The account switcher: open, its rows (top, bottom, what they do) for clicks.
+    /// The id of the account the window was last drawn for (see `paint`).
+    last_identity: String,
     switcher_open: bool,
     switcher_rows: Vec<(i32, i32, Switcher)>,
     /// "Attach file" in the line above the input: x from, x to, y from, y to.
     attach_rect: Option<(i32, i32, i32, i32)>,
     /// Saved accounts on the login screen: (top, bottom, account key).
-    login_account_rows: Vec<(i32, i32, String)>,
+    login_account_rows: Vec<(i32, i32, i32, i32, String)>,
     action_buttons: Vec<(&'static str, i32, i32, i32)>,
     last_typing_sent: Option<std::time::Instant>,
     /// Login form: the three text fields, which one has the keyboard, and what was drawn
@@ -428,6 +430,7 @@ impl Stage {
             requested: std::collections::HashSet::new(),
             wanted: Vec::new(),
             logout: (i32::MAX, i32::MAX, 0),
+            last_identity: String::new(),
             switcher_open: false,
             switcher_rows: Vec::new(),
             attach_rect: None,
@@ -447,6 +450,16 @@ impl Stage {
         let shared = Arc::clone(&self.shared);
         let Ok(state) = shared.lock() else { return };
         self.seen_version = state.version;
+        if state.my_id != self.last_identity {
+            self.last_identity = state.my_id.clone();
+            self.input.clear();
+            self.compose = Compose::Normal;
+            self.selected = None;
+            self.message_scroll = 0;
+            self.channel_scroll = 0;
+            self.guild_scroll = 0;
+            self.guild = 0;
+        }
         let (w, h) = (self.canvas.w, self.canvas.h);
         self.canvas.rect(0, 0, w, h, BG);
         if state.logged_in != self.logged_in {
@@ -693,7 +706,7 @@ impl Stage {
                 let who = spans_from_text(&account.name);
                 self.spans(images, fx + 34, ay + 20, &who, FONT, TEXT, fx + fw - 70);
                 self.canvas.text(fx + fw - 62, ay + 20, "Use", SMALL + 1.0, ACCENT, fx + fw);
-                self.login_account_rows.push((ay, ay + 30, account.key.clone()));
+                self.login_account_rows.push((fx, fx + fw, ay, ay + 30, account.key.clone()));
                 ay += 36;
             }
             if state.adding {
@@ -776,13 +789,12 @@ impl Stage {
             Compose::Reply { id, .. } => Some(id.clone()),
             _ => None,
         };
-        self.compose = Compose::Normal;
         let _ = self.actions.send(Action::PickFile { channel_id, reply_to });
         self.dirty = true;
     }
 
     fn click_login(&mut self, x: i32, y: i32) {
-        if let Some((_, _, key)) = self.login_account_rows.iter().find(|(top, bottom, _)| y >= *top && y < *bottom && x >= 0) {
+        if let Some((_, _, _, _, key)) = self.login_account_rows.iter().find(|(x0, x1, top, bottom, _)| x >= *x0 && x < *x1 && y >= *top && y < *bottom) {
             let _ = self.actions.send(Action::SwitchAccount(key.clone()));
             self.dirty = true;
             return;
@@ -1187,7 +1199,10 @@ impl Stage {
             let row = self.switcher_rows.iter().find(|(top, bottom, _)| y >= *top && y < *bottom).map(|(_, _, what)| what.clone());
             match row {
                 Some(Switcher::Switch(key)) => {
-                    let _ = self.actions.send(Action::SwitchAccount(key));
+                    let already_active = self.shared.lock().map(|s| s.accounts.iter().any(|a| a.key == key && a.active)).unwrap_or(false);
+                    if !already_active {
+                        let _ = self.actions.send(Action::SwitchAccount(key));
+                    }
                 }
                 Some(Switcher::Add) => {
                     let _ = self.actions.send(Action::AddAccount);

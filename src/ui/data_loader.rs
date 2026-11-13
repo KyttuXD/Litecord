@@ -1039,8 +1039,7 @@ pub async fn try_login_with_candidates(
                     cmd_tx_store,
                 ).await;
 
-                let gw = Arc::new(GatewayClient::new(token_str, event_tx_gw));
-                gw.start(cmd_rx).await;
+                crate::gateway::start_gateway_task(Arc::new(GatewayClient::new(token_str, event_tx_gw)), cmd_rx);
 
                 return true;
             }

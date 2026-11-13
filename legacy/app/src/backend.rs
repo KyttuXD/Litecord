@@ -567,7 +567,15 @@ async fn leave_voice(shared: &SharedRef, cmd_tx: &mpsc::Sender<GatewayCommand>, 
 /// Runs one logged-in session. Returns when the user logs out or the token is refused.
 async fn run_session(token: String, shared: &SharedRef, actions: &mut mpsc::UnboundedReceiver<Action>, store: &mut Store) -> SessionEnd {
     let http = Arc::new(DiscordHttpClient::new(token.clone()));
-    match http.get_current_user().await {
+    // Until the check answers, the account is the one this token is known as (or no one).
+    let known_id = store.accounts.iter().find(|a| a.token == token).map(|a| a.id.clone()).unwrap_or_default();
+    update(shared, |s| s.my_id = known_id.clone());
+    // A check that never answers (a stalled connection) must not hold up switching accounts.
+    let checked = match tokio::time::timeout(std::time::Duration::from_secs(20), http.get_current_user()).await {
+        Ok(result) => result,
+        Err(_) => Err("the check timed out".to_string()),
+    };
+    match checked {
         Ok(user) => {
             let id = user["id"].as_str().unwrap_or("").to_string();
             let avatar = match user["avatar"].as_str() {
@@ -614,16 +622,22 @@ async fn run_session(token: String, shared: &SharedRef, actions: &mut mpsc::Unbo
     let (cmd_tx, cmd_rx) = mpsc::channel::<GatewayCommand>(32);
     let gateway = Arc::new(GatewayClient::new(token, event_tx));
     let gateway_task = tokio::spawn(async move { gateway.start(cmd_rx).await });
-    load_direct_messages(&http, shared).await;
-    // Server icons: the gateway's server data here has names and channels only.
-    if let Ok(guilds) = http.get_user_guilds().await {
-        update(shared, |s| {
-            for guild in &guilds {
-                if let (Some(id), Some(icon)) = (guild["id"].as_str(), guild["icon"].as_str()) {
-                    if id.bytes().all(|b| b.is_ascii_digit()) && litecord_legacy::ui::message_grouping::valid_avatar_hash(icon) {
-                        s.guild_icons.insert(id.to_string(), format!("https://cdn.discordapp.com/icons/{id}/{icon}.png?size=64"));
+    // Direct messages and server icons load in the background: until they are in, the
+    // session already answers switching, adding and logging out.
+    {
+        let (http_bg, shared_bg) = (Arc::clone(&http), Arc::clone(shared));
+        tokio::spawn(async move {
+            load_direct_messages(&http_bg, &shared_bg).await;
+            if let Ok(guilds) = http_bg.get_user_guilds().await {
+                update(&shared_bg, |s| {
+                    for guild in &guilds {
+                        if let (Some(id), Some(icon)) = (guild["id"].as_str(), guild["icon"].as_str()) {
+                            if id.bytes().all(|b| b.is_ascii_digit()) && litecord_legacy::ui::message_grouping::valid_avatar_hash(icon) {
+                                s.guild_icons.insert(id.to_string(), format!("https://cdn.discordapp.com/icons/{id}/{icon}.png?size=64"));
+                            }
+                        }
                     }
-                }
+                });
             }
         });
     }
@@ -843,10 +857,7 @@ async fn run_session(token: String, shared: &SharedRef, actions: &mut mpsc::Unbo
                     }
                     Action::Upload { channel_id, path, reply_to } => {
                         update(shared, |s| s.status = format!("Sending {path}..."));
-                        let result = match tokio::fs::read(&path).await {
-                            Ok(bytes) => http.send_file(&channel_id, "", reply_to.as_deref(), &path, bytes).await,
-                            Err(e) => Err(format!("File not sent: cannot read {path} ({e})")),
-                        };
+                        let result = http.send_path(&channel_id, reply_to.as_deref(), std::path::Path::new(&path)).await;
                         update(shared, |s| s.status = result.err().unwrap_or_default());
                     }
                     Action::JoinVoice { guild_id, channel_id, name } => {
@@ -917,12 +928,18 @@ async fn run_session(token: String, shared: &SharedRef, actions: &mut mpsc::Unbo
                             continue;
                         }
                         update(shared, |s| s.status = "Choose a file in the dialog...".to_string());
+                        let account_at_pick = shared.lock().map(|s| s.my_id.clone()).unwrap_or_default();
                         let (http_pick, shared_pick) = (Arc::clone(&http), Arc::clone(shared));
                         tokio::spawn(async move {
                             let picked = tokio::task::spawn_blocking(|| litecord_legacy::file_picker::pick_file("Choose a file to send")).await;
                             PICKER_OPEN.store(false, std::sync::atomic::Ordering::SeqCst);
                             let result = match picked {
                                 Ok(Ok(Some(path))) => {
+                                    // Logged out or switched while the dialog was open: nothing is sent.
+                                    if shared_pick.lock().map(|s| s.my_id.clone()).unwrap_or_default() != account_at_pick {
+                                        update(&shared_pick, |s| s.status = "Upload cancelled: the account changed.".to_string());
+                                        return;
+                                    }
                                     let name = path.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default();
                                     update(&shared_pick, |s| s.status = format!("Sending {name}..."));
                                     http_pick.send_path(&channel_id, reply_to.as_deref(), &path).await

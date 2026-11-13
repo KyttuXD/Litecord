@@ -1153,3 +1153,17 @@ mod tests {
         }
     }
 }
+
+/// The gateway connection of the main app. Starting another one (a new sign-in, or a switch)
+/// stops the one before it, so an old account's events cannot keep arriving.
+static GATEWAY_TASK: std::sync::Mutex<Option<tokio::task::AbortHandle>> = std::sync::Mutex::new(None);
+
+/// Runs `client` in the background as the one gateway connection.
+pub fn start_gateway_task(client: Arc<GatewayClient>, cmd_rx: mpsc::Receiver<GatewayCommand>) {
+    let handle = tokio::spawn(async move { client.start(cmd_rx).await });
+    if let Ok(mut current) = GATEWAY_TASK.lock() {
+        if let Some(old) = current.replace(handle.abort_handle()) {
+            old.abort();
+        }
+    }
+}

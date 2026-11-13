@@ -196,10 +196,13 @@ impl DiscordHttpClient {
     /// Sends the file at `path` (read here, checked against the size limit first).
     pub async fn send_path(&self, channel_id: &str, reply_to: Option<&str>, path: &std::path::Path) -> Result<(), String> {
         let name = path.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_else(|| "file".to_string());
-        let size = tokio::fs::metadata(path)
+        let meta = tokio::fs::metadata(path)
             .await
-            .map_err(|e| format!("File not sent: cannot read {} ({e})", path.display()))?
-            .len();
+            .map_err(|e| format!("File not sent: cannot read {} ({e})", path.display()))?;
+        if !meta.is_file() {
+            return Err(format!("File not sent: {} is not a regular file.", path.display()));
+        }
+        let size = meta.len();
         if size > MAX_UPLOAD_BYTES as u64 {
             return Err(format!("File not sent: it is {:.1} MB and Discord takes at most {} MB.", size as f64 / (1024.0 * 1024.0), MAX_UPLOAD_BYTES / (1024 * 1024)));
         }

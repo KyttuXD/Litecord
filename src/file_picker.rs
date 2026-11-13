@@ -32,7 +32,8 @@ pub fn pick_file(title: &str) -> Result<Option<PathBuf>, String> {
 /// The first line of a tool's output as a path; empty output means nothing was chosen.
 fn path_from(stdout: &[u8]) -> Option<PathBuf> {
     let text = String::from_utf8_lossy(stdout);
-    let line = text.lines().next().unwrap_or("").trim_end();
+    // Only the line break goes: a name may end in spaces.
+    let line = text.lines().next().unwrap_or("").trim_end_matches('\r');
     if line.is_empty() {
         None
     } else {
