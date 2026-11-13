@@ -878,6 +878,11 @@ pub fn map_message_lines(lines: &[gateway::MessageLineData], channel_id: &str, a
     slint::ModelRc::from(std::rc::Rc::new(slint::VecModel::from(slint_lines)))
 }
 
+fn sticker_downloads() -> &'static std::sync::Mutex<std::collections::HashSet<String>> {
+    static SET: std::sync::OnceLock<std::sync::Mutex<std::collections::HashSet<String>>> = std::sync::OnceLock::new();
+    SET.get_or_init(Default::default)
+}
+
 pub fn map_message_attachments(
     attachments: &[gateway::MessageAttachmentData],
     app_weak: &slint::Weak<AppWindow>,
@@ -889,6 +894,11 @@ pub fn map_message_attachments(
         } else {
             (false, slint::Image::default())
         };
+
+        // Stickers have no download button worth clicking: fetch them once, right away.
+        if !is_downloaded && a.id.starts_with("sticker_") && sticker_downloads().lock().map(|mut s| s.insert(a.id.clone())).unwrap_or(false) {
+            att_cache.download_full_async(&a.id, &a.filename, &a.url, app_weak.clone());
+        }
 
         let preview_img = if a.is_image && !is_downloaded {
             if let Some(p) = att_cache.get_preview(&a.id) {

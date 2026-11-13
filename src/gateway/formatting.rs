@@ -1141,13 +1141,14 @@ pub fn sticker_to_attachment(st: &Value) -> Option<MessageAttachmentData> {
         Some(4) => ("gif", "image/gif"),
         _ => return None,
     };
-    let name = st["name"].as_str().unwrap_or("sticker");
+    let name = st["name"].as_str().filter(|n| !n.is_empty()).unwrap_or("sticker");
     let url = format!("https://media.discordapp.net/stickers/{}.{}?size=160", id, ext);
+    let thumb = format!("https://media.discordapp.net/stickers/{}.{}", id, ext);
     Some(MessageAttachmentData {
         id: format!("sticker_{}", id),
         filename: format!("{}.{}", name, ext),
-        url: url.clone(),
-        proxy_url: url,
+        url,
+        proxy_url: thumb,
         size_bytes: 0,
         size_str: String::new(),
         width: 160,
