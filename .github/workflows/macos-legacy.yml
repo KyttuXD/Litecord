@@ -5,6 +5,11 @@ name: macOS Legacy (OS X 10.5 - 10.11) experiments
 
 on:
   workflow_dispatch:
+    inputs:
+      crates:
+        description: "Which folders of legacy/ to build (space separated)"
+        type: string
+        default: "probe window-probe app"
 
 permissions:
   contents: read
@@ -24,20 +29,16 @@ jobs:
           sh packaging/macos/legacy/bootstrap-runtime.sh "$RUNNER_TEMP/legacy-rust"
           sh packaging/macos/legacy/bootstrap-leopard.sh "$RUNNER_TEMP/legacy-rust"
 
-      - name: Build the probe for OS X 10.5+
-        run: bash packaging/macos/legacy/build-probe.sh "$RUNNER_TEMP/legacy-rust" probe
-
-      - name: Build the window test for OS X 10.5+
-        run: bash packaging/macos/legacy/build-probe.sh "$RUNNER_TEMP/legacy-rust" window-probe
-
-      # Litecord's own network code with a small CPU-drawn window: text chat, no voice yet.
-      - name: Build the legacy edition for OS X 10.5+
-        run: bash packaging/macos/legacy/build-probe.sh "$RUNNER_TEMP/legacy-rust" app
+      - name: Build for OS X 10.5+
+        run: |
+          for crate in ${{ inputs.crates }}; do
+            bash packaging/macos/legacy/build-probe.sh "$RUNNER_TEMP/legacy-rust" "$crate"
+          done
 
       # The runner is a current macOS: this only shows the program is sound, not that 10.6 runs it.
       - name: Run the probe on the build host
         continue-on-error: true
-        run: dist/litecord-legacy-probe/litecord-legacy-probe
+        run: test ! -x dist/litecord-legacy-probe/litecord-legacy-probe || dist/litecord-legacy-probe/litecord-legacy-probe
 
       - uses: actions/upload-artifact@v4
         with:

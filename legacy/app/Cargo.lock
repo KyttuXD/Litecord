@@ -700,6 +700,7 @@ dependencies = [
  "chrono",
  "fontdue",
  "futures-util",
+ "litecord-legacy-compat",
  "log",
  "miniquad",
  "qrcode",
@@ -711,6 +712,13 @@ dependencies = [
  "slint",
  "tokio",
  "tokio-tungstenite",
+]
+
+[[package]]
+name = "litecord-legacy-compat"
+version = "0.1.0"
+dependencies = [
+ "libc",
 ]
 
 [[package]]

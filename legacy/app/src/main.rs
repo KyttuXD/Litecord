@@ -530,6 +530,7 @@ impl log::Log for Logger {
 }
 
 fn main() {
+    litecord_legacy_compat::init();
     let dir = backend::data_dir();
     let _ = std::env::set_current_dir(&dir);
     let file = std::fs::File::create(dir.join("litecord-legacy.log")).ok();

@@ -13,6 +13,7 @@ publish = false
 
 [dependencies]
 slint = { path = "../slint-shim" }
+litecord-legacy-compat = { path = "../compat" }
 tokio = { version = "1", features = ["full"] }
 tokio-tungstenite = { version = "0.26", features = ["rustls-tls-webpki-roots"] }
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls-webpki-roots", "blocking", "socks", "http2", "charset"] }

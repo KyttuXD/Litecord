@@ -1,0 +1,3 @@
+cargo:rerun-if-changed=build.rs
+cargo:rerun-if-env-changed=LIBC_BUILD_VERBOSE
+cargo:rerun-if-env-changed=RUST_LIBC_UNSTABLE_FREEBSD_VERSION

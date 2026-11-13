@@ -1,0 +1,12 @@
+# Fixes for system calls that OS X 10.5 / 10.6 answer differently from what the Rust
+# standard library expects, beyond what MacPorts legacy-support covers. Linked into every
+# legacy program; does nothing on other systems.
+[package]
+name = "litecord-legacy-compat"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.77"
+publish = false
+
+[dependencies]
+libc = "0.2"

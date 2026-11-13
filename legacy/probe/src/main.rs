@@ -88,6 +88,53 @@ fn tls() -> Result<String, String> {
     }
 }
 
+/// What the standard library does for every `try_clone` (OS X 10.6 lacks F_DUPFD_CLOEXEC).
+fn clone_descriptor() -> Result<String, String> {
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").map_err(|e| format!("bind: {e}"))?;
+    let copy = listener.try_clone().map_err(|e| format!("try_clone: {e}"))?;
+    Ok(format!("a socket was duplicated ({:?})", copy.local_addr().map_err(|e| e.to_string())?))
+}
+
+/// The async runtime of the legacy edition, then Discord through the same HTTP and
+/// WebSocket crates it uses.
+fn async_stack() -> Result<String, String> {
+    let runtime = tokio::runtime::Builder::new_multi_thread()
+        .worker_threads(2)
+        .enable_all()
+        .build()
+        .map_err(|e| format!("tokio runtime: {e}"))?;
+    runtime.block_on(async {
+        tokio::time::sleep(Duration::from_millis(50)).await;
+        let client = reqwest::Client::builder()
+            .user_agent("litecord-legacy-probe")
+            .build()
+            .map_err(|e| format!("reqwest client: {e}"))?;
+        let reply = client
+            .get("https://discord.com/api/v10/gateway")
+            .send()
+            .await
+            .map_err(|e| format!("reqwest get: {e:?}"))?;
+        let status = reply.status();
+        let body = reply.text().await.map_err(|e| format!("reqwest body: {e}"))?;
+        if !body.contains("wss://") {
+            return Err(format!("reqwest: unexpected reply {status}"));
+        }
+        use futures_util::StreamExt;
+        let (mut socket, _) = tokio_tungstenite::connect_async("wss://gateway.discord.gg/?v=10&encoding=json")
+            .await
+            .map_err(|e| format!("websocket connect: {e:?}"))?;
+        let hello = tokio::time::timeout(Duration::from_secs(10), socket.next())
+            .await
+            .map_err(|_| "websocket: no hello within 10 s".to_string())?;
+        match hello {
+            Some(Ok(message)) if message.to_string().contains("heartbeat_interval") => {
+                Ok(format!("tokio runtime, reqwest ({status}), gateway WebSocket said hello"))
+            }
+            other => Err(format!("websocket: unexpected first message {other:?}")),
+        }
+    })
+}
+
 #[cfg(target_os = "macos")]
 mod audio {
     use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
@@ -170,8 +217,11 @@ mod audio {
 
 fn main() {
     println!("litecord-legacy-probe {}", env!("CARGO_PKG_VERSION"));
+    litecord_legacy_compat::init();
     let mut ok = true;
     ok &= report("rust runtime", runtime());
+    ok &= report("descriptor clone", clone_descriptor());
+    ok &= report("async stack", async_stack());
     ok &= report("tls to discord", tls());
     #[cfg(target_os = "macos")]
     {
