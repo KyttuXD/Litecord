@@ -381,16 +381,16 @@ pub async fn connect_voice_gateway(
                                                                 let key_opt = secret_key_rx.lock().unwrap().clone();
                                                                 if let Some(key_bytes) = key_opt {
                                                                     if let Ok(cipher) = Aes256Gcm::new_from_slice(&key_bytes) {
-                                                                        let candidates: &[(usize, usize)] = if has_ext {
-                                                                            &[
-                                                                                (base_header_len + 4, ext_bytes_len),
-                                                                                (base_header_len + 4 + ext_bytes_len, 0),
-                                                                                (base_header_len, ext_bytes_len + 4),
-                                                                                (base_header_len, 0),
-                                                                            ]
-                                                                        } else {
-                                                                            &[(base_header_len, 0)]
-                                                                        };
+                                                                        // Named arrays: borrowing them straight out of the if/else needs Rust 1.79,
+                                                                        // and the legacy (old Mac) build is limited to 1.77.
+                                                                        let with_extension = [
+                                                                            (base_header_len + 4, ext_bytes_len),
+                                                                            (base_header_len + 4 + ext_bytes_len, 0),
+                                                                            (base_header_len, ext_bytes_len + 4),
+                                                                            (base_header_len, 0),
+                                                                        ];
+                                                                        let without_extension = [(base_header_len, 0)];
+                                                                        let candidates: &[(usize, usize)] = if has_ext { &with_extension } else { &without_extension };
 
                                                                         let mut decrypted_opt: Option<(Vec<u8>, usize)> = None;
 
