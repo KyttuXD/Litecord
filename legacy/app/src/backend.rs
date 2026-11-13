@@ -105,6 +105,19 @@ fn decode_png(bytes: &[u8]) -> Option<Picture> {
     Some(Picture { w: info.width, h: info.height, rgba })
 }
 
+/// Downloads and decodes one picture; `None` when that fails.
+pub async fn fetch_picture(client: &reqwest::Client, url: &str) -> Option<Arc<Picture>> {
+    let reply = client.get(url).timeout(std::time::Duration::from_secs(15)).send().await.ok()?;
+    if !reply.status().is_success() {
+        return None;
+    }
+    let bytes = reply.bytes().await.ok()?;
+    if bytes.len() > 2 * 1024 * 1024 {
+        return None;
+    }
+    decode_png(&bytes).map(Arc::new)
+}
+
 pub struct Message {
     pub id: String,
     pub author: String,
@@ -750,13 +763,7 @@ async fn run_session(token: String, shared: &SharedRef, actions: &mut mpsc::Unbo
                         let (client, slots, shared_pictures) = (picture_client.clone(), Arc::clone(&picture_slots), Arc::clone(shared));
                         tokio::spawn(async move {
                             let _slot = slots.acquire().await;
-                            let picture = match client.get(&url).timeout(std::time::Duration::from_secs(15)).send().await {
-                                Ok(reply) if reply.status().is_success() => match reply.bytes().await {
-                                    Ok(bytes) if bytes.len() <= 2 * 1024 * 1024 => decode_png(&bytes).map(Arc::new),
-                                    _ => None,
-                                },
-                                _ => None,
-                            };
+                            let picture = fetch_picture(&client, &url).await;
                             // A failed picture stays `None`: it is not asked for again.
                             update(&shared_pictures, |s| {
                                 s.images.insert(url, picture);

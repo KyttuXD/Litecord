@@ -30,7 +30,6 @@ use miniquad::*;
 use tokio::sync::mpsc::UnboundedSender;
 
 const BG: [u8; 3] = [0x31, 0x33, 0x38];
-const SIDEBAR: [u8; 3] = [0x1E, 0x1F, 0x22];
 const PANEL: [u8; 3] = [0x2B, 0x2D, 0x31];
 const INPUT: [u8; 3] = [0x38, 0x3A, 0x40];
 const ACCENT: [u8; 3] = [0x58, 0x65, 0xF2];
@@ -1367,10 +1366,25 @@ fn self_test() -> bool {
 fn render_demo(path: &str) -> Result<(), String> {
     let shared: SharedRef = Arc::new(Mutex::new(backend::demo_state()));
     let (action_tx, _action_rx) = tokio::sync::mpsc::unbounded_channel();
-    let mut stage = Stage::with(Canvas::new(1100, 700), None, shared, action_tx);
-    stage.paint();
-    // A second pass with one message picked, to show its action buttons.
+    let mut stage = Stage::with(Canvas::new(1100, 700), None, Arc::clone(&shared), action_tx);
+    stage.guild = 1;
+    // One message picked, to show its action buttons.
     stage.selected = Some("3".to_string());
+    stage.paint();
+    // The emoji pictures the first pass asked for, when the network is there; then again.
+    let wanted: Vec<String> = stage.requested.iter().cloned().collect();
+    if let Ok(runtime) = tokio::runtime::Builder::new_current_thread().enable_all().build() {
+        runtime.block_on(async {
+            let client = litecord_legacy::utils::build_generic_http_client();
+            for url in wanted {
+                let picture = backend::fetch_picture(&client, &url).await;
+                println!("{} {url}", if picture.is_some() { "loaded" } else { "MISSING" });
+                if let Ok(mut state) = shared.lock() {
+                    state.images.insert(url, picture);
+                }
+            }
+        });
+    }
     stage.paint();
     let file = std::fs::File::create(path).map_err(|e| format!("{path}: {e}"))?;
     let mut encoder = png::Encoder::new(std::io::BufWriter::new(file), stage.canvas.w as u32, stage.canvas.h as u32);
