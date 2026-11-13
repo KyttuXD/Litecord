@@ -968,11 +968,20 @@ pub fn parse_text_into_lines(input: &str, links: &mut Vec<LinkData>) -> Vec<Mess
                             is_first_block = false;
                         }
                         let parsed_inner = parse_discord_markdown(inner);
-                        let text = if is_first_block && !prefix.is_empty() {
-                            format!("{}{}", prefix, parsed_inner)
-                        } else {
-                            parsed_inner
-                        };
+                        // A heading/quote/bullet prefix stays visible: it is its own plain block.
+                        if is_first_block && !prefix.is_empty() {
+                            line_blocks.push(MessageBlockData {
+                                text: prefix.to_string(),
+                                is_link: false,
+                                is_command: false,
+                                is_emoji: false,
+                                emoji_id: String::new(),
+                                url: String::new(),
+                                command_name: String::new(),
+                                is_spoiler: false,
+                            });
+                        }
+                        let text = parsed_inner;
                         is_first_block = false;
                         line_blocks.push(MessageBlockData {
                             text,
@@ -1009,7 +1018,7 @@ pub fn find_spoiler(s: &str) -> Option<(usize, usize)> {
     let mut from = 0;
     while let Some(rel) = s[from..].find("||") {
         let start = from + rel;
-        // A run of pipes: the opener is the last two pipes of the run, so `|||x||` hides `|x`.
+        // A run of pipes: the opener is the last two pipes of the run, so in `|||x||` the first pipe stays as plain text before the spoiler.
         let mut run_end = start + 2;
         while run_end < bytes.len() && bytes[run_end] == b'|' {
             run_end += 1;
