@@ -21,7 +21,10 @@ export MACOSX_DEPLOYMENT_TARGET=10.5
 export LR_MACOS_LEGACY=1
 # Flat namespace: the old system then finds clock_gettime, getentropy and the like in
 # libMacportsLegacySystem instead of looking for them (in vain) in its own libSystem.
-export RUSTFLAGS="-L native=$SUPPORT -C link-arg=-lMacportsLegacySystem.B -C link-arg=-Wl,-flat_namespace"
+# mio_unsupported_force_waker_pipe: mio wakes its event loop through kqueue's EVFILT_USER on macOS,
+# and on OS X 10.6 that wake-up never arrives (a tokio program hung in kevent on a Mac Pro 3,1).
+# With this switch mio uses a pipe instead, which every system has.
+export RUSTFLAGS="-L native=$SUPPORT -C link-arg=-lMacportsLegacySystem.B -C link-arg=-Wl,-flat_namespace --cfg mio_unsupported_force_waker_pipe"
 cd "$ROOT/legacy/$CRATE"
 # Cargo 1.77 drives the build: a newer Cargo passes switches this compiler does not know.
 rustup run 1.77.0 cargo build --locked --release --target x86_64-apple-darwin
