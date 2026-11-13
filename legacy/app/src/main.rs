@@ -579,8 +579,68 @@ impl log::Log for Logger {
     fn flush(&self) {}
 }
 
+/// `--self-test`: checks without a window or a login that the voice building blocks work on
+/// this machine: the Opus codec (encode a tone, decode it, compare loudness) and a DAVE
+/// encryption session (key generation through OpenMLS). Prints PASS/FAIL lines.
+fn self_test() -> bool {
+    use opus_rs::{Application, OpusDecoder, OpusEncoder};
+    let mut ok = true;
+
+    let opus = (|| -> Result<String, String> {
+        let mut encoder = OpusEncoder::new(48000, 2, Application::Voip).map_err(|e| format!("encoder: {e:?}"))?;
+        let mut decoder = OpusDecoder::new(48000, 2).map_err(|e| format!("decoder: {e:?}"))?;
+        let (mut in_energy, mut out_energy, mut bytes) = (0.0f64, 0.0f64, 0usize);
+        let mut phase = 0.0f32;
+        for frame in 0..25 {
+            let mut pcm = [0.0f32; 1920];
+            for pair in pcm.chunks_mut(2) {
+                phase = (phase + 440.0 / 48000.0) % 1.0;
+                let v = (phase * std::f32::consts::TAU).sin() * 0.3;
+                pair[0] = v;
+                pair[1] = v;
+            }
+            let mut packet = vec![0u8; 1000];
+            let len = encoder.encode(&pcm, 960, &mut packet).map_err(|e| format!("encode: {e:?}"))?;
+            let mut out = vec![0.0f32; 11520];
+            let samples = decoder.decode(&packet[..len], 5760, &mut out).map_err(|e| format!("decode: {e:?}"))?;
+            // The first frames carry the codec's start-up delay.
+            if frame >= 5 {
+                bytes += len;
+                in_energy += pcm.iter().map(|s| (*s as f64).powi(2)).sum::<f64>();
+                out_energy += out[..samples * 2].iter().map(|s| (*s as f64).powi(2)).sum::<f64>();
+            }
+        }
+        let ratio = out_energy / in_energy.max(1e-9);
+        if !(0.5..2.0).contains(&ratio) {
+            return Err(format!("decoded loudness is {ratio:.2} times the original"));
+        }
+        Ok(format!("20 frames, {} bytes each on average, decoded loudness {ratio:.2} of the original", bytes / 20))
+    })();
+    match opus {
+        Ok(detail) => println!("PASS  opus codec: {detail}"),
+        Err(detail) => {
+            println!("FAIL  opus codec: {detail}");
+            ok = false;
+        }
+    }
+
+    match davey::DaveSession::new(std::num::NonZeroU16::new(1).unwrap(), 123456789012345678, 987654321098765432, None) {
+        Ok(_) => println!("PASS  dave session: created (keys generated through OpenMLS)"),
+        Err(e) => {
+            println!("FAIL  dave session: {e:?}");
+            ok = false;
+        }
+    }
+
+    println!("{}", if ok { "RESULT: all checks passed" } else { "RESULT: at least one check failed" });
+    ok
+}
+
 fn main() {
     litecord_legacy_compat::init();
+    if std::env::args().any(|a| a == "--self-test") {
+        std::process::exit(if self_test() { 0 } else { 1 });
+    }
     let dir = backend::data_dir();
     let _ = std::env::set_current_dir(&dir);
     let file = std::fs::File::create(dir.join("litecord-legacy.log")).ok();
