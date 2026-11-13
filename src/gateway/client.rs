@@ -866,6 +866,8 @@ impl GatewayClient {
                         buttons,
                         attachments,
                         is_self,
+                        is_edited: is_edited(&v["d"]),
+                        mentions_me: is_mentioned(&v["d"], &my_uid, &[]),
                     }).await;
                 }
                 "MESSAGE_UPDATE" => {
@@ -873,6 +875,8 @@ impl GatewayClient {
                     let channel_id = v["d"]["channel_id"].as_str().unwrap_or("").to_string();
                     let (content, commands, content_lines, embed_content, embed_lines, embed_color, embed_footer, code_block, reply_author, reply_content, reply_command, links, buttons, attachments) = format_discord_message_parts(&v["d"]);
 
+                    let my_uid = self.user_id.lock().unwrap().clone().unwrap_or_default();
+                    let mentions_me = is_mentioned(&v["d"], &my_uid, &[]);
                     let _ = self.event_tx.send(GatewayEvent::MessageUpdated {
                         id,
                         channel_id,
@@ -890,6 +894,8 @@ impl GatewayClient {
                         links,
                         buttons,
                         attachments,
+                        is_edited: is_edited(&v["d"]),
+                        mentions_me,
                     }).await;
                 }
                 "MESSAGE_DELETE" => {

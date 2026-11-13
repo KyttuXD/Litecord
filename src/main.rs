@@ -4930,7 +4930,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         }
                     });
                 }
-                GatewayEvent::MessageCreated { id, channel_id, author, author_id, created_at, avatar_url, is_bot, content, commands, content_lines, embed_content, embed_lines, embed_color, embed_footer, code_block, reply_author, reply_content, reply_command, links, buttons, attachments, is_self } => {
+                GatewayEvent::MessageCreated { id, channel_id, author, author_id, created_at, avatar_url, is_bot, content, commands, content_lines, embed_content, embed_lines, embed_color, embed_footer, code_block, reply_author, reply_content, reply_command, links, buttons, attachments, is_self, is_edited, mentions_me } => {
                     // Deduplication: ignore if this message was already processed earlier
                     if !id.is_empty() && crate::ui::helpers::mark_msg_seen(&id) {
                         continue;
@@ -5040,6 +5040,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 message.avatar_url = avatar_url.into();
                                 message.avatar_initial = message.author.chars().next().unwrap_or('?').to_uppercase().to_string().into();
                                 message.is_bot = is_bot;
+                                message.is_edited = is_edited;
+                                message.mentions_me = mentions_me;
                                 current_msgs.push(message);
                                 regroup_messages(&mut current_msgs);
                                 // An append never changes the grouping of older rows. Keep the
@@ -5060,7 +5062,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         });
                     }
                 }
-                GatewayEvent::MessageUpdated { id, channel_id, content, commands, content_lines, embed_content, embed_lines, embed_color, embed_footer, code_block, reply_author, reply_content, reply_command, links, buttons, attachments } => {
+                GatewayEvent::MessageUpdated { id, channel_id, content, commands, content_lines, embed_content, embed_lines, embed_color, embed_footer, code_block, reply_author, reply_content, reply_command, links, buttons, attachments, is_edited, mentions_me } => {
                     let current_active_ch = active_channel_inner.lock().unwrap().clone();
                     // Hidden: the open channel is refetched when the window comes back.
                     if channel_id != current_active_ch || !APP_IS_VISIBLE.load(Ordering::Relaxed) {
@@ -5103,6 +5105,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     msg.links = slint::ModelRc::from(links_model.clone());
                                     msg.buttons = map_message_buttons(&buttons, &channel_id, &app_weak_inner);
                                     msg.attachments = map_message_attachments(&attachments, &app_weak_inner);
+                                    if is_edited {
+                                        msg.is_edited = true;
+                                    }
+                                    if mentions_me {
+                                        msg.mentions_me = true;
+                                    }
                                     found = true;
                                     break;
                                 }

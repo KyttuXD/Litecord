@@ -27,6 +27,9 @@ pub fn apply_message_metadata(message: &mut ChatMessage, source: &Value) {
     message.is_bot = source["author"]["bot"].as_bool().unwrap_or(false);
     let my_id = crate::gateway::get_my_user_id();
     message.is_self = my_id != 0 && author_id == my_id.to_string();
+    message.is_edited = crate::gateway::is_edited(source);
+    let my_id_str = if my_id == 0 { String::new() } else { my_id.to_string() };
+    message.mentions_me = crate::gateway::is_mentioned(source, &my_id_str, &[]);
     message.reactions = reactions_model(&crate::http_messaging::reactions_from_message(source));
 }
 

@@ -128,6 +128,8 @@ export struct ChatMessage {
     reactions: [MessageReaction],
     // Written by the logged-in user: it can be edited and deleted.
     is_self: bool,
+    is_edited: bool,
+    mentions_me: bool,
 }
 
 export component ChatMessagesView inherits Rectangle {
@@ -238,7 +240,7 @@ export component ChatMessagesView inherits Rectangle {
 
                 Rectangle {
                 width: 100%;
-                background: row_hover.has-hover ? AppTheme.interactive-hover : transparent;
+                background: row_hover.has-hover ? AppTheme.interactive-hover : (msg.mentions_me ? #f0b23222 : transparent);
                 border-radius: 4px;
                 property <bool> is-collapsed: true;
 
@@ -634,6 +636,13 @@ export component ChatMessagesView inherits Rectangle {
                         font-family: ChatTypography.family;
                         font-size: ChatTypography.body-size;
                         wrap: word-wrap;
+                    }
+
+                    if msg.is_edited: Text {
+                        text: "(edited)";
+                        color: AppTheme.text-muted;
+                        font-family: ChatTypography.family;
+                        font-size: TypeScale.caption;
                     }
 
                     // 2. Code Block

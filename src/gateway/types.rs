@@ -103,6 +103,8 @@ pub enum GatewayEvent {
         buttons: Vec<MessageButtonData>,
         attachments: Vec<MessageAttachmentData>,
         is_self: bool,
+        is_edited: bool,
+        mentions_me: bool,
     },
     MessageUpdated {
         id: String,
@@ -121,6 +123,8 @@ pub enum GatewayEvent {
         links: Vec<LinkData>,
         buttons: Vec<MessageButtonData>,
         attachments: Vec<MessageAttachmentData>,
+        is_edited: bool,
+        mentions_me: bool,
     },
     MessageDeleted {
         id: String,
