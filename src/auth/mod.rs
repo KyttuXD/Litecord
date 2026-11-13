@@ -2,6 +2,7 @@
 
 pub mod vault;
 pub mod remote_auth;
+pub mod password_auth;
 
 pub use vault::*;
 pub use remote_auth::*;

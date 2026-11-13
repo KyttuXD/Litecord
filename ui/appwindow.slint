@@ -99,6 +99,15 @@ export component AppWindow inherits Window {
     callback maximize_window();
     callback close_window();
     callback login(string /* token */);
+    // Email and password login. `password_login_stage`: "" (form), "busy", or "code" (second step).
+    callback password_login(string /* email or phone */, string /* password */);
+    callback password_login_code(string /* totp | sms | backup */, string /* code */);
+    callback password_login_send_sms();
+    callback password_login_cancel();
+    in-out property <string> password_login_stage: "";
+    in-out property <string> password_login_method: "totp";
+    in-out property <bool> password_login_has_sms: false;
+    in-out property <string> password_login_message: "";
     callback send_message(string /* content */);
     callback select_channel(string /* channel_id */);
     callback toggle_category(string /* category_id */);
@@ -835,7 +844,7 @@ export component AppWindow inherits Window {
 
 
                         Rectangle {
-                            height: 400px;
+                            height: 470px;
                             background: AppTheme.surface-sidebar;
                             border-radius: 12px;
                             border-width: 1px;
@@ -876,6 +885,98 @@ export component AppWindow inherits Window {
                                     color: AppTheme.text-muted;
                                     font-size: TypeScale.small;
                                     wrap: word-wrap;
+                                }
+
+                                // Email and password, as on discord.com.
+                                if root.password_login_stage != "code": VerticalLayout {
+                                    spacing: 8px;
+
+                                    pw_email := LineEdit {
+                                        placeholder-text: "Email or phone number";
+                                        enabled: root.password_login_stage != "busy";
+                                    }
+
+                                    pw_password := LineEdit {
+                                        placeholder-text: "Password";
+                                        input-type: password;
+                                        enabled: root.password_login_stage != "busy";
+                                        accepted => {
+                                            if (pw_email.text != "" && pw_password.text != "") {
+                                                root.password_login(pw_email.text, pw_password.text);
+                                            }
+                                        }
+                                    }
+
+                                    Button {
+                                        text: root.password_login_stage == "busy" ? "Logging in..." : "Log in";
+                                        primary: true;
+                                        enabled: root.password_login_stage != "busy";
+                                        clicked => {
+                                            if (pw_email.text != "" && pw_password.text != "") {
+                                                root.password_login(pw_email.text, pw_password.text);
+                                            }
+                                        }
+                                    }
+                                }
+
+                                // Second step: authenticator, SMS or backup code.
+                                if root.password_login_stage == "code": VerticalLayout {
+                                    spacing: 8px;
+
+                                    Text {
+                                        text: root.password_login_message;
+                                        color: AppTheme.text-muted;
+                                        font-size: TypeScale.small;
+                                        wrap: word-wrap;
+                                    }
+
+                                    pw_code := LineEdit {
+                                        placeholder-text: root.password_login_method == "backup" ? "Backup code" : "6-digit code";
+                                        accepted => {
+                                            root.password_login_code(root.password_login_method, pw_code.text);
+                                        }
+                                    }
+
+                                    HorizontalLayout {
+                                        spacing: 8px;
+
+                                        Button {
+                                            horizontal-stretch: 1;
+                                            text: "Verify";
+                                            primary: true;
+                                            clicked => {
+                                                root.password_login_code(root.password_login_method, pw_code.text);
+                                            }
+                                        }
+
+                                        Button {
+                                            horizontal-stretch: 1;
+                                            text: "Cancel";
+                                            clicked => {
+                                                root.password_login_cancel();
+                                            }
+                                        }
+                                    }
+
+                                    HorizontalLayout {
+                                        spacing: 8px;
+
+                                        if root.password_login_has_sms: Button {
+                                            horizontal-stretch: 1;
+                                            text: "Text me a code";
+                                            clicked => {
+                                                root.password_login_send_sms();
+                                            }
+                                        }
+
+                                        Button {
+                                            horizontal-stretch: 1;
+                                            text: root.password_login_method == "backup" ? "Use a 6-digit code" : "Use a backup code";
+                                            clicked => {
+                                                root.password_login_method = root.password_login_method == "backup" ? "totp" : "backup";
+                                            }
+                                        }
+                                    }
                                 }
 
                                 token_input := LineEdit {

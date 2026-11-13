@@ -8,7 +8,7 @@ mod backend;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
-use backend::{Action, Shared, SharedRef};
+use backend::{Action, CodeKind, LoginStage, Shared, SharedRef};
 use miniquad::*;
 use tokio::sync::mpsc::UnboundedSender;
 
@@ -175,6 +175,13 @@ struct Stage {
     /// (y, channel id, is voice, name).
     channel_rows: Vec<(i32, String, bool, String)>,
     logout_x: i32,
+    /// Login form: the three text fields, which one has the keyboard, and what was drawn
+    /// last frame for clicks: fields as (index, x, y, w, h), buttons as (label, x0, x1, y).
+    logged_in: bool,
+    login_fields: [String; 3],
+    login_focus: usize,
+    login_field_rects: Vec<(usize, i32, i32, i32, i32)>,
+    login_buttons: Vec<(&'static str, i32, i32, i32)>,
     /// Voice bar buttons drawn last frame: (x from, x to) of Mute and Leave, and the bar's top.
     voice_bar: Option<(i32, (i32, i32), (i32, i32))>,
 }
@@ -237,6 +244,11 @@ impl Stage {
             guild_rows: Vec::new(),
             channel_rows: Vec::new(),
             logout_x: i32::MAX,
+            logged_in: false,
+            login_fields: [String::new(), String::new(), String::new()],
+            login_focus: 0,
+            login_field_rects: Vec::new(),
+            login_buttons: Vec::new(),
             voice_bar: None,
         }
     }
@@ -247,6 +259,12 @@ impl Stage {
         self.seen_version = state.version;
         let (w, h) = (self.canvas.w, self.canvas.h);
         self.canvas.rect(0, 0, w, h, BG);
+        if state.logged_in != self.logged_in {
+            self.logged_in = state.logged_in;
+            // Nothing typed at the login screen stays in memory once it is left.
+            self.login_fields = [String::new(), String::new(), String::new()];
+            self.login_focus = 0;
+        }
         if state.logged_in {
             self.paint_main(&state);
         } else {
@@ -260,15 +278,20 @@ impl Stage {
         self.channel_rows.clear();
         self.logout_x = i32::MAX;
         self.voice_bar = None;
+        self.login_field_rects.clear();
+        self.login_buttons.clear();
         let title = "Litecord (legacy edition)";
         let tw = self.canvas.text_width(title, 24.0);
-        self.canvas.text((w - tw) / 2, 60, title, 24.0, WHITE, w);
+        self.canvas.text((w - tw) / 2, 50, title, 24.0, WHITE, w);
+
+        // Left half: the QR code.
+        let half = w / 2;
         if let Some((rgba, qw, qh)) = &state.qr {
             let (qw, qh) = (*qw as i32, *qh as i32);
             // Whole-number scale, so the code stays sharp for the phone camera.
-            let scale = ((h - 200) / qh.max(1)).min((w - 80) / qw.max(1)).max(1);
+            let scale = ((h - 230) / qh.max(1)).min((half - 80) / qw.max(1)).max(1);
             let (dw, dh) = (qw * scale, qh * scale);
-            let (ox, oy) = ((w - dw) / 2, 90);
+            let (ox, oy) = ((half - dw) / 2, 100);
             self.canvas.rect(ox - 8, oy - 8, dw + 16, dh + 16, WHITE);
             for y in 0..dh {
                 for x in 0..dw {
@@ -283,11 +306,128 @@ impl Stage {
                 }
             }
         }
+
+        // Right half: email and password, or the code of the second step.
+        let fx = half + 30;
+        let fw = (w - fx - 50).clamp(160, 360);
+        let mut y = 110;
+        let field = |stage: &mut Stage, index: usize, label: &str, hidden: bool, y: i32| {
+            stage.canvas.text(fx, y, label, FONT, MUTED, w);
+            let focused = stage.login_focus == index;
+            stage.canvas.rect(fx - 1, y + 7, fw + 2, 32, if focused { ACCENT } else { PANEL });
+            stage.canvas.rect(fx, y + 8, fw, 30, INPUT);
+            let mut shown: String = if hidden {
+                "*".repeat(stage.login_fields[index].chars().count())
+            } else {
+                stage.login_fields[index].clone()
+            };
+            if focused {
+                shown.push('|');
+            }
+            while stage.canvas.text_width(&shown, FONT) > fw - 16 && shown.chars().count() > 1 {
+                shown.remove(0);
+            }
+            stage.canvas.text(fx + 8, y + 29, &shown, FONT, TEXT, fx + fw);
+            stage.login_field_rects.push((index, fx, y + 8, fw, 30));
+        };
+        let button = |stage: &mut Stage, label: &'static str, x: i32, y: i32, primary: bool| -> i32 {
+            let x1 = stage.canvas.text(x, y, label, FONT, if primary { ACCENT } else { TEXT }, w);
+            stage.login_buttons.push((label, x, x1, y));
+            x1
+        };
+        if state.login_stage == LoginStage::Code {
+            if self.login_focus != 2 {
+                self.login_focus = 2;
+            }
+            let label = if state.login_code_kind == CodeKind::Backup { "Backup code" } else { "6-digit code" };
+            field(self, 2, label, false, y);
+            y += 70;
+            let x = button(self, "Verify", fx, y, true);
+            button(self, "Cancel", x + 24, y, false);
+            y += 30;
+            let mut x = fx;
+            if state.login_has_sms {
+                x = button(self, "Text me a code", x, y, false) + 24;
+            }
+            if state.login_code_kind == CodeKind::Backup {
+                button(self, "Use a 6-digit code", x, y, false);
+            } else {
+                button(self, "Use a backup code", x, y, false);
+            }
+            y += 20;
+        } else {
+            if self.login_focus > 1 {
+                self.login_focus = 0;
+            }
+            field(self, 0, "Email or phone number", false, y);
+            y += 66;
+            field(self, 1, "Password", true, y);
+            y += 70;
+            if state.login_stage == LoginStage::Busy {
+                self.canvas.text(fx, y, "Logging in...", FONT, MUTED, w);
+            } else {
+                button(self, "Log in", fx, y, true);
+            }
+            y += 20;
+        }
+        let lines = self.canvas.wrap(&state.login_message, FONT, fw);
+        for (i, line) in lines.iter().enumerate() {
+            self.canvas.text(fx, y + 20 + i as i32 * LINE_H, line, FONT, TEXT, w);
+        }
+
         let lines = self.canvas.wrap(&state.status, FONT, w - 80);
         for (i, line) in lines.iter().enumerate() {
             let lw = self.canvas.text_width(line, FONT);
-            self.canvas.text((w - lw) / 2, h - 70 + i as i32 * LINE_H, line, FONT, TEXT, w);
+            self.canvas.text((w - lw) / 2, h - 50 + i as i32 * LINE_H, line, FONT, MUTED, w);
         }
+    }
+
+    /// What Return and the "Log in" / "Verify" words do.
+    fn submit_login(&mut self) {
+        let stage = self.shared.lock().map(|s| s.login_stage).unwrap_or(LoginStage::Form);
+        match stage {
+            LoginStage::Form => {
+                if self.login_fields[0].trim().is_empty() || self.login_fields[1].is_empty() {
+                    return;
+                }
+                let _ = self.actions.send(Action::PasswordLogin {
+                    login: self.login_fields[0].clone(),
+                    password: std::mem::take(&mut self.login_fields[1]),
+                });
+            }
+            LoginStage::Code => {
+                let _ = self.actions.send(Action::LoginCode { code: std::mem::take(&mut self.login_fields[2]) });
+            }
+            LoginStage::Busy => {}
+        }
+        self.dirty = true;
+    }
+
+    fn click_login(&mut self, x: i32, y: i32) {
+        if let Some((index, ..)) = self.login_field_rects.iter().find(|(_, fx, fy, fw, fh)| x >= *fx && x < fx + fw && y >= *fy && y < fy + fh) {
+            self.login_focus = *index;
+            self.dirty = true;
+            return;
+        }
+        let hit = self.login_buttons.iter().find(|(_, x0, x1, by)| x >= *x0 - 4 && x <= *x1 + 4 && y >= by - 18 && y <= by + 8).map(|b| b.0);
+        match hit {
+            Some("Log in") | Some("Verify") => self.submit_login(),
+            Some("Cancel") => {
+                self.login_fields[2].clear();
+                let _ = self.actions.send(Action::LoginCancel);
+            }
+            Some("Text me a code") => {
+                let _ = self.actions.send(Action::LoginSendSms);
+            }
+            Some("Use a backup code") => {
+                let _ = self.actions.send(Action::LoginUseKind(CodeKind::Backup));
+            }
+            Some("Use a 6-digit code") => {
+                let _ = self.actions.send(Action::LoginUseKind(CodeKind::Totp));
+            }
+            _ => {}
+        }
+        self.dirty = true;
     }
 
     fn paint_main(&mut self, state: &Shared) {
@@ -418,6 +558,10 @@ impl Stage {
     }
 
     fn click(&mut self, x: i32, y: i32) {
+        if !self.logged_in {
+            self.click_login(x, y);
+            return;
+        }
         if y < TOP_H {
             if x >= self.logout_x {
                 let _ = self.actions.send(Action::LogOut);
@@ -529,11 +673,38 @@ impl EventHandler for Stage {
         if ('\u{F700}'..='\u{F8FF}').contains(&character) {
             return;
         }
-        self.input.push(character);
+        if self.logged_in {
+            self.input.push(character);
+        } else {
+            self.login_fields[self.login_focus].push(character);
+        }
         self.dirty = true;
     }
 
     fn key_down_event(&mut self, keycode: KeyCode, _keymods: KeyMods, _repeat: bool) {
+        if !self.logged_in {
+            match keycode {
+                KeyCode::Backspace => {
+                    self.login_fields[self.login_focus].pop();
+                }
+                KeyCode::Tab => {
+                    if self.login_focus < 2 {
+                        self.login_focus = 1 - self.login_focus;
+                    }
+                }
+                KeyCode::Enter | KeyCode::KpEnter => {
+                    // Return in the email field moves on to the password.
+                    if self.login_focus == 0 && self.login_fields[1].is_empty() {
+                        self.login_focus = 1;
+                    } else {
+                        self.submit_login();
+                    }
+                }
+                _ => {}
+            }
+            self.dirty = true;
+            return;
+        }
         match keycode {
             KeyCode::Backspace => {
                 self.input.pop();

@@ -6,6 +6,8 @@ use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
 use litecord_legacy::audio::engine::{start_mic_capture, MicCapture};
+use litecord_legacy::auth::password_auth::{self, LoginStep};
+pub use litecord_legacy::auth::password_auth::CodeKind;
 use litecord_legacy::auth::{generate_qr_image, RemoteAuthEvent, RemoteAuthSession};
 use litecord_legacy::gateway;
 use litecord_legacy::gateway::{ChannelData, GatewayClient, GatewayCommand, GatewayEvent, GuildData};
@@ -19,7 +21,6 @@ pub struct Message {
     pub text: String,
 }
 
-#[derive(Default)]
 pub struct Shared {
     /// Bumped on every change, so the window knows when to redraw.
     pub version: u64,
@@ -28,6 +29,12 @@ pub struct Shared {
     pub user: String,
     /// QR picture of the login screen: RGBA bytes, width, height.
     pub qr: Option<(Vec<u8>, u32, u32)>,
+    /// Email and password login: what the form shows.
+    pub login_stage: LoginStage,
+    pub login_message: String,
+    pub login_has_sms: bool,
+    /// The second-step code asked for: an authenticator code unless this says backup or SMS.
+    pub login_code_kind: CodeKind,
     pub guilds: Vec<GuildData>,
     pub channel_id: String,
     pub messages: Vec<Message>,
@@ -39,15 +46,52 @@ pub struct Shared {
     pub muted: bool,
 }
 
+#[derive(Clone, Copy, PartialEq, Eq, Default)]
+pub enum LoginStage {
+    #[default]
+    Form,
+    Busy,
+    Code,
+}
+
 pub type SharedRef = Arc<Mutex<Shared>>;
 
 pub enum Action {
     SelectChannel { guild_id: String, channel_id: String },
     Send { channel_id: String, text: String },
+    PasswordLogin { login: String, password: String },
+    LoginCode { code: String },
+    LoginSendSms,
+    LoginUseKind(CodeKind),
+    LoginCancel,
     JoinVoice { guild_id: String, channel_id: String, name: String },
     LeaveVoice,
     ToggleMute,
     LogOut,
+}
+
+impl Default for Shared {
+    fn default() -> Self {
+        Shared {
+            version: 0,
+            logged_in: false,
+            status: String::new(),
+            user: String::new(),
+            qr: None,
+            login_stage: LoginStage::Form,
+            login_message: String::new(),
+            login_has_sms: false,
+            login_code_kind: CodeKind::Totp,
+            guilds: Vec::new(),
+            channel_id: String::new(),
+            messages: Vec::new(),
+            voice_channel_id: String::new(),
+            voice_channel_name: String::new(),
+            voice_connected: false,
+            voice_users: Vec::new(),
+            muted: false,
+        }
+    }
 }
 
 fn update(shared: &SharedRef, f: impl FnOnce(&mut Shared)) {
@@ -130,7 +174,10 @@ fn message_from_rest(m: &Value) -> Message {
     }
 }
 
-async fn log_in(shared: &SharedRef) -> String {
+/// Shows the login screen until a login succeeds: the QR code, and the email and password
+/// form (src/auth/password_auth.rs). Returns the session token.
+async fn log_in(shared: &SharedRef, actions: &mut mpsc::UnboundedReceiver<Action>) -> String {
+    let mut ticket = String::new();
     loop {
         update(shared, |s| {
             s.logged_in = false;
@@ -139,38 +186,115 @@ async fn log_in(shared: &SharedRef) -> String {
         });
         let (tx, mut rx) = mpsc::channel(16);
         let session = RemoteAuthSession::start(tx);
-        let mut failed = false;
-        while let Some(event) = rx.recv().await {
-            match event {
-                RemoteAuthEvent::QrCodeUrl(url) => match generate_qr_image(&url) {
-                    Ok(img) => update(shared, |s| {
-                        s.qr = Some((img.rgba, img.width, img.height));
-                        s.status = "Scan this code with the Discord app on your phone (Settings > Scan QR Code).".to_string();
-                    }),
-                    Err(e) => update(shared, |s| s.status = format!("Could not draw the login code: {e}")),
-                },
-                RemoteAuthEvent::UserScanned { username } => {
-                    update(shared, |s| s.status = format!("{username}: confirm the login on your phone."))
+        let mut qr_failed = false;
+        while !qr_failed {
+            tokio::select! {
+                event = rx.recv() => {
+                    match event {
+                        Some(RemoteAuthEvent::QrCodeUrl(url)) => match generate_qr_image(&url) {
+                            Ok(img) => update(shared, |s| {
+                                s.qr = Some((img.rgba, img.width, img.height));
+                                s.status = "Scan the code with the Discord app on your phone (Settings > Scan QR Code), or use email and password.".to_string();
+                            }),
+                            Err(e) => update(shared, |s| s.status = format!("Could not draw the login code: {e}")),
+                        },
+                        Some(RemoteAuthEvent::UserScanned { username }) => {
+                            update(shared, |s| s.status = format!("{username}: confirm the login on your phone."))
+                        }
+                        Some(RemoteAuthEvent::TokenReceived(token)) => {
+                            save_token(&token);
+                            return token;
+                        }
+                        Some(RemoteAuthEvent::Error(e)) => {
+                            update(shared, |s| s.status = format!("QR login failed: {e}. Trying again..."));
+                            qr_failed = true;
+                        }
+                        Some(RemoteAuthEvent::Cancelled) | None => qr_failed = true,
+                    }
                 }
-                RemoteAuthEvent::TokenReceived(token) => {
-                    save_token(&token);
-                    return token;
-                }
-                RemoteAuthEvent::Cancelled => {
-                    failed = true;
-                    break;
-                }
-                RemoteAuthEvent::Error(e) => {
-                    update(shared, |s| s.status = format!("Login failed: {e}. Trying again..."));
-                    failed = true;
-                    break;
+                action = actions.recv() => {
+                    let Some(action) = action else { return std::future::pending::<String>().await };
+                    match action {
+                        Action::PasswordLogin { login, password } => {
+                            update(shared, |s| {
+                                s.login_stage = LoginStage::Busy;
+                                s.login_message = "Logging in...".to_string();
+                            });
+                            match password_auth::login(&login, &password).await {
+                                Ok(LoginStep::Token(token)) => {
+                                    session.cancel();
+                                    update(shared, |s| {
+                                        s.login_stage = LoginStage::Form;
+                                        s.login_message.clear();
+                                    });
+                                    save_token(&token);
+                                    return token;
+                                }
+                                Ok(LoginStep::SecondStep { ticket: new_ticket, totp, sms, backup: _ }) => {
+                                    ticket = new_ticket;
+                                    update(shared, |s| {
+                                        s.login_stage = LoginStage::Code;
+                                        s.login_has_sms = sms;
+                                        s.login_code_kind = if totp { CodeKind::Totp } else if sms { CodeKind::Sms } else { CodeKind::Backup };
+                                        s.login_message = if totp {
+                                            "Enter the 6-digit code from your authenticator app.".to_string()
+                                        } else if sms {
+                                            "Choose \"Text me a code\", then enter the code Discord sends you.".to_string()
+                                        } else {
+                                            "Enter one of your backup codes.".to_string()
+                                        };
+                                    });
+                                }
+                                Err(message) => update(shared, |s| {
+                                    s.login_stage = LoginStage::Form;
+                                    s.login_message = message;
+                                }),
+                            }
+                        }
+                        Action::LoginCode { code } => {
+                            let kind = shared.lock().map(|s| s.login_code_kind).unwrap_or(CodeKind::Totp);
+                            match password_auth::finish(kind, &ticket, &code).await {
+                                Ok(token) => {
+                                    session.cancel();
+                                    update(shared, |s| {
+                                        s.login_stage = LoginStage::Form;
+                                        s.login_message.clear();
+                                    });
+                                    save_token(&token);
+                                    return token;
+                                }
+                                Err(message) => update(shared, |s| s.login_message = message),
+                            }
+                        }
+                        Action::LoginSendSms => match password_auth::send_sms(&ticket).await {
+                            Ok(phone) => update(shared, |s| {
+                                s.login_code_kind = CodeKind::Sms;
+                                s.login_message = format!("Enter the code sent by SMS to {}.", if phone.is_empty() { "your phone" } else { phone.as_str() });
+                            }),
+                            Err(message) => update(shared, |s| s.login_message = message),
+                        },
+                        Action::LoginUseKind(kind) => update(shared, |s| {
+                            s.login_code_kind = kind;
+                            s.login_message = match kind {
+                                CodeKind::Backup => "Enter one of your backup codes.".to_string(),
+                                _ => "Enter the 6-digit code from your authenticator app.".to_string(),
+                            };
+                        }),
+                        Action::LoginCancel => {
+                            ticket.clear();
+                            update(shared, |s| {
+                                s.login_stage = LoginStage::Form;
+                                s.login_message.clear();
+                            });
+                        }
+                        // Everything else belongs to a logged-in session.
+                        _ => {}
+                    }
                 }
             }
         }
         session.cancel();
-        if failed {
-            tokio::time::sleep(std::time::Duration::from_secs(3)).await;
-        }
+        tokio::time::sleep(std::time::Duration::from_secs(3)).await;
     }
 }
 
@@ -394,6 +518,7 @@ async fn run_session(token: String, shared: &SharedRef, actions: &mut mpsc::Unbo
                             }).await;
                         }
                     }
+                    Action::PasswordLogin { .. } | Action::LoginCode { .. } | Action::LoginSendSms | Action::LoginUseKind(_) | Action::LoginCancel => {}
                     Action::LogOut => {
                         leave_voice(shared, &cmd_tx, &mut mic, &voice_guild).await;
                         let _ = std::fs::remove_file(token_path());
@@ -422,7 +547,7 @@ pub async fn run(shared: SharedRef, mut actions: mpsc::UnboundedReceiver<Action>
     loop {
         let token = match load_token() {
             Some(token) => token,
-            None => log_in(&shared).await,
+            None => log_in(&shared, &mut actions).await,
         };
         run_session(token, &shared, &mut actions).await;
         tokio::time::sleep(std::time::Duration::from_secs(1)).await;

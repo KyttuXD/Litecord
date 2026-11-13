@@ -3482,6 +3482,121 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let cmd_tx_login = Arc::clone(&cmd_tx_store);
     let active_qr_login = Arc::clone(&active_qr_session);
 
+    // Email and password login (src/auth/password_auth.rs). A token it obtains goes down the
+    // same path as one from the QR login.
+    {
+        use crate::auth::password_auth::{self, CodeKind, LoginStep};
+        let ticket_store: Arc<Mutex<String>> = Arc::new(Mutex::new(String::new()));
+
+        fn show_error(app_weak: &slint::Weak<AppWindow>, stage: &'static str, message: String) {
+            let app_weak = app_weak.clone();
+            let _ = slint::invoke_from_event_loop(move || {
+                if let Some(ui) = app_weak.upgrade() {
+                    ui.set_password_login_stage(stage.into());
+                    ui.set_login_alert_is_error(true);
+                    ui.set_login_alert_message(message.into());
+                }
+            });
+        }
+
+        let (app_w, tx, ticket) = (app_weak.clone(), qr_tx.clone(), Arc::clone(&ticket_store));
+        app.on_password_login(move |email: SharedString, password: SharedString| {
+            let (app_w, tx, ticket) = (app_w.clone(), tx.clone(), Arc::clone(&ticket));
+            if let Some(ui) = app_w.upgrade() {
+                ui.set_password_login_stage("busy".into());
+                ui.set_login_alert_message("".into());
+            }
+            let (email, password) = (email.to_string(), password.to_string());
+            tokio::spawn(async move {
+                match password_auth::login(&email, &password).await {
+                    Ok(LoginStep::Token(token)) => {
+                        info!("Logged in with email and password.");
+                        let app_w2 = app_w.clone();
+                        let _ = slint::invoke_from_event_loop(move || {
+                            if let Some(ui) = app_w2.upgrade() {
+                                ui.set_password_login_stage("".into());
+                            }
+                        });
+                        let _ = tx.send(RemoteAuthEvent::TokenReceived(token)).await;
+                    }
+                    Ok(LoginStep::SecondStep { ticket: new_ticket, totp, sms, backup }) => {
+                        *ticket.lock().unwrap() = new_ticket;
+                        let _ = slint::invoke_from_event_loop(move || {
+                            if let Some(ui) = app_w.upgrade() {
+                                let method = if totp { "totp" } else if sms { "sms" } else { "backup" };
+                                ui.set_password_login_method(method.into());
+                                ui.set_password_login_has_sms(sms);
+                                ui.set_password_login_message(match (totp, sms, backup) {
+                                    (true, _, _) => "Enter the 6-digit code from your authenticator app.",
+                                    (false, true, _) => "Press \"Text me a code\", then enter the code Discord sends you.",
+                                    _ => "Enter one of your backup codes.",
+                                }.into());
+                                ui.set_password_login_stage("code".into());
+                            }
+                        });
+                    }
+                    Err(message) => show_error(&app_w, "", message),
+                }
+            });
+        });
+
+        let (app_w, tx, ticket) = (app_weak.clone(), qr_tx.clone(), Arc::clone(&ticket_store));
+        app.on_password_login_code(move |method: SharedString, code: SharedString| {
+            let (app_w, tx) = (app_w.clone(), tx.clone());
+            let ticket = ticket.lock().unwrap().clone();
+            let kind = match method.as_str() {
+                "sms" => CodeKind::Sms,
+                "backup" => CodeKind::Backup,
+                _ => CodeKind::Totp,
+            };
+            let code = code.to_string();
+            tokio::spawn(async move {
+                match password_auth::finish(kind, &ticket, &code).await {
+                    Ok(token) => {
+                        info!("Second login step accepted.");
+                        let app_w2 = app_w.clone();
+                        let _ = slint::invoke_from_event_loop(move || {
+                            if let Some(ui) = app_w2.upgrade() {
+                                ui.set_password_login_stage("".into());
+                                ui.set_login_alert_message("".into());
+                            }
+                        });
+                        let _ = tx.send(RemoteAuthEvent::TokenReceived(token)).await;
+                    }
+                    Err(message) => show_error(&app_w, "code", message),
+                }
+            });
+        });
+
+        let (app_w, ticket) = (app_weak.clone(), Arc::clone(&ticket_store));
+        app.on_password_login_send_sms(move || {
+            let app_w = app_w.clone();
+            let ticket = ticket.lock().unwrap().clone();
+            tokio::spawn(async move {
+                match password_auth::send_sms(&ticket).await {
+                    Ok(phone) => {
+                        let _ = slint::invoke_from_event_loop(move || {
+                            if let Some(ui) = app_w.upgrade() {
+                                ui.set_password_login_method("sms".into());
+                                ui.set_password_login_message(format!("Enter the code sent by SMS to {}.", if phone.is_empty() { "your phone".to_string() } else { phone }).into());
+                            }
+                        });
+                    }
+                    Err(message) => show_error(&app_w, "code", message),
+                }
+            });
+        });
+
+        let (app_w, ticket) = (app_weak.clone(), Arc::clone(&ticket_store));
+        app.on_password_login_cancel(move || {
+            ticket.lock().unwrap().clear();
+            if let Some(ui) = app_w.upgrade() {
+                ui.set_password_login_stage("".into());
+                ui.set_login_alert_message("".into());
+            }
+        });
+    }
+
     app.on_login(move |token: SharedString| {
         let token_str = token.to_string().chars().filter(|c| !c.is_whitespace() && *c != '"' && *c != '\'').collect::<String>();
         info!("Token provided. Validating via HTTP API...");
