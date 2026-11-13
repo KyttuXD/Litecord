@@ -827,6 +827,12 @@ pub async fn fetch_and_populate_dms(
                         .unwrap_or_default()
                 };
 
+                if ch_type == 1 {
+                    if let Some(uid) = dm["recipients"].as_array().and_then(|r| r.first()).and_then(|u| u["id"].as_str()) {
+                        crate::relationships::register_dm_recipient(&ch_id, uid);
+                    }
+                }
+
                 if first_ch_id_opt.is_none() {
                     first_ch_id_opt = Some(ch_id.clone());
                 }

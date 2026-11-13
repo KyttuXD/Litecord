@@ -236,19 +236,6 @@ impl DiscordHttpClient {
         }
     }
 
-    /// Tells Discord the channel was read up to `message_id`, so the unread marker clears
-    /// on the user's other devices too.
-    pub async fn ack_message(&self, channel_id: &str, message_id: &str) -> Result<(), String> {
-        let url = format!("https://discord.com/api/v10/channels/{}/messages/{}/ack", channel_id, message_id);
-        let payload = json!({ "token": null });
-
-        match self.client.post(&url).json(&payload).send().await {
-            Ok(resp) if resp.status().is_success() => Ok(()),
-            Ok(resp) => Err(format!("Status de erro HTTP: {}", resp.status())),
-            Err(e) => Err(format!("Falha ao confirmar leitura via HTTP: {:?}", e)),
-        }
-    }
-
     #[allow(dead_code)]
     pub async fn update_my_voice_state(&self, guild_id: &str, channel_id: &str) -> Result<(), String> {
         let url = format!("https://discord.com/api/v10/guilds/{}/voice-states/@me", guild_id);
@@ -497,6 +484,82 @@ impl DiscordHttpClient {
             }
             Err(e) => {
                 let err = format!("Network failure while changing a pin: {:?}", e);
+                warn!("{}", err);
+                Err(err)
+            }
+        }
+    }
+
+    /// Opens (or fetches) a DM with `recipient_id`; returns the channel id.
+    pub async fn create_dm(&self, recipient_id: &str) -> Result<String, String> {
+        let url = crate::relationships::create_dm_path();
+        let payload = crate::relationships::create_dm_payload(recipient_id);
+        match self.client.post(&url).json(&payload).send().await {
+            Ok(resp) if resp.status().is_success() => {
+                let body: serde_json::Value = resp.json().await.map_err(|e| format!("Invalid DM response: {:?}", e))?;
+                body["id"].as_str().map(|s| s.to_string()).ok_or_else(|| "DM response without id".to_string())
+            }
+            Ok(resp) => {
+                let err = format!("HTTP error creating DM: {}", resp.status());
+                warn!("{}", err);
+                Err(err)
+            }
+            Err(e) => {
+                let err = format!("Network failure creating DM: {:?}", e);
+                warn!("{}", err);
+                Err(err)
+            }
+        }
+    }
+
+    /// Closes a DM channel (it disappears from the sidebar, history is kept).
+    pub async fn close_dm(&self, channel_id: &str) -> Result<(), String> {
+        let url = crate::relationships::close_dm_path(channel_id);
+        match self.client.delete(&url).send().await {
+            Ok(resp) if resp.status().is_success() => Ok(()),
+            Ok(resp) => {
+                let err = format!("HTTP error closing DM: {}", resp.status());
+                warn!("{}", err);
+                Err(err)
+            }
+            Err(e) => {
+                let err = format!("Network failure closing DM: {:?}", e);
+                warn!("{}", err);
+                Err(err)
+            }
+        }
+    }
+
+    pub async fn block_user(&self, user_id: &str) -> Result<(), String> {
+        let url = crate::relationships::relationship_path(user_id);
+        let payload = crate::relationships::block_payload();
+        match self.client.put(&url).json(&payload).send().await {
+            Ok(resp) if resp.status().is_success() => Ok(()),
+            Ok(resp) => {
+                let err = format!("HTTP error blocking user: {}", resp.status());
+                warn!("{}", err);
+                Err(err)
+            }
+            Err(e) => {
+                let err = format!("Network failure blocking user: {:?}", e);
+                warn!("{}", err);
+                Err(err)
+            }
+        }
+    }
+
+    /// Removes any relationship (unblock / remove friend).
+    pub async fn unblock_user(&self, user_id: &str) -> Result<(), String> {
+        let url = crate::relationships::relationship_path(user_id);
+        match self.client.delete(&url).send().await {
+            Ok(resp) if resp.status().is_success() => Ok(()),
+            Ok(resp) => {
+                let err = format!("HTTP error unblocking user: {}", resp.status());
+                warn!("{}", err);
+                Err(err)
+            }
+            Err(e) => {
+                let err = format!("Network failure unblocking user: {:?}", e);
                 warn!("{}", err);
                 Err(err)
             }

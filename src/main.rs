@@ -9,6 +9,7 @@ pub mod gateway;
 pub mod http;
 pub mod http_messaging;
 pub mod file_picker;
+pub mod relationships;
 pub mod channel_permissions;
 pub mod encoder;
 pub mod screen_capture;
@@ -2734,6 +2735,58 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 ui.set_messages(model.into());
                 request_chat_scroll_to_bottom(app_weak_leave.clone());
             }
+        }
+    });
+
+    // DM management: block the other user of the open 1:1 DM, or close the DM.
+    let http_block_dm = Arc::clone(&http_client);
+    let active_ch_block = Arc::clone(&active_channel_id);
+    app.on_block_dm_user(move || {
+        let channel_id = active_ch_block.lock().unwrap().clone();
+        let user_id = match relationships::dm_recipient(&channel_id) {
+            Some(u) => u,
+            None => {
+                warn!("Block: no single recipient known for channel {} (group DM?)", channel_id);
+                return;
+            }
+        };
+        let http_opt = http_block_dm.lock().unwrap().as_ref().cloned();
+        if let Some(http) = http_opt {
+            tokio::spawn(async move {
+                match http.block_user(&user_id).await {
+                    Ok(()) => info!("Blocked user {}", user_id),
+                    Err(e) => warn!("Could not block user {}: {}", user_id, e),
+                }
+            });
+        }
+    });
+
+    let http_close_dm = Arc::clone(&http_client);
+    let active_ch_close = Arc::clone(&active_channel_id);
+    let active_g_close = Arc::clone(&active_guild_id);
+    let guilds_map_close = Arc::clone(&guilds_map);
+    let app_weak_close = app_weak.clone();
+    app.on_close_dm(move || {
+        let channel_id = active_ch_close.lock().unwrap().clone();
+        if channel_id.is_empty() {
+            return;
+        }
+        let http_opt = http_close_dm.lock().unwrap().as_ref().cloned();
+        let app_w = app_weak_close.clone();
+        let guilds_map_in = Arc::clone(&guilds_map_close);
+        let active_g_in = Arc::clone(&active_g_close);
+        let active_c_in = Arc::clone(&active_ch_close);
+        if let Some(http) = http_opt {
+            tokio::spawn(async move {
+                match http.close_dm(&channel_id).await {
+                    Ok(()) => {
+                        info!("Closed DM {}", channel_id);
+                        crate::relationships::unregister_dm_recipient(&channel_id);
+                        fetch_and_populate_dms(&http, app_w, guilds_map_in, active_g_in, active_c_in).await;
+                    }
+                    Err(e) => warn!("Could not close DM {}: {}", channel_id, e),
+                }
+            });
         }
     });
 

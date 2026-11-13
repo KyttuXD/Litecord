@@ -138,6 +138,8 @@ export component AppWindow inherits Window {
     callback toggle_mute();
     callback toggle_deafen();
     callback leave_voice();
+    callback block_dm_user();  // Blocks the other user of the open 1:1 DM
+    callback close_dm();       // Closes the open DM
     callback call_dm();    // Starts a DM voice call (ring + OP4)
     callback hangup_dm();  // Ends a DM voice call (stop-ringing + OP4 null)
     callback accept_call();  // Accepts an incoming DM call
@@ -2790,6 +2792,60 @@ export component AppWindow inherits Window {
                                     clicked => {
                                         root.show_pins_popup = !root.show_pins_popup;
                                         if root.show_pins_popup { root.open_pins(); }
+                                    }
+                                }
+                            }
+
+                            if root.active_guild_id == "@me": VerticalLayout {
+                                alignment: center;
+                                Rectangle {
+                                    height: 32px;
+                                    border-radius: 6px;
+                                    background: dm_block_btn_ta.has-hover ? AppTheme.danger : AppTheme.interactive-muted;
+                                    animate background { duration: 120ms; }
+
+                                    HorizontalLayout {
+                                        padding-left: 10px;
+                                        padding-right: 10px;
+                                        Text {
+                                            text: "Block";
+                                            color: AppTheme.text-on-accent;
+                                            font-size: TypeScale.body;
+                                            font-weight: 600;
+                                            vertical-alignment: center;
+                                        }
+                                    }
+
+                                    dm_block_btn_ta := TouchArea {
+                                        mouse-cursor: pointer;
+                                        clicked => { root.block_dm_user(); }
+                                    }
+                                }
+                            }
+
+                            if root.active_guild_id == "@me": VerticalLayout {
+                                alignment: center;
+                                Rectangle {
+                                    height: 32px;
+                                    border-radius: 6px;
+                                    background: dm_close_btn_ta.pressed ? AppTheme.accent-hover : (dm_close_btn_ta.has-hover ? AppTheme.accent : AppTheme.interactive-muted);
+                                    animate background { duration: 120ms; }
+
+                                    HorizontalLayout {
+                                        padding-left: 10px;
+                                        padding-right: 10px;
+                                        Text {
+                                            text: "Close DM";
+                                            color: AppTheme.text-on-accent;
+                                            font-size: TypeScale.body;
+                                            font-weight: 600;
+                                            vertical-alignment: center;
+                                        }
+                                    }
+
+                                    dm_close_btn_ta := TouchArea {
+                                        mouse-cursor: pointer;
+                                        clicked => { root.close_dm(); }
                                     }
                                 }
                             }
