@@ -42,9 +42,9 @@ fn close_ends_session(code: u16) -> bool {
     matches!(code, 4004 | 4007 | 4009 | 4010 | 4011 | 4012 | 4013 | 4014)
 }
 
-/// Dispatch events this client acts on. The others (presences, typing, reactions, member
-/// updates...: most of what a big account receives) are dropped after reading their
-/// header, without building a JSON tree for their payload.
+/// Dispatch events this client acts on. The others (presences, member updates...: most
+/// of what a big account receives) are dropped after reading their header, without
+/// building a JSON tree for their payload. Typing and reaction events are small.
 const HANDLED_EVENTS: &[&str] = &[
     "READY",
     "READY_SUPPLEMENTAL",
@@ -56,6 +56,10 @@ const HANDLED_EVENTS: &[&str] = &[
     "MESSAGE_CREATE",
     "MESSAGE_UPDATE",
     "MESSAGE_DELETE",
+    "MESSAGE_REACTION_ADD",
+    "MESSAGE_REACTION_REMOVE",
+    "MESSAGE_REACTION_REMOVE_ALL",
+    "TYPING_START",
     "CALL_CREATE",
     "CALL_UPDATE",
     "CALL_DELETE",
@@ -892,6 +896,40 @@ impl GatewayClient {
                     let id = v["d"]["id"].as_str().unwrap_or("").to_string();
                     let channel_id = v["d"]["channel_id"].as_str().unwrap_or("").to_string();
                     let _ = self.event_tx.send(GatewayEvent::MessageDeleted { id, channel_id }).await;
+                }
+                "MESSAGE_REACTION_ADD" | "MESSAGE_REACTION_REMOVE" => {
+                    let d = &v["d"];
+                    let (emoji_key, emoji_label) = crate::http_messaging::reaction_key_and_label(&d["emoji"]);
+                    if !emoji_key.is_empty() {
+                        let _ = self.event_tx.send(GatewayEvent::ReactionChanged {
+                            channel_id: d["channel_id"].as_str().unwrap_or("").to_string(),
+                            message_id: d["message_id"].as_str().unwrap_or("").to_string(),
+                            user_id: d["user_id"].as_str().unwrap_or("").to_string(),
+                            emoji_key,
+                            emoji_label,
+                            added: t == "MESSAGE_REACTION_ADD",
+                        }).await;
+                    }
+                }
+                "MESSAGE_REACTION_REMOVE_ALL" => {
+                    let d = &v["d"];
+                    let _ = self.event_tx.send(GatewayEvent::ReactionsCleared {
+                        channel_id: d["channel_id"].as_str().unwrap_or("").to_string(),
+                        message_id: d["message_id"].as_str().unwrap_or("").to_string(),
+                    }).await;
+                }
+                "TYPING_START" => {
+                    let d = &v["d"];
+                    let name = d["member"]["nick"].as_str()
+                        .or_else(|| d["member"]["user"]["global_name"].as_str())
+                        .or_else(|| d["member"]["user"]["username"].as_str())
+                        .unwrap_or("")
+                        .to_string();
+                    let _ = self.event_tx.send(GatewayEvent::TypingStarted {
+                        channel_id: d["channel_id"].as_str().unwrap_or("").to_string(),
+                        user_id: d["user_id"].as_str().unwrap_or("").to_string(),
+                        name,
+                    }).await;
                 }
                 "CALL_CREATE" | "CALL_UPDATE" => {
                     let channel_id = v["d"]["channel_id"].as_str().unwrap_or("").to_string();

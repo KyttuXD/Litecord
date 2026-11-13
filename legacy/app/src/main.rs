@@ -28,6 +28,36 @@ const INPUT_H: i32 = 40;
 const ROW_H: i32 = 26;
 const LINE_H: i32 = 20;
 const FONT: f32 = 15.0;
+/// Height of the line between the messages and the input.
+const INFO_H: i32 = 22;
+
+/// Reactions offered for a selected message: what the button says, and the emoji it gives.
+/// The built-in font has no emoji pictures, so reactions are shown by these names.
+const QUICK_REACTIONS: [(&str, &str); 4] = [("+1", "\u{1F44D}"), ("<3", "\u{2764}\u{FE0F}"), ("haha", "\u{1F602}"), ("party", "\u{1F389}")];
+
+/// A name the built-in font can draw for a reaction.
+fn emoji_label(label: &str) -> String {
+    let known = [
+        ("\u{1F44D}", "+1"), ("\u{1F44E}", "-1"), ("\u{2764}", "<3"), ("\u{1F602}", "haha"), ("\u{1F389}", "party"),
+        ("\u{1F62E}", "wow"), ("\u{1F622}", "sad"), ("\u{1F525}", "fire"), ("\u{2705}", "ok"), ("\u{1F440}", "eyes"),
+        ("\u{1F64F}", "thanks"), ("\u{1F923}", "lol"), ("\u{1F60D}", "love"), ("\u{1F4AF}", "100"),
+    ];
+    if let Some((_, name)) = known.iter().find(|(emoji, _)| label.starts_with(emoji)) {
+        return name.to_string();
+    }
+    if label.is_ascii() {
+        label.to_string() // a custom emoji, already ":name:"
+    } else {
+        "emoji".to_string()
+    }
+}
+
+/// What Return does with the text in the input.
+enum Compose {
+    Normal,
+    Reply { id: String, author: String },
+    Edit { id: String },
+}
 
 /// The picture the interface is drawn into, with the text rasterizer.
 struct Canvas {
@@ -175,6 +205,13 @@ struct Stage {
     /// (y, channel id, is voice, name).
     channel_rows: Vec<(i32, String, bool, String)>,
     logout_x: i32,
+    /// Message picked with a click, the reply/edit state, and what was drawn last frame for
+    /// clicks: the top of each message line with its message id, and the action words.
+    selected: Option<String>,
+    compose: Compose,
+    message_rows: Vec<(i32, String)>,
+    action_buttons: Vec<(&'static str, i32, i32, i32)>,
+    last_typing_sent: Option<std::time::Instant>,
     /// Login form: the three text fields, which one has the keyboard, and what was drawn
     /// last frame for clicks: fields as (index, x, y, w, h), buttons as (label, x0, x1, y).
     logged_in: bool,
@@ -244,6 +281,11 @@ impl Stage {
             guild_rows: Vec::new(),
             channel_rows: Vec::new(),
             logout_x: i32::MAX,
+            selected: None,
+            compose: Compose::Normal,
+            message_rows: Vec::new(),
+            action_buttons: Vec::new(),
+            last_typing_sent: None,
             logged_in: false,
             login_fields: [String::new(), String::new(), String::new()],
             login_focus: 0,
@@ -382,6 +424,42 @@ impl Stage {
         }
     }
 
+    /// A click in the message pane: an action word of the selected message, or a message.
+    fn click_messages(&mut self, x: i32, y: i32) {
+        self.dirty = true;
+        let action = self.action_buttons.iter().find(|(_, x0, x1, by)| x >= *x0 - 4 && x <= *x1 + 4 && y >= by - 16 && y <= by + 6).map(|b| b.0);
+        if let (Some(action), Some(id)) = (action, self.selected.clone()) {
+            let (channel_id, author, text) = match self.shared.lock() {
+                Ok(s) => match s.messages.iter().find(|m| m.id == id) {
+                    Some(m) => (s.channel_id.clone(), m.author.clone(), m.text.clone()),
+                    None => return,
+                },
+                Err(_) => return,
+            };
+            match action {
+                "Reply" => self.compose = Compose::Reply { id, author },
+                "Edit" => {
+                    self.input = text.trim_end_matches(" (edited)").to_string();
+                    self.compose = Compose::Edit { id };
+                }
+                "Delete" => {
+                    let _ = self.actions.send(Action::Delete { channel_id, message_id: id });
+                }
+                "Close" => {}
+                label => {
+                    if let Some((_, emoji)) = QUICK_REACTIONS.iter().find(|(l, _)| *l == label) {
+                        let _ = self.actions.send(Action::React { channel_id, message_id: id, key: emoji.to_string(), label: emoji.to_string() });
+                    }
+                }
+            }
+            self.selected = None;
+            return;
+        }
+        let hit = self.message_rows.iter().find(|(top, _)| y >= *top && y < *top + LINE_H).map(|(_, id)| id.clone());
+        // A second click on the same message, or a click on empty space, takes the selection away.
+        self.selected = if hit == self.selected { None } else { hit };
+    }
+
     /// What Return and the "Log in" / "Verify" words do.
     fn submit_login(&mut self) {
         let stage = self.shared.lock().map(|s| s.login_stage).unwrap_or(LoginStage::Form);
@@ -509,42 +587,102 @@ impl Stage {
             self.voice_bar = Some((top, (mute_from, mute_to), (leave_from, leave_to)));
         }
 
-        // Messages, newest at the bottom.
+        // Messages, newest at the bottom. One line above the input is kept for the action
+        // bar of a selected message, the reply/edit notice, or who is typing.
         let mx = GUILDS_W + CHANNELS_W;
         let pane_w = w - mx - 24;
-        let bottom = h - INPUT_H - 8;
-        let mut lines: Vec<(String, [u8; 3])> = Vec::new();
-        for message in &state.messages {
-            lines.push((format!("{}   {}", message.author, message.time), ACCENT));
-            for line in self.canvas.wrap(&message.text, FONT, pane_w.max(40)) {
-                lines.push((line, TEXT));
+        let info_y = h - INPUT_H - 12;
+        let bottom = h - INPUT_H - 8 - INFO_H;
+        // (text, colour, index of its message)
+        let mut lines: Vec<(String, [u8; 3], usize)> = Vec::new();
+        for (index, message) in state.messages.iter().enumerate() {
+            if !message.reply_to.is_empty() {
+                lines.push((format!("> {}", message.reply_to), MUTED, index));
             }
-            lines.push((String::new(), TEXT));
+            lines.push((format!("{}   {}", message.author, message.time), ACCENT, index));
+            for line in self.canvas.wrap(&message.text, FONT, pane_w.max(40)) {
+                lines.push((line, TEXT, index));
+            }
+            if !message.reactions.is_empty() {
+                let chips: Vec<String> = message
+                    .reactions
+                    .iter()
+                    .map(|r| format!("[{} {}{}]", emoji_label(&r.label), r.count, if r.me { "*" } else { "" }))
+                    .collect();
+                lines.push((chips.join(" "), MUTED, index));
+            }
+            lines.push((String::new(), TEXT, usize::MAX));
         }
         let visible = ((bottom - TOP_H) / LINE_H).max(1);
         let max_scroll = (lines.len() as i32 - visible).max(0);
         self.message_scroll = self.message_scroll.clamp(0, max_scroll);
         let end = lines.len() as i32 - self.message_scroll;
         let start = (end - visible).max(0);
-        for (row, (line, color)) in lines[start as usize..end as usize].iter().enumerate() {
-            let y = bottom - (end - start - row as i32) * LINE_H + 15;
-            self.canvas.text(mx + 12, y, line, FONT, *color, w - 8);
+        let selected_index = self.selected.as_ref().and_then(|id| state.messages.iter().position(|m| m.id == *id));
+        if self.selected.is_some() && selected_index.is_none() {
+            self.selected = None; // the message is gone
+        }
+        self.message_rows.clear();
+        for (row, (line, color, index)) in lines[start as usize..end as usize].iter().enumerate() {
+            let top = bottom - (end - start - row as i32) * LINE_H;
+            if *index != usize::MAX {
+                if Some(*index) == selected_index {
+                    self.canvas.rect(mx + 4, top, w - mx - 8, LINE_H, PANEL);
+                }
+                self.message_rows.push((top, state.messages[*index].id.clone()));
+            }
+            self.canvas.text(mx + 12, top + 15, line, FONT, *color, w - 8);
         }
         if state.channel_id.is_empty() {
             self.canvas.text(mx + 12, TOP_H + 40, "Choose a server, then a channel.", FONT, MUTED, w - 8);
         }
 
+        // The line above the input.
+        self.action_buttons.clear();
+        if let Some(index) = selected_index {
+            let mine = state.messages[index].mine;
+            let mut x = mx + 12;
+            let mut labels: Vec<&'static str> = vec!["Reply"];
+            labels.extend(QUICK_REACTIONS.iter().map(|(label, _)| *label));
+            if mine {
+                labels.extend(["Edit", "Delete"]);
+            }
+            labels.push("Close");
+            for label in labels {
+                let x1 = self.canvas.text(x, info_y, label, FONT, if label == "Delete" { [0xED, 0x42, 0x45] } else { ACCENT }, w - 8);
+                self.action_buttons.push((label, x, x1, info_y));
+                x = x1 + 18;
+            }
+        } else {
+            let notice = match &self.compose {
+                Compose::Reply { author, .. } => format!("Replying to {author}   (Esc cancels)"),
+                Compose::Edit { .. } => "Editing your message   (Esc cancels)".to_string(),
+                Compose::Normal => {
+                    let names: Vec<&str> = state.typing.iter().map(|(name, _)| name.as_str()).collect();
+                    match names.len() {
+                        0 => String::new(),
+                        1 => format!("{} is typing...", names[0]),
+                        2 | 3 => format!("{} are typing...", names.join(", ")),
+                        _ => "Several people are typing...".to_string(),
+                    }
+                }
+            };
+            self.canvas.text(mx + 12, info_y, &notice, FONT, MUTED, w - 8);
+        }
+
         // Text input.
         self.canvas.rect(mx + 8, h - INPUT_H, w - mx - 16, INPUT_H - 8, INPUT);
         let shown = if self.input.is_empty() && !state.channel_id.is_empty() {
-            ("Type a message and press Return".to_string(), MUTED)
+            ("Type a message and press Return   (/upload /path/to/file sends a file; click a message for more)".to_string(), MUTED)
         } else {
             (format!("{}|", self.input), TEXT)
         };
         // Keep the end of a long line in view.
         let mut text = shown.0;
-        while self.canvas.text_width(&text, FONT) > w - mx - 40 && text.chars().count() > 1 {
-            text.remove(0);
+        if shown.1 == TEXT {
+            while self.canvas.text_width(&text, FONT) > w - mx - 40 && text.chars().count() > 1 {
+                text.remove(0);
+            }
         }
         self.canvas.text(mx + 16, h - INPUT_H + 21, &text, FONT, shown.1, w - 12);
 
@@ -604,9 +742,13 @@ impl Stage {
                     let _ = self.actions.send(Action::JoinVoice { guild_id, channel_id, name });
                 } else {
                     self.message_scroll = 0;
+                    self.selected = None;
+                    self.compose = Compose::Normal;
                     let _ = self.actions.send(Action::SelectChannel { guild_id, channel_id });
                 }
             }
+        } else {
+            self.click_messages(x, y);
         }
     }
 }
@@ -675,6 +817,15 @@ impl EventHandler for Stage {
         }
         if self.logged_in {
             self.input.push(character);
+            // Tell the others, at most every eight seconds (not while editing or typing a command).
+            let due = self.last_typing_sent.map_or(true, |at| at.elapsed().as_secs() >= 8);
+            if due && !self.input.starts_with('/') && !matches!(self.compose, Compose::Edit { .. }) {
+                let channel_id = self.shared.lock().map(|s| s.channel_id.clone()).unwrap_or_default();
+                if !channel_id.is_empty() {
+                    self.last_typing_sent = Some(std::time::Instant::now());
+                    let _ = self.actions.send(Action::Typing { channel_id });
+                }
+            }
         } else {
             self.login_fields[self.login_focus].push(character);
         }
@@ -710,11 +861,31 @@ impl EventHandler for Stage {
                 self.input.pop();
                 self.dirty = true;
             }
+            KeyCode::Escape => {
+                if matches!(self.compose, Compose::Edit { .. }) {
+                    self.input.clear();
+                }
+                self.compose = Compose::Normal;
+                self.selected = None;
+                self.dirty = true;
+            }
             KeyCode::Enter | KeyCode::KpEnter => {
                 let text = self.input.trim().to_string();
                 let channel_id = self.shared.lock().map(|s| s.channel_id.clone()).unwrap_or_default();
                 if !text.is_empty() && !channel_id.is_empty() {
-                    let _ = self.actions.send(Action::Send { channel_id, text });
+                    let reply_to = match &self.compose {
+                        Compose::Reply { id, .. } => Some(id.clone()),
+                        _ => None,
+                    };
+                    if let Some(path) = text.strip_prefix("/upload ") {
+                        let _ = self.actions.send(Action::Upload { channel_id, path: path.trim().to_string(), reply_to });
+                    } else if let Compose::Edit { id } = &self.compose {
+                        let _ = self.actions.send(Action::Edit { channel_id, message_id: id.clone(), text });
+                    } else {
+                        let _ = self.actions.send(Action::Send { channel_id, text, reply_to });
+                    }
+                    self.compose = Compose::Normal;
+                    self.last_typing_sent = None;
                     self.input.clear();
                     self.message_scroll = 0;
                     self.dirty = true;

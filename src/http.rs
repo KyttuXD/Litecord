@@ -4,7 +4,7 @@ use log::{info, warn, error};
 
 #[derive(Clone)]
 pub struct DiscordHttpClient {
-    client: reqwest::Client,
+    pub(crate) client: reqwest::Client,
     #[allow(dead_code)]
     token: String,
 }

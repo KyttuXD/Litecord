@@ -126,6 +126,27 @@ pub enum GatewayEvent {
         id: String,
         channel_id: String,
     },
+    /// Someone added (or took back) a reaction. `emoji_key` / `emoji_label` as in
+    /// `http_messaging::ReactionData`.
+    ReactionChanged {
+        channel_id: String,
+        message_id: String,
+        user_id: String,
+        emoji_key: String,
+        emoji_label: String,
+        added: bool,
+    },
+    /// All reactions of a message were removed.
+    ReactionsCleared {
+        channel_id: String,
+        message_id: String,
+    },
+    /// Someone started typing (Discord repeats this every few seconds while they type).
+    TypingStarted {
+        channel_id: String,
+        user_id: String,
+        name: String,
+    },
     GuildLoaded {
         guild: GuildData,
     },

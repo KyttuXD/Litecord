@@ -8,6 +8,8 @@ use std::sync::{Arc, Mutex};
 use litecord_legacy::audio::engine::{start_mic_capture, MicCapture};
 use litecord_legacy::auth::password_auth::{self, LoginStep};
 pub use litecord_legacy::auth::password_auth::CodeKind;
+pub use litecord_legacy::http_messaging::ReactionData;
+use litecord_legacy::http_messaging::{apply_reaction, reactions_from_message};
 use litecord_legacy::auth::{generate_qr_image, RemoteAuthEvent, RemoteAuthSession};
 use litecord_legacy::gateway;
 use litecord_legacy::gateway::{ChannelData, GatewayClient, GatewayCommand, GatewayEvent, GuildData};
@@ -16,9 +18,15 @@ use serde_json::Value;
 use tokio::sync::mpsc;
 
 pub struct Message {
+    pub id: String,
     pub author: String,
+    /// Written by the logged-in user (so it can be edited and deleted).
+    pub mine: bool,
     pub time: String,
     pub text: String,
+    /// "Name: start of the message" when this is a reply.
+    pub reply_to: String,
+    pub reactions: Vec<ReactionData>,
 }
 
 pub struct Shared {
@@ -38,6 +46,10 @@ pub struct Shared {
     pub guilds: Vec<GuildData>,
     pub channel_id: String,
     pub messages: Vec<Message>,
+    /// Id of the logged-in user.
+    pub my_id: String,
+    /// Who is typing in the open channel, and since when.
+    pub typing: Vec<(String, std::time::Instant)>,
     /// Voice channel joined (empty: none), its name, who is in it, and this user's mute switch.
     pub voice_channel_id: String,
     pub voice_channel_name: String,
@@ -58,7 +70,13 @@ pub type SharedRef = Arc<Mutex<Shared>>;
 
 pub enum Action {
     SelectChannel { guild_id: String, channel_id: String },
-    Send { channel_id: String, text: String },
+    Send { channel_id: String, text: String, reply_to: Option<String> },
+    Edit { channel_id: String, message_id: String, text: String },
+    Delete { channel_id: String, message_id: String },
+    /// Adds the reaction, or takes it back when the user already gave it.
+    React { channel_id: String, message_id: String, key: String, label: String },
+    Typing { channel_id: String },
+    Upload { channel_id: String, path: String, reply_to: Option<String> },
     PasswordLogin { login: String, password: String },
     LoginCode { code: String },
     LoginSendSms,
@@ -85,6 +103,8 @@ impl Default for Shared {
             guilds: Vec::new(),
             channel_id: String::new(),
             messages: Vec::new(),
+            my_id: String::new(),
+            typing: Vec::new(),
             voice_channel_id: String::new(),
             voice_channel_name: String::new(),
             voice_connected: false,
@@ -154,7 +174,16 @@ fn local_time(timestamp: &str) -> String {
         .unwrap_or_default()
 }
 
-fn message_from_rest(m: &Value) -> Message {
+fn short(text: &str, max: usize) -> String {
+    let line = text.lines().next().unwrap_or("");
+    if line.chars().count() > max {
+        format!("{}...", line.chars().take(max).collect::<String>())
+    } else {
+        line.to_string()
+    }
+}
+
+fn message_from_rest(m: &Value, my_id: &str) -> Message {
     let mut text = m["content"].as_str().unwrap_or("").to_string();
     let attachments = m["attachments"].as_array().map(|a| a.len()).unwrap_or(0);
     let embeds = m["embeds"].as_array().map(|a| a.len()).unwrap_or(0);
@@ -167,10 +196,23 @@ fn message_from_rest(m: &Value) -> Message {
     if text.is_empty() && embeds > 0 {
         text.push_str("[embed]");
     }
+    if m["edited_timestamp"].is_string() {
+        text.push_str(" (edited)");
+    }
+    let replied = &m["referenced_message"];
+    let reply_to = if replied.is_object() {
+        format!("{}: {}", display_name(&replied["author"]), short(replied["content"].as_str().unwrap_or(""), 60))
+    } else {
+        String::new()
+    };
     Message {
+        id: m["id"].as_str().unwrap_or("").to_string(),
         author: display_name(&m["author"]),
+        mine: !my_id.is_empty() && m["author"]["id"].as_str() == Some(my_id),
         time: local_time(m["timestamp"].as_str().unwrap_or("")),
         text,
+        reply_to,
+        reactions: reactions_from_message(m),
     }
 }
 
@@ -364,6 +406,7 @@ async fn run_session(token: String, shared: &SharedRef, actions: &mut mpsc::Unbo
     match http.get_current_user().await {
         Ok(user) => update(shared, |s| {
             s.logged_in = true;
+            s.my_id = user["id"].as_str().unwrap_or("").to_string();
             s.user = display_name(&user);
             s.status = "Connecting...".to_string();
         }),
@@ -398,6 +441,11 @@ async fn run_session(token: String, shared: &SharedRef, actions: &mut mpsc::Unbo
                     Ok(s) => (s.voice_channel_id.clone(), s.voice_connected, s.voice_users.clone()),
                     Err(_) => continue,
                 };
+                // Typing notices last about ten seconds unless repeated.
+                let stale = shared.lock().map(|s| s.typing.iter().any(|(_, at)| at.elapsed().as_secs() >= 10)).unwrap_or(false);
+                if stale {
+                    update(shared, |s| s.typing.retain(|(_, at)| at.elapsed().as_secs() < 10));
+                }
                 if channel_id.is_empty() {
                     continue;
                 }
@@ -423,20 +471,67 @@ async fn run_session(token: String, shared: &SharedRef, actions: &mut mpsc::Unbo
                             None => s.guilds.push(guild),
                         }
                     }),
-                    GatewayEvent::MessageCreated { channel_id, author, created_at, content, attachments, .. } => {
+                    GatewayEvent::MessageCreated { id, channel_id, author, author_id, created_at, content, attachments, reply_author, reply_content, is_self, .. } => {
+                        let open = shared.lock().map(|s| s.channel_id == channel_id).unwrap_or(false);
+                        if !open {
+                            continue;
+                        }
                         update(shared, |s| {
-                            if s.channel_id == channel_id {
-                                let mut text = content;
-                                if !attachments.is_empty() {
-                                    if !text.is_empty() {
-                                        text.push('\n');
-                                    }
-                                    text.push_str(&format!("[{} attachment(s)]", attachments.len()));
+                            let mut text = content;
+                            if !attachments.is_empty() {
+                                if !text.is_empty() {
+                                    text.push('\n');
                                 }
-                                s.messages.push(Message { author, time: created_at, text });
+                                text.push_str(&format!("[{} attachment(s)]", attachments.len()));
                             }
+                            let reply_to = if reply_author.is_empty() { String::new() } else { format!("{}: {}", reply_author, short(&reply_content, 60)) };
+                            let mine = is_self || (!s.my_id.is_empty() && author_id == s.my_id);
+                            // Whoever sent a message is no longer typing.
+                            s.typing.retain(|(name, _)| *name != author);
+                            s.messages.push(Message { id: id.clone(), author, mine, time: created_at, text, reply_to, reactions: Vec::new() });
+                        });
+                        // The channel is on screen: tell Discord it was read.
+                        let (http_ack, channel_ack) = (Arc::clone(&http), channel_id.clone());
+                        tokio::spawn(async move {
+                            let _ = http_ack.ack_message(&channel_ack, &id).await;
                         });
                     }
+                    GatewayEvent::MessageUpdated { id, channel_id, content, .. } => update(shared, |s| {
+                        if s.channel_id == channel_id {
+                            if let Some(message) = s.messages.iter_mut().find(|m| m.id == id) {
+                                // Embed-only updates come with an empty text: keep what is shown.
+                                if !content.is_empty() {
+                                    message.text = format!("{content} (edited)");
+                                }
+                            }
+                        }
+                    }),
+                    GatewayEvent::MessageDeleted { id, channel_id } => update(shared, |s| {
+                        if s.channel_id == channel_id {
+                            s.messages.retain(|m| m.id != id);
+                        }
+                    }),
+                    GatewayEvent::ReactionChanged { channel_id, message_id, user_id, emoji_key, emoji_label, added } => update(shared, |s| {
+                        if s.channel_id == channel_id {
+                            let by_me = !s.my_id.is_empty() && user_id == s.my_id;
+                            if let Some(message) = s.messages.iter_mut().find(|m| m.id == message_id) {
+                                apply_reaction(&mut message.reactions, &emoji_key, &emoji_label, added, by_me);
+                            }
+                        }
+                    }),
+                    GatewayEvent::ReactionsCleared { channel_id, message_id } => update(shared, |s| {
+                        if s.channel_id == channel_id {
+                            if let Some(message) = s.messages.iter_mut().find(|m| m.id == message_id) {
+                                message.reactions.clear();
+                            }
+                        }
+                    }),
+                    GatewayEvent::TypingStarted { channel_id, user_id, name } => update(shared, |s| {
+                        if s.channel_id == channel_id && user_id != s.my_id && !name.is_empty() {
+                            s.typing.retain(|(n, _)| *n != name);
+                            s.typing.push((name, std::time::Instant::now()));
+                        }
+                    }),
                     _ => {}
                 }
             }
@@ -447,6 +542,7 @@ async fn run_session(token: String, shared: &SharedRef, actions: &mut mpsc::Unbo
                         update(shared, |s| {
                             s.channel_id = channel_id.clone();
                             s.messages.clear();
+                            s.typing.clear();
                             s.status = "Loading messages...".to_string();
                         });
                         if guild_id != "@me" {
@@ -456,6 +552,7 @@ async fn run_session(token: String, shared: &SharedRef, actions: &mut mpsc::Unbo
                             }).await;
                         }
                         let result = http.get_channel_messages(&channel_id).await;
+                        let mut newest = String::new();
                         update(shared, |s| {
                             if s.channel_id != channel_id {
                                 return;
@@ -463,17 +560,60 @@ async fn run_session(token: String, shared: &SharedRef, actions: &mut mpsc::Unbo
                             match result {
                                 Ok(list) => {
                                     // Discord answers newest first.
-                                    s.messages = list.iter().rev().map(message_from_rest).collect();
+                                    let my_id = s.my_id.clone();
+                                    s.messages = list.iter().rev().map(|m| message_from_rest(m, &my_id)).collect();
                                     s.status = String::new();
+                                    newest = s.messages.last().map(|m| m.id.clone()).unwrap_or_default();
                                 }
                                 Err(e) => s.status = format!("Could not load this channel: {e}"),
                             }
                         });
-                    }
-                    Action::Send { channel_id, text } => {
-                        if let Err(e) = http.send_message(&channel_id, &text).await {
-                            update(shared, |s| s.status = format!("Message not sent: {e}"));
+                        // Opening a channel marks it as read.
+                        if !newest.is_empty() {
+                            let _ = http.ack_message(&channel_id, &newest).await;
                         }
+                    }
+                    Action::Send { channel_id, text, reply_to } => {
+                        if let Err(e) = http.send_message_with(&channel_id, &text, reply_to.as_deref()).await {
+                            update(shared, |s| s.status = e);
+                        }
+                    }
+                    Action::Edit { channel_id, message_id, text } => {
+                        if let Err(e) = http.edit_message(&channel_id, &message_id, &text).await {
+                            update(shared, |s| s.status = e);
+                        }
+                    }
+                    Action::Delete { channel_id, message_id } => {
+                        if let Err(e) = http.delete_message(&channel_id, &message_id).await {
+                            update(shared, |s| s.status = e);
+                        }
+                    }
+                    Action::React { channel_id, message_id, key, label: _ } => {
+                        let mine = shared.lock().ok().and_then(|s| {
+                            s.messages.iter().find(|m| m.id == message_id).map(|m| m.reactions.iter().any(|r| r.key == key && r.me))
+                        }).unwrap_or(false);
+                        let result = if mine {
+                            http.remove_reaction(&channel_id, &message_id, &key).await
+                        } else {
+                            http.add_reaction(&channel_id, &message_id, &key).await
+                        };
+                        if let Err(e) = result {
+                            update(shared, |s| s.status = e);
+                        }
+                    }
+                    Action::Typing { channel_id } => {
+                        let http_typing = Arc::clone(&http);
+                        tokio::spawn(async move {
+                            let _ = http_typing.trigger_typing(&channel_id).await;
+                        });
+                    }
+                    Action::Upload { channel_id, path, reply_to } => {
+                        update(shared, |s| s.status = format!("Sending {path}..."));
+                        let result = match tokio::fs::read(&path).await {
+                            Ok(bytes) => http.send_file(&channel_id, "", reply_to.as_deref(), &path, bytes).await,
+                            Err(e) => Err(format!("File not sent: cannot read {path} ({e})")),
+                        };
+                        update(shared, |s| s.status = result.err().unwrap_or_default());
                     }
                     Action::JoinVoice { guild_id, channel_id, name } => {
                         if mic.is_none() {
