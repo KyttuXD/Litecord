@@ -452,9 +452,13 @@ pub fn start_audio_loopback_tx(
             // Opus encoder of the stream audio, alive only while someone watches.
             let mut opus: Option<super::stream_audio::StreamAudioEncoder> = None;
             let pcm_buffer: Arc<Mutex<Vec<i16>>> = Arc::new(Mutex::new(Vec::with_capacity(4800)));
+            // The three below are only written by the Windows and Linux capture code.
+            #[cfg_attr(not(any(target_os = "windows", target_os = "linux")), allow(unused_variables, unused_mut))]
             let pcm_buffer_cb = Arc::clone(&pcm_buffer);
 
+            #[cfg_attr(not(any(target_os = "windows", target_os = "linux")), allow(unused_variables, unused_mut))]
             let mut active_sample_rate: u32 = 48000;
+            #[cfg_attr(not(any(target_os = "windows", target_os = "linux")), allow(unused_variables, unused_mut))]
             let mut target_chunk_samples: usize = 480;
 
             #[cfg(target_os = "linux")]
