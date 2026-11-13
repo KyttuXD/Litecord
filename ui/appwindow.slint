@@ -417,6 +417,7 @@ export component AppWindow inherits Window {
     in-out property <image> user_avatar_img;
     in-out property <string> user_avatar_url: "";
     in-out property <string> active_channel_name: Tr.select_channel;
+    in-out property <string> active_channel_topic: "";
     in-out property <string> active_channel_id: "";
     in-out property <string> active_guild_name: "";
     in-out property <string> active_guild_id: "";
@@ -2734,7 +2735,18 @@ export component AppWindow inherits Window {
                                 vertical-alignment: center;
                             }
 
-                            Rectangle { horizontal-stretch: 1; }
+                            // Channel topic: one line, elided
+                            if root.active_channel_topic != "" && root.active_guild_id != "@me": Text {
+                                text: root.active_channel_topic;
+                                color: AppTheme.text-subtle;
+                                font-size: TypeScale.body;
+                                vertical-alignment: center;
+                                overflow: elide;
+                                horizontal-stretch: 1;
+                                min-width: 0px;
+                            }
+
+                            Rectangle { horizontal-stretch: (root.active_channel_topic != "" && root.active_guild_id != "@me") ? 0 : 1; }
 
                             // DM Voice Call Button — visible only in Direct Messages
                             if root.active_guild_id == "@me": VerticalLayout {

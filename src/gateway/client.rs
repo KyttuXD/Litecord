@@ -50,6 +50,10 @@ const HANDLED_EVENTS: &[&str] = &[
     "READY_SUPPLEMENTAL",
     "RESUMED",
     "GUILD_CREATE",
+    "GUILD_DELETE",
+    "CHANNEL_CREATE",
+    "CHANNEL_UPDATE",
+    "CHANNEL_DELETE",
     "GUILD_MEMBERS_CHUNK",
     "VOICE_STATE_UPDATE",
     "VOICE_SERVER_UPDATE",
@@ -1024,6 +1028,7 @@ impl GatewayClient {
                                     is_category: ch_type == 4,
                                     parent_id: ch["parent_id"].as_str().map(|s| s.to_string()),
                                     position: ch["position"].as_i64().unwrap_or(0),
+                                    topic: ch["topic"].as_str().filter(|t| !t.trim().is_empty()).map(|t| t.trim().to_string()),
                                 });
                             }
                         }
@@ -1103,6 +1108,32 @@ impl GatewayClient {
 
                     let guild = GuildData { id, name, channels };
                     let _ = self.event_tx.send(GatewayEvent::GuildLoaded { guild }).await;
+                }
+                "GUILD_DELETE" => {
+                    // `unavailable` is an outage, not a removal.
+                    let guild_id = v["d"]["id"].as_str().unwrap_or("").to_string();
+                    if !guild_id.is_empty() && v["d"]["unavailable"].as_bool() != Some(true) {
+                        let _ = self.event_tx.send(GatewayEvent::GuildDeleted { guild_id }).await;
+                    }
+                }
+                "CHANNEL_CREATE" | "CHANNEL_UPDATE" => {
+                    let guild_id = v["d"]["guild_id"].as_str().unwrap_or("").to_string();
+                    if let (false, Some(channel)) = (guild_id.is_empty(), super::channel_events::parse_channel(&v["d"])) {
+                        let raw = v["d"].clone();
+                        let event = if t == "CHANNEL_CREATE" {
+                            GatewayEvent::ChannelCreated { guild_id, channel, raw }
+                        } else {
+                            GatewayEvent::ChannelUpdated { guild_id, channel, raw }
+                        };
+                        let _ = self.event_tx.send(event).await;
+                    }
+                }
+                "CHANNEL_DELETE" => {
+                    let guild_id = v["d"]["guild_id"].as_str().unwrap_or("").to_string();
+                    let channel_id = v["d"]["id"].as_str().unwrap_or("").to_string();
+                    if !guild_id.is_empty() && !channel_id.is_empty() {
+                        let _ = self.event_tx.send(GatewayEvent::ChannelDeleted { guild_id, channel_id }).await;
+                    }
                 }
                 _ => {}
             }

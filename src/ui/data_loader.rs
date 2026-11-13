@@ -284,6 +284,7 @@ pub async fn fetch_and_populate_channels(
                     ui.set_messages(slint::ModelRc::default());
                     ui.set_active_channel_id("".into());
                     ui.set_active_channel_name(crate::utils::i18n_ui::ui_text().perms_unavailable.into());
+                    ui.set_active_channel_topic("".into());
                     ui.set_titlebar_error(crate::utils::i18n_ui::ui_text().perms_failed.into());
                 }
             });
@@ -303,6 +304,7 @@ pub async fn fetch_and_populate_channels(
         ch_type: u64,
         parent_id: Option<String>,
         position: i64,
+        topic: Option<String>,
     }
 
     let mut raw_cats: Vec<RawChan> = Vec::new();
@@ -314,6 +316,7 @@ pub async fn fetch_and_populate_channels(
         let ch_type = ch["type"].as_u64().unwrap_or(0);
         let parent_id = ch["parent_id"].as_str().map(|s| s.to_string());
         let position = ch["position"].as_i64().unwrap_or(0);
+        let topic = ch["topic"].as_str().map(str::trim).filter(|t| !t.is_empty()).map(str::to_string);
 
         if ch_id.is_empty() { continue; }
 
@@ -324,6 +327,7 @@ pub async fn fetch_and_populate_channels(
                 ch_type,
                 parent_id: None,
                 position,
+                topic: None,
             });
         } else if ch_type == 0 || ch_type == 2 || ch_type == 5 || ch_type == 13 || ch_type == 15 {
             match permissions.can_view(&ch) {
@@ -340,6 +344,7 @@ pub async fn fetch_and_populate_channels(
                 ch_type,
                 parent_id,
                 position,
+                topic,
             });
         }
     }
@@ -398,6 +403,7 @@ pub async fn fetch_and_populate_channels(
             is_category: false,
             parent_id: None,
             position: ch.position,
+            topic: ch.topic,
         });
     }
 
@@ -413,6 +419,7 @@ pub async fn fetch_and_populate_channels(
             is_category: true,
             parent_id: None,
             position: cat.position,
+            topic: None,
         });
 
         for ch in children {
@@ -424,6 +431,7 @@ pub async fn fetch_and_populate_channels(
                 is_category: false,
                 parent_id: Some(cat_id.clone()),
                 position: ch.position,
+                topic: ch.topic,
             });
         }
     }
@@ -465,6 +473,7 @@ pub async fn fetch_and_populate_channels(
         let _ = slint::invoke_from_event_loop(move || {
             if let Some(ui) = app_w_none.upgrade() {
                 ui.set_active_channel_name(crate::utils::i18n_ui::ui_text().no_text_channel.into());
+                ui.set_active_channel_topic("".into());
                 ui.set_active_channel_id("".into());
                 let empty_msgs = vec![ChatMessage {
                     id: "".into(),
@@ -512,6 +521,147 @@ fn show_guild_channels(app_weak: &slint::Weak<AppWindow>, active_guild_id: &Arc<
     });
 }
 
+/// A channel change received from the gateway.
+pub enum ChannelChange {
+    Created(ChannelData, serde_json::Value),
+    Updated(ChannelData, serde_json::Value),
+    Deleted(String),
+}
+
+/// Applies a live channel change to the cached list of `guild_id` and, when that server is
+/// open, to the sidebar and chat header. A server whose list is not loaded yet is left alone:
+/// opening it fetches the channels fresh.
+pub async fn apply_live_channel_change(
+    http: Option<DiscordHttpClient>,
+    app_weak: slint::Weak<AppWindow>,
+    guilds_map: Arc<Mutex<HashMap<String, GuildData>>>,
+    active_guild_id: Arc<Mutex<String>>,
+    active_channel_id: Arc<Mutex<String>>,
+    guild_id: String,
+    change: ChannelChange,
+) {
+    use crate::gateway::channel_events::{apply_channel_create, apply_channel_delete, apply_channel_update};
+    // None while the server's permissions are not cached: the channel is then not judged.
+    let visible = |ch: &ChannelData, raw: &serde_json::Value| -> Option<bool> {
+        if ch.is_category {
+            return None;
+        }
+        crate::channel_permissions::cached(&guild_id).and_then(|p| p.can_view(raw).ok())
+    };
+    let (channels, changed_id) = {
+        let Ok(mut map) = guilds_map.lock() else { return };
+        let Some(guild) = map.get_mut(&guild_id) else { return };
+        if guild.channels.is_empty() {
+            return;
+        }
+        let (changed, id) = match change {
+            ChannelChange::Created(ch, raw) => {
+                let id = ch.id.clone();
+                let seen = visible(&ch, &raw) == Some(true);
+                (seen && apply_channel_create(&mut guild.channels, ch), id)
+            }
+            ChannelChange::Updated(ch, raw) => {
+                let id = ch.id.clone();
+                let changed = match visible(&ch, &raw) {
+                    Some(false) => apply_channel_delete(&mut guild.channels, &id),
+                    Some(true) => {
+                        let again = ch.clone();
+                        apply_channel_update(&mut guild.channels, ch) || apply_channel_create(&mut guild.channels, again)
+                    }
+                    None => apply_channel_update(&mut guild.channels, ch),
+                };
+                (changed, id)
+            }
+            ChannelChange::Deleted(id) => (apply_channel_delete(&mut guild.channels, &id), id),
+        };
+        if !changed {
+            return;
+        }
+        (guild.channels.clone(), id)
+    };
+    gateway::channel_names::remember(&guild_id, channels.iter().map(|c| (c.id.as_str(), c.name.as_str())));
+
+    if *active_guild_id.lock().unwrap() != guild_id {
+        return;
+    }
+    show_guild_channels(&app_weak, &active_guild_id, &guild_id, &channels);
+
+    if *active_channel_id.lock().unwrap() != changed_id {
+        return;
+    }
+    match channels.iter().find(|c| c.id == changed_id) {
+        Some(ch) if !ch.is_voice && !ch.is_category => {
+            let (app_w, name, topic) = (app_weak.clone(), ch.name.clone(), ch.topic.clone().unwrap_or_default());
+            let _ = slint::invoke_from_event_loop(move || {
+                if let Some(ui) = app_w.upgrade() {
+                    ui.set_active_channel_name(crate::utils::styled_text::plain_display_name(name.trim_start_matches('#').trim()).as_ref().into());
+                    ui.set_active_channel_topic(topic.into());
+                }
+            });
+        }
+        Some(_) => {}
+        None => {
+            // The open channel was deleted or is no longer visible: move to the first readable one.
+            let opened = match http {
+                Some(ref http) => open_first_readable_channel(http, &app_weak, &active_guild_id, &active_channel_id, &guild_id, &channels).await,
+                None => None,
+            };
+            if opened.is_none() && *active_guild_id.lock().unwrap() == guild_id {
+                *active_channel_id.lock().unwrap() = String::new();
+                let _ = slint::invoke_from_event_loop(move || {
+                    if let Some(ui) = app_weak.upgrade() {
+                        ui.set_active_channel_name(crate::utils::i18n_ui::ui_text().no_text_channel.into());
+                        ui.set_active_channel_topic("".into());
+                        ui.set_active_channel_id("".into());
+                        ui.set_messages(slint::ModelRc::default());
+                    }
+                });
+            }
+        }
+    }
+}
+
+/// The account left or lost a server: forgets it and, when it was open, empties the view.
+pub fn remove_guild(
+    app_weak: slint::Weak<AppWindow>,
+    guilds_map: &Arc<Mutex<HashMap<String, GuildData>>>,
+    active_guild_id: &Arc<Mutex<String>>,
+    active_channel_id: &Arc<Mutex<String>>,
+    guild_id: &str,
+) {
+    if let Ok(mut map) = guilds_map.lock() {
+        map.remove(guild_id);
+    }
+    crate::channel_permissions::forget(guild_id);
+    let was_open = {
+        let mut active = active_guild_id.lock().unwrap();
+        let open = *active == guild_id;
+        if open {
+            *active = String::new();
+        }
+        open
+    };
+    if was_open {
+        *active_channel_id.lock().unwrap() = String::new();
+    }
+    let gid = guild_id.to_string();
+    let _ = slint::invoke_from_event_loop(move || {
+        if let Some(ui) = app_weak.upgrade() {
+            let remaining: Vec<GuildItem> = ui.get_guilds().iter().filter(|g| g.id != gid.as_str()).collect();
+            ui.set_guilds(std::rc::Rc::new(slint::VecModel::from(remaining)).into());
+            if was_open {
+                ui.set_channels(slint::ModelRc::default());
+                ui.set_messages(slint::ModelRc::default());
+                ui.set_active_channel_id("".into());
+                ui.set_active_channel_name(crate::utils::i18n_ui::ui_text().no_text_channel.into());
+                ui.set_active_channel_topic("".into());
+                ui.set_active_guild_id("".into());
+                ui.set_active_guild_name("".into());
+            }
+        }
+    });
+}
+
 /// Opens the first text channel of `channels` the account can read. Stops when the user
 /// moves to another server or opens a channel meanwhile. Returns the channel now open.
 async fn open_first_readable_channel(
@@ -535,10 +685,11 @@ async fn open_first_readable_channel(
             return (!current.is_empty()).then_some(current);
         }
         if readable {
-            let (app_w, name) = (app_weak.clone(), text_ch.name.clone());
+            let (app_w, name, topic) = (app_weak.clone(), text_ch.name.clone(), text_ch.topic.clone().unwrap_or_default());
             let _ = slint::invoke_from_event_loop(move || {
                 if let Some(ui) = app_w.upgrade() {
                     ui.set_active_channel_name(crate::utils::styled_text::plain_display_name(name.trim_start_matches('#').trim()).as_ref().into());
+                    ui.set_active_channel_topic(topic.into());
                     ui.set_active_channel_id(ch_id.into());
                 }
             });
@@ -683,6 +834,7 @@ pub async fn fetch_and_populate_dms(
                     is_category: false,
                     parent_id: None,
                     position: 0,
+                    topic: None,
                 });
 
                 let unread_dm_count = crate::ui::helpers::get_dm_unread(&ch_id);
@@ -751,6 +903,7 @@ pub async fn fetch_and_populate_dms(
                     if let Some(ui) = app_w_name.upgrade() {
                         ui.set_active_channel_id(cid_top.into());
                         ui.set_active_channel_name(crate::utils::styled_text::plain_display_name(&target_name).as_ref().into());
+                        ui.set_active_channel_topic("".into());
                         let model = std::rc::Rc::new(slint::VecModel::from(ui_channels_updated));
                         ui.set_channels(model.into());
                         ui.set_total_dm_unread_count(remaining);
@@ -782,6 +935,7 @@ pub async fn prefetch_dms_cache(
                 is_category: false,
                 parent_id: None,
                 position: 0,
+                topic: None,
             });
         }
         if let Ok(mut gmap) = guilds_map.lock() {

@@ -2693,6 +2693,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 let clean_name = crate::utils::styled_text::plain_display_name(tch.name.trim_start_matches('#').trim()).into_owned();
                 let tch_id = tch.id.clone();
                 ui.set_active_channel_name(clean_name.into());
+                ui.set_active_channel_topic(tch.topic.clone().unwrap_or_default().into());
                 ui.set_active_channel_id(tch_id.clone().into());
 
                 let http_opt = http_client_leave.lock().unwrap().as_ref().cloned();
@@ -4191,6 +4192,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             } else {
                 let clean_name = crate::utils::styled_text::plain_display_name(ch_name.trim_start_matches('#').trim());
                 ui.set_active_channel_name(clean_name.as_ref().into());
+                ui.set_active_channel_topic(target_channel.as_ref().and_then(|c| c.topic.clone()).unwrap_or_default().into());
                 ui.set_active_channel_id(ch_id.clone().into());
                 ui.set_is_voice_focused(false);
                 request_chat_scroll_to_bottom(app_weak_chan_select.clone());
@@ -4891,6 +4893,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let active_guild_gw_events = Arc::clone(&active_guild_id);
     let active_channel_gw_events = Arc::clone(&active_channel_id);
     let guilds_map_gw_events = Arc::clone(&guilds_map);
+    let http_client_gw_events = Arc::clone(&http_client);
     let sm_gw = Arc::clone(&screen_manager);
     let typing_gw = Arc::clone(&typing_now);
     let active_mic_disc = Arc::clone(&active_mic_stream);
@@ -5268,6 +5271,32 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }
                 GatewayEvent::GuildLoaded { .. } => {
                     // Handled via HTTP REST instant fetching
+                }
+                GatewayEvent::ChannelCreated { guild_id, channel, raw } => {
+                    let http_opt = http_client_gw_events.lock().unwrap().as_ref().cloned();
+                    tokio::spawn(crate::ui::data_loader::apply_live_channel_change(
+                        http_opt, app_weak_inner, guilds_map_inner, active_guild_inner, active_channel_inner,
+                        guild_id, crate::ui::data_loader::ChannelChange::Created(channel, raw),
+                    ));
+                }
+                GatewayEvent::ChannelUpdated { guild_id, channel, raw } => {
+                    let http_opt = http_client_gw_events.lock().unwrap().as_ref().cloned();
+                    tokio::spawn(crate::ui::data_loader::apply_live_channel_change(
+                        http_opt, app_weak_inner, guilds_map_inner, active_guild_inner, active_channel_inner,
+                        guild_id, crate::ui::data_loader::ChannelChange::Updated(channel, raw),
+                    ));
+                }
+                GatewayEvent::ChannelDeleted { guild_id, channel_id } => {
+                    let http_opt = http_client_gw_events.lock().unwrap().as_ref().cloned();
+                    tokio::spawn(crate::ui::data_loader::apply_live_channel_change(
+                        http_opt, app_weak_inner, guilds_map_inner, active_guild_inner, active_channel_inner,
+                        guild_id, crate::ui::data_loader::ChannelChange::Deleted(channel_id),
+                    ));
+                }
+                GatewayEvent::GuildDeleted { guild_id } => {
+                    crate::ui::data_loader::remove_guild(
+                        app_weak_inner, &guilds_map_inner, &active_guild_inner, &active_channel_inner, &guild_id,
+                    );
                 }
                 GatewayEvent::IncomingCall { channel_id, caller_name } => {
                     // Incoming DM call — show notification panel with the friend's name

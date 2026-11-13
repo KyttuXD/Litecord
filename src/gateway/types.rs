@@ -63,6 +63,7 @@ pub struct ChannelData {
     pub is_category: bool,
     pub parent_id: Option<String>,
     pub position: i64,
+    pub topic: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -153,6 +154,25 @@ pub enum GatewayEvent {
     },
     GuildLoaded {
         guild: GuildData,
+    },
+    /// CHANNEL_CREATE / CHANNEL_UPDATE of a server channel; `raw` is the payload, to check visibility.
+    ChannelCreated {
+        guild_id: String,
+        channel: ChannelData,
+        raw: serde_json::Value,
+    },
+    ChannelUpdated {
+        guild_id: String,
+        channel: ChannelData,
+        raw: serde_json::Value,
+    },
+    ChannelDeleted {
+        guild_id: String,
+        channel_id: String,
+    },
+    /// The account left, was removed from or lost a server (not an outage).
+    GuildDeleted {
+        guild_id: String,
     },
     IncomingCall {
         channel_id: String,
