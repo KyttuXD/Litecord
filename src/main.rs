@@ -273,8 +273,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 window.with_winit_window(|w| {
                     // Maximizing also happens outside the title bar button (Win+Up, snapping).
                     if let Some(ui) = main_weak.upgrade() {
-                        if ui.get_is_maximized() != w.is_maximized() {
-                            ui.set_is_maximized(w.is_maximized());
+                        let maximized = crate::ui::window_place::is_maximized(w);
+                        if ui.get_is_maximized() != maximized {
+                            ui.set_is_maximized(maximized);
                         }
                     }
                 });

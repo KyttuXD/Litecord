@@ -88,11 +88,49 @@ pub fn save_now() {
     }
 }
 
+/// `Window::is_maximized`, safe to call from the window event handler on macOS.
+///
+/// On macOS winit answers it for a frameless window by switching the window's style mask
+/// to resizable and back. Each switch makes AppKit rebuild the window frame and send new
+/// move/resize events, and the handler asks again: an endless loop that kept one CPU core
+/// at about 75% (measured on a 2015 MacBook Air). So there the real question is asked only
+/// when the window's place or size changed, and at most a few times per second; in between
+/// the last answer is returned.
+pub fn is_maximized(window: &winit::window::Window) -> bool {
+    #[cfg(target_os = "macos")]
+    {
+        use std::cell::Cell;
+        use std::time::{Duration, Instant};
+        type Seen = (Option<(i32, i32)>, (u32, u32), bool, Instant);
+        thread_local! {
+            static LAST_ANSWER: Cell<Option<Seen>> = const { Cell::new(None) };
+        }
+        let place = window.outer_position().ok().map(|p| (p.x, p.y));
+        let size = window.outer_size();
+        let size = (size.width, size.height);
+        if let Some((seen_place, seen_size, answer, at)) = LAST_ANSWER.with(|l| l.get()) {
+            if (seen_place == place && seen_size == size) || at.elapsed() < Duration::from_millis(250) {
+                return answer;
+            }
+        }
+        // Recorded before asking, so the events the question itself causes get the old answer.
+        let previous = LAST_ANSWER.with(|l| l.get()).map(|s| s.2).unwrap_or(false);
+        LAST_ANSWER.with(|l| l.set(Some((place, size, previous, Instant::now()))));
+        let answer = window.is_maximized();
+        LAST_ANSWER.with(|l| l.set(Some((place, size, answer, Instant::now()))));
+        answer
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        window.is_maximized()
+    }
+}
+
 fn current(window: &winit::window::Window, previous: Option<WindowGeometry>) -> Option<WindowGeometry> {
     if window.is_minimized().unwrap_or(false) {
         return None;
     }
-    let maximized = window.is_maximized();
+    let maximized = is_maximized(window);
     if maximized {
         // Keep the size and place the window goes back to when restored.
         let (width, height) = previous.map_or(DEFAULT_SIZE, |g| (g.width, g.height));
