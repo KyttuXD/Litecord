@@ -3268,7 +3268,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         if let Some(ui) = app_weak_logout.upgrade() {
             ui.set_chat_input_text("".into());
             ui.set_compose_notice("".into());
+            ui.set_user_status("online".into());
         }
+        gateway::presence::set_my_status("online");
         // 1. Remove saved vault file so all saved tokens are wiped
         delete_secure_token();
 
@@ -3353,7 +3355,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         if let Some(ui) = app_weak_switch.upgrade() {
             ui.set_chat_input_text("".into());
             ui.set_compose_notice("".into());
+            ui.set_user_status("online".into());
         }
+        gateway::presence::set_my_status("online");
         let acc_id_str = account_id.to_string();
         info!("🔄 Switching to the account with identifier {}...", acc_id_str);
 

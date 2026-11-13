@@ -5,6 +5,8 @@ pub mod types;
 pub mod formatting;
 #[path = "../../../src/gateway/channel_names.rs"]
 pub mod channel_names;
+#[path = "../../../src/gateway/presence.rs"]
+pub mod presence;
 #[path = "../../../src/gateway/client.rs"]
 pub mod client;
 
