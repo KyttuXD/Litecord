@@ -217,7 +217,9 @@ jobs:
       MACOSX_DEPLOYMENT_TARGET: "10.12"
       # The camera library names an AVFoundation symbol that only macOS 14 has; with a
       # normal link the app does not even start on older systems (seen on macOS 12).
-      RUSTFLAGS: "-C link-arg=-Wl,-weak_framework,AVFoundation"
+      # -A linker_messages: OpenH264's assembly objects carry no platform mark, and the
+      # linker says so once per object. Nothing to fix on this side.
+      RUSTFLAGS: "-C link-arg=-Wl,-weak_framework,AVFoundation -A linker_messages"
     steps:
       - uses: actions/checkout@v4
         with:

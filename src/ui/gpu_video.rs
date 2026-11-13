@@ -62,6 +62,7 @@ pub fn viewport_changed(app: &AppWindow, popout: &PopoutStreamWindow, x: f32, y:
 }
 
 /// The popout changed size (physical pixels): the video fills it.
+#[cfg_attr(not(windows), allow(unused_variables))] // the size is used by the Windows GPU path only
 pub fn popout_resized(app: &AppWindow, popout: &PopoutStreamWindow, w: u32, h: u32) {
     #[cfg(windows)]
     LAYERS.with(|l| {

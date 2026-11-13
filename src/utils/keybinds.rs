@@ -258,6 +258,8 @@ pub fn uses_mouse_button(cfg: &KeybindsConfig) -> bool {
 
 pub struct KeybindManager {
     config: Arc<Mutex<KeybindsConfig>>,
+    // Read by the Windows and Linux key listeners only.
+    #[cfg_attr(not(any(target_os = "windows", target_os = "linux")), allow(dead_code))]
     is_running: Arc<AtomicBool>,
 }
 

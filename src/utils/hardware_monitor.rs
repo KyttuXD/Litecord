@@ -20,6 +20,7 @@ pub struct HardwareMetrics {
     pub gpu_percent: u8,
 }
 
+#[cfg_attr(not(windows), allow(unused_variables))] // the taskbar title is set on Windows only
 pub fn start_hardware_monitor_loop(
     app_weak: slint::Weak<AppWindow>,
     hwnd_store: std::sync::Arc<std::sync::Mutex<Option<isize>>>,

@@ -440,9 +440,7 @@ pub fn start_audio_loopback_tx(
             }
             // macOS and other systems: no way to capture what the system plays (no
             // loopback device), so the stream goes out with picture only.
-            #[cfg(not(any(target_os = "windows", target_os = "linux")))]
-            {
-                let _ = (&is_running, &channel_id, &my_user_id);
+            if cfg!(not(any(target_os = "windows", target_os = "linux"))) {
                 info!("🔇 [LOOPBACK TX] Captura do áudio do sistema não disponível nesta plataforma: transmissão sem áudio.");
                 return;
             }

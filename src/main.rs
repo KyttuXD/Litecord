@@ -111,6 +111,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .num_threads(4)
         .thread_name(|i| format!("rayon-worker-{}", i))
         .start_handler(|i| {
+            let _ = i; // the thread name below is set on Windows only
             #[cfg(target_os = "windows")]
             crate::cpu_profiler::set_current_thread_name(&format!("rayon-worker-{}", i));
         })
@@ -313,8 +314,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     use i_slint_backend_winit::WinitWindowAccessor;
     let app_weak_init = app_weak.clone();
+    // Only the Windows code below reads this.
+    #[cfg_attr(not(target_os = "windows"), allow(unused_variables))]
     let hwnd_store_init = Arc::clone(&hwnd_store);
     let popout_weak_init = popout_weak.clone();
+    // Only the Windows code below reads this.
+    #[cfg_attr(not(target_os = "windows"), allow(unused_variables))]
     let pop_hwnd_c = Arc::clone(&popout_hwnd_store);
     let _ = slint::invoke_from_event_loop(move || {
         if let Some(ui) = app_weak_init.upgrade() {
@@ -625,6 +630,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
     let pop_autohide_open = std::rc::Rc::clone(&pop_autohide);
     let pop_w_cb = popout_weak.clone();
+    // Only the Windows code below reads this.
+    #[cfg_attr(not(target_os = "windows"), allow(unused_variables))]
     let pop_hwnd_cb = Arc::clone(&popout_hwnd_store);
     let app_weak_pop = app_weak.clone();
     app.on_popout_stream_window(move |uid_str: slint::SharedString, uname_str: slint::SharedString| {
@@ -684,6 +691,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     });
 
     let pop_w_pin = popout_weak.clone();
+    // Only the Windows code below reads this.
+    #[cfg_attr(not(target_os = "windows"), allow(unused_variables))]
     let pop_hwnd_pin = Arc::clone(&popout_hwnd_store);
     if let Some(pop_win) = popout_weak.upgrade() {
         pop_win.on_toggle_pin(move || {
@@ -757,6 +766,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     let pop_w_min = popout_weak.clone();
+    // Only the Windows code below reads this.
+    #[cfg_attr(not(target_os = "windows"), allow(unused_variables))]
     let pop_hwnd_min = Arc::clone(&popout_hwnd_store);
     if let Some(pop_win) = popout_weak.upgrade() {
         pop_win.on_minimize_popout(move || {
@@ -814,6 +825,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Intangible / Click-Through Ghost Mode Callbacks
     let pop_w_ghost = popout_weak.clone();
+    // Only the Windows code below reads this.
+    #[cfg_attr(not(target_os = "windows"), allow(unused_variables))]
     let pop_hwnd_ghost = Arc::clone(&popout_hwnd_store);
     let app_weak_ghost = app_weak.clone();
 
@@ -864,6 +877,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     });
 
     let pop_w_close = popout_weak.clone();
+    // Only the Windows code below reads this.
+    #[cfg_attr(not(target_os = "windows"), allow(unused_variables))]
     let pop_hwnd_close = Arc::clone(&popout_hwnd_store);
     let app_weak_pop_close = app_weak.clone();
     if let Some(pop_win) = popout_weak.upgrade() {
@@ -920,6 +935,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let sm_clone = Arc::clone(&screen_manager);
     let app_weak_ss = app_weak.clone();
     let pop_w_ss = popout_weak.clone();
+    // Only the Windows code below reads this.
+    #[cfg_attr(not(target_os = "windows"), allow(unused_variables))]
     let pop_hwnd_ss = Arc::clone(&popout_hwnd_store);
     let hidden_streams: Arc<std::sync::Mutex<std::collections::HashSet<String>>> = Arc::new(std::sync::Mutex::new(std::collections::HashSet::new()));
 
@@ -1288,6 +1305,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     });
 
+    // Only the Windows code below reads this.
+    #[cfg_attr(not(target_os = "windows"), allow(unused_variables))]
     let app_weak_browser = app_weak.clone();
     app.on_launch_stream_browser(move || {
         info!("🌐 Abrindo navegador em modo de transmissão (sem travas DRM)...");
@@ -1468,6 +1487,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let app_weak_unhide = app_weak.clone();
     let hidden_streams_unhide = Arc::clone(&hidden_streams);
     let pop_w_unhide = popout_weak.clone();
+    // Only the Windows code below reads this.
+    #[cfg_attr(not(target_os = "windows"), allow(unused_variables))]
     let pop_hwnd_unhide = Arc::clone(&popout_hwnd_store);
     app.on_unhide_stream(move |uid_str: SharedString| {
         let uid = uid_str.to_string();
@@ -2703,7 +2724,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         // ── Passo 3: Async — REST ring + OP4 VoiceStateUpdate ──
         let http_opt = http_call_dm.lock().unwrap().as_ref().cloned();
-        let app_w = app_weak_call.clone();
         let ch_id = channel_id.clone();
         let cmd_tx_for_ring = Arc::clone(&cmd_tx_call);
         tokio::spawn(async move {

@@ -389,6 +389,7 @@ pub fn list_screens() -> Vec<MonitorItemInfo> {
 
 #[cfg(not(windows))]
 pub fn list_capturable_windows() -> Vec<CapturableWindowItem> {
+    #[cfg_attr(not(target_os = "linux"), allow(unused_mut))]
     let mut windows = Vec::new();
     #[cfg(target_os = "linux")]
     {
@@ -403,6 +404,7 @@ pub fn list_capturable_windows() -> Vec<CapturableWindowItem> {
 }
 
 #[cfg(not(windows))]
+#[cfg_attr(not(target_os = "linux"), allow(unused_variables))]
 pub fn capture_screen_rgb(_target_hwnd: isize, target_w: u32, target_h: u32, target_fps: u64, out_bgra: &mut Vec<u8>) -> Option<(u128, u128)> {
     #[cfg(target_os = "linux")]
     {

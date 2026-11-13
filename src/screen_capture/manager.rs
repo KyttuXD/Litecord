@@ -341,6 +341,7 @@ impl ScreenCaptureManager {
                 });
 
                 let (tx_frame, rx_frame) = std::sync::mpsc::sync_channel::<(Vec<u8>, u32, u32, u128, u128)>(6);
+                #[cfg_attr(not(windows), allow(unused_variables))] // the Windows capture path recycles buffers
                 let (tx_recycle, rx_recycle) = std::sync::mpsc::sync_channel::<Vec<u8>>(6);
                 let is_running_cap = Arc::clone(&is_running);
 
