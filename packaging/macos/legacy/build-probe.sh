@@ -25,6 +25,8 @@ export LR_MACOS_LEGACY=1
 # and on OS X 10.6 that wake-up never arrives (a tokio program hung in kevent on a Mac Pro 3,1).
 # With this switch mio uses a pipe instead, which every system has.
 export RUSTFLAGS="-L native=$SUPPORT -C link-arg=-lMacportsLegacySystem.B -C link-arg=-Wl,-flat_namespace --cfg mio_unsupported_force_waker_pipe"
+# The voice crates in the form Rust 1.77 can build (only the legacy edition uses them).
+if [ "$CRATE" = app ]; then python3 "$ROOT/legacy/vendor/prepare.py"; fi
 cd "$ROOT/legacy/$CRATE"
 # Cargo 1.77 drives the build: a newer Cargo passes switches this compiler does not know.
 rustup run 1.77.0 cargo build --locked --release --target x86_64-apple-darwin

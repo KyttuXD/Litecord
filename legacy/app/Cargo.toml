@@ -26,9 +26,21 @@ futures-util = "0.3"
 rsa = { version = "0.9", features = ["sha2"] }
 rand = "0.8"
 qrcode = { version = "0.14", default-features = false }
+# Voice: Litecord's src/gateway/voice.rs and src/audio, with the DAVE and Opus crates in the
+# patched form legacy/vendor/prepare.py produces (run it before building).
+davey = { path = "../vendor/davey" }
+opus-rs = { path = "../vendor/opus-rs" }
+aes-gcm = "0.10"
+cpal = "0.15"
+nnnoiseless = { version = "0.5", default-features = false }
 # 0.9.4+ uses a function Rust 1.77 does not have.
 fontdue = "=0.9.3"
 miniquad = { git = "https://github.com/KyttuXD/TheLastRoute", rev = "7d2bc5aedebec634ebb4a7f081972b4fe1e53820" }
+
+[patch.crates-io]
+openmls = { path = "../vendor/openmls" }
+rand_core = { path = "../vendor/rand_core" }
+hpke-rs-libcrux = { path = "../vendor/hpke-rs-libcrux-stub" }
 
 [[bin]]
 name = "litecord-legacy"

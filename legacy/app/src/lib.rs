@@ -2,6 +2,7 @@
 //! stand-ins for the parts of the app the legacy edition does not have.
 #![allow(dead_code, unused_imports, ambiguous_glob_reexports)]
 
+pub mod audio;
 pub mod auth;
 pub mod gateway;
 pub mod utils;

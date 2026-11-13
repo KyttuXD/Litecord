@@ -1,0 +1,12 @@
+# Empty stand-in. hpke-rs has an optional `hpke-rs-libcrux` backend that the legacy edition
+# never enables, but Cargo 1.77 still downloads its dependencies, and one of them is an
+# edition-2024 crate it cannot read. Patching the backend with this removes that chain.
+[package]
+name = "hpke-rs-libcrux"
+version = "0.6.1"
+edition = "2021"
+publish = false
+
+[features]
+std = []
+deterministic-prng = []

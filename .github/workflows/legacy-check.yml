@@ -1,0 +1,37 @@
+name: Legacy edition check (Rust 1.77)
+
+# Type-checks legacy/app, which compiles Litecord's own network and voice code, with the
+# Rust version old OS X is limited to. Fast (Linux, no packaging): the real old-Mac build is
+# macos-legacy.yml and the nightly.
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - "legacy/**"
+      - ".github/workflows/legacy-check.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    name: cargo check with Rust 1.77
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends pkg-config libasound2-dev
+
+      - name: Rust 1.77
+        run: rustup toolchain install 1.77.0 --profile minimal --no-self-update
+
+      - name: Fetch and patch the voice crates
+        run: python3 legacy/vendor/prepare.py
+
+      - name: Check
+        working-directory: legacy/app
+        run: cargo +1.77.0 check --locked --color never

@@ -1,4 +1,4 @@
-//! Litecord's gateway code, compiled from the main source tree (voice is not included yet).
+//! Litecord's gateway code, compiled from the main source tree .
 #[path = "../../../src/gateway/types.rs"]
 pub mod types;
 #[path = "../../../src/gateway/formatting.rs"]
@@ -8,9 +8,10 @@ pub mod channel_names;
 #[path = "../../../src/gateway/client.rs"]
 pub mod client;
 
-#[path = "gateway_voice.rs"]
+#[path = "../../../src/gateway/voice.rs"]
 pub mod voice;
 
 pub use client::*;
 pub use formatting::*;
 pub use types::*;
+pub use voice::*;

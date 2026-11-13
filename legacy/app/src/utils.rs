@@ -7,6 +7,12 @@ pub mod network_settings;
 pub mod styled_text;
 pub use network_settings::*;
 
+#[path = "../../../src/utils/video_settings.rs"]
+pub mod video_settings;
+#[path = "../../../src/utils/timer_resolution.rs"]
+pub mod timer_resolution;
+#[path = "../../../src/utils/test_hooks.rs"]
+pub mod test_hooks;
+
 pub mod i18n;
 pub mod i18n_ui;
-pub mod test_hooks;
