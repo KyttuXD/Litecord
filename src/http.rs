@@ -274,6 +274,22 @@ impl DiscordHttpClient {
         resp.json::<serde_json::Value>().await.map_err(|e| format!("JSON: {:?}", e))
     }
 
+    /// PATCH /users/@me/settings so the chosen status survives and syncs to other clients.
+    pub async fn set_user_status(&self, status: &str) -> Result<(), String> {
+        let url = "https://discord.com/api/v10/users/@me/settings";
+        let body = json!({ "status": crate::gateway::presence::normalize_status(status) });
+        match self.client.patch(url).json(&body).send().await {
+            Ok(resp) => {
+                if resp.status().is_success() {
+                    Ok(())
+                } else {
+                    Err(format!("Status HTTP {}", resp.status()))
+                }
+            }
+            Err(e) => Err(format!("Erro HTTP: {:?}", e)),
+        }
+    }
+
     pub async fn get_user_profile(&self, user_id: &str) -> Result<serde_json::Value, String> {
         let url = format!("https://discord.com/api/v10/users/{}", user_id);
         match self.client.get(&url).send().await {

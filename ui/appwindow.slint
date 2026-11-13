@@ -433,6 +433,8 @@ export component AppWindow inherits Window {
     in-out property <string> incoming_call_caller_name: "";
     in-out property <int> total_dm_unread_count: 0;
     in-out property <bool> show_user_menu: false;
+    in-out property <string> user_status: "online";
+    callback set_user_status(string /* online | idle | dnd | invisible */);
     in-out property <[AccountItem]> saved_accounts: [];
     in-out property <string> login_alert_message: "";
     in-out property <bool> login_alert_is_error: true;
@@ -1419,6 +1421,8 @@ export component AppWindow inherits Window {
                 user_avatar_initials: root.user_avatar_initials;
                 user_avatar_has_image: root.user_avatar_has_image;
                 user_avatar_img: root.user_avatar_img;
+                user_status: root.user_status;
+                set_status(status) => { root.set_user_status(status); }
                 active_channel_id <=> root.active_channel_id;
                 select_channel(id) => { root.select_channel(id); }
                 toggle_category(id) => { root.toggle_category(id); }

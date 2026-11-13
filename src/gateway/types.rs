@@ -176,6 +176,10 @@ pub enum GatewayCommand {
         guild_id: String,
         channel_ids: Vec<String>,
     },
+    /// Op 3: the user picked a new presence status.
+    UpdatePresence {
+        status: String,
+    },
 }
 
 #[derive(Serialize, Deserialize)]

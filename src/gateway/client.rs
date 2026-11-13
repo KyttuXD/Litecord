@@ -299,6 +299,13 @@ impl GatewayClient {
                         }
                     }
                     GatewayCommand::SubscribeGuild { .. } => {}
+                    GatewayCommand::UpdatePresence { status } => {
+                        let payload = super::presence::build_presence_payload(&status);
+                        info!("Sending OP 3 presence update to the Gateway: {}", payload);
+                        if let Some(tx) = client_cmd.ws_tx.lock().await.as_ref() {
+                            let _ = tx.send(Message::Text(payload.to_string().into())).await;
+                        }
+                    }
                 }
             }
         });
@@ -405,7 +412,7 @@ impl GatewayClient {
                                                     "capabilities": 16381,
                                                     "properties": crate::utils::client_identity::properties(),
                                                     "presence": {
-                                                        "status": "online",
+                                                        "status": super::presence::get_my_status(),
                                                         "since": 0,
                                                         "activities": [],
                                                         "afk": false

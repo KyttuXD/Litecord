@@ -2054,6 +2054,29 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     });
 
+    // Own presence: remember it for the next IDENTIFY, send op 3 and sync the account setting.
+    let app_weak_status = app_weak.clone();
+    let http_client_status = Arc::clone(&http_client);
+    let cmd_tx_status = Arc::clone(&cmd_tx_store);
+    app.on_set_user_status(move |status| {
+        let status = gateway::presence::normalize_status(status.as_str()).to_string();
+        gateway::presence::set_my_status(&status);
+        if let Some(ui) = app_weak_status.upgrade() {
+            ui.set_user_status(status.clone().into());
+        }
+        if let Some(tx) = cmd_tx_status.lock().unwrap().as_ref() {
+            let _ = tx.try_send(GatewayCommand::UpdatePresence { status: status.clone() });
+        }
+        let http_opt = http_client_status.lock().unwrap().clone();
+        if let Some(http) = http_opt {
+            tokio::spawn(async move {
+                if let Err(e) = http.set_user_status(&status).await {
+                    warn!("Could not save the status in the account settings: {}", e);
+                }
+            });
+        }
+    });
+
     // Voice & Audio Settings Callbacks
     let app_weak_open_settings = app_weak.clone();
     let selected_input_open = Arc::clone(&selected_input);
