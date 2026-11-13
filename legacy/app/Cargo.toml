@@ -1,0 +1,38 @@
+# Litecord legacy edition for old Intel Macs (OS X 10.5 - 10.11): docs/MACOS_LEGACY.md.
+# Its own workspace: the main Cargo.toml and Cargo.lock are never touched. It compiles
+# Litecord's own network code straight from ../../src (see src/lib.rs) with dependency
+# versions the Rust 1.77 compiler of old OS X can build, and rustls instead of the system TLS.
+[package]
+name = "litecord-legacy"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.77"
+publish = false
+
+[workspace]
+
+[dependencies]
+slint = { path = "../slint-shim" }
+tokio = { version = "1", features = ["full"] }
+tokio-tungstenite = { version = "0.26", features = ["rustls-tls-webpki-roots"] }
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls-webpki-roots", "blocking", "socks", "http2", "charset"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+chrono = "0.4"
+base64 = "0.23"
+log = { version = "0.4", features = ["std"] }
+futures-util = "0.3"
+rsa = { version = "0.9", features = ["sha2"] }
+rand = "0.8"
+qrcode = { version = "0.14", default-features = false }
+# 0.9.4+ uses a function Rust 1.77 does not have.
+fontdue = "=0.9.3"
+miniquad = { git = "https://github.com/KyttuXD/TheLastRoute", rev = "7d2bc5aedebec634ebb4a7f081972b4fe1e53820" }
+
+[[bin]]
+name = "litecord-legacy"
+path = "src/main.rs"
+
+[profile.release]
+opt-level = 2
+debug = 1

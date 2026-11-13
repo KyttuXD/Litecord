@@ -1,7 +1,7 @@
 name: macOS Legacy (OS X 10.5 - 10.11) experiments
 
 # Manual only. Builds legacy/probe with the MacPorts Rust 1.77 compiler for old Intel
-# Macs (docs/MACOS_LEGACY.md). The result is a test program, not Litecord itself.
+# Macs (docs/MACOS_LEGACY.md): two test programs and the legacy edition (legacy/app).
 
 on:
   workflow_dispatch:
@@ -11,7 +11,7 @@ permissions:
 
 jobs:
   probe:
-    name: Legacy probe (Rust runtime, TLS, audio)
+    name: Legacy builds (probes and legacy edition)
     runs-on: macos-15-intel
     steps:
       - uses: actions/checkout@v4
@@ -29,6 +29,10 @@ jobs:
 
       - name: Build the window test for OS X 10.5+
         run: bash packaging/macos/legacy/build-probe.sh "$RUNNER_TEMP/legacy-rust" window-probe
+
+      # Litecord's own network code with a small CPU-drawn window: text chat, no voice yet.
+      - name: Build the legacy edition for OS X 10.5+
+        run: bash packaging/macos/legacy/build-probe.sh "$RUNNER_TEMP/legacy-rust" app
 
       # The runner is a current macOS: this only shows the program is sound, not that 10.6 runs it.
       - name: Run the probe on the build host

@@ -1,0 +1,12 @@
+# Stand-in for the `slint` crate in the legacy (old Mac) build: Litecord's network code
+# names a few Slint types (the QR picture), and the real Slint needs a newer Rust than the
+# 1.77 compiler old OS X has. Only what that code touches exists here.
+[package]
+name = "slint"
+version = "0.0.0-legacy-shim"
+edition = "2021"
+rust-version = "1.77"
+publish = false
+
+[lib]
+path = "src/lib.rs"
