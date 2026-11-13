@@ -86,6 +86,7 @@ def manifest(root, extra_changes=()):
     text = text.replace('edition = "2024"', 'edition = "2021"')
     text = re.sub(r'(?m)^rust-version = .*\n', "", text)
     text = re.sub(r'(?ms)^\[\[(bench|example|test)\]\]\n.*?(?=^\[|\Z)', "", text)
+    text = re.sub(r'(?m)^auto(lib|bins|examples|tests|benches) = .*\n', "", text)  # keys Cargo 1.77 does not know
     for pattern, replacement in extra_changes:
         text, count = re.subn(pattern, replacement, text)
         if count == 0:
@@ -180,6 +181,16 @@ def patch_rand_core(root):
     ])
 
 
+def quiet(root):
+    """These are other people's crates in a rewritten spelling: their warnings (extra
+    parentheses from the rewrites, lints newer compilers dropped) are not ours to act on."""
+    path = os.path.join(root, "src", "lib.rs")
+    with open(path, encoding="utf-8") as handle:
+        text = handle.read()
+    with open(path, "w", encoding="utf-8") as handle:
+        handle.write("#![allow(warnings)]\n" + text)
+
+
 PATCHES = {"opus-rs": patch_opus, "davey": patch_davey, "openmls": patch_openmls, "rand_core": patch_rand_core}
 
 
@@ -192,6 +203,7 @@ def main():
             continue
         root = fetch(name, version, sha256)
         PATCHES[name](root)
+        quiet(root)
         print(f"{name} {version}: fetched and patched")
 
 
