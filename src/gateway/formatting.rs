@@ -29,6 +29,71 @@ pub fn clean_discord_whitespace(input: &str) -> String {
 /// Converts raw Discord Markdown syntax into clean readable plain text.
 /// Applied in the correct order so that code blocks are parsed first (immune
 /// to inner formatting) and inline formatting runs last.
+/// Names of the users that messages have mentioned, by user id. Filled from each message's
+/// `mentions` array just before it is formatted, so `<@id>` can show `@Name`.
+static MENTION_NAMES: std::sync::OnceLock<std::sync::Mutex<std::collections::HashMap<String, String>>> = std::sync::OnceLock::new();
+const MENTION_NAMES_LIMIT: usize = 5000;
+
+fn mention_names() -> &'static std::sync::Mutex<std::collections::HashMap<String, String>> {
+    MENTION_NAMES.get_or_init(Default::default)
+}
+
+/// The name to show for a mentioned user: server nickname, then display name, then username.
+pub fn mention_display_name(user: &Value) -> Option<String> {
+    let pick = |v: &Value| v.as_str().map(str::trim).filter(|s| !s.is_empty()).map(str::to_string);
+    pick(&user["member"]["nick"]).or_else(|| pick(&user["global_name"])).or_else(|| pick(&user["username"]))
+}
+
+/// Remembers the names in a message's `mentions` array (and its replied-to message's).
+pub fn register_mentions(m: &Value) {
+    let mut found: Vec<(String, String)> = Vec::new();
+    for source in [m, &m["referenced_message"]] {
+        if let Some(list) = source["mentions"].as_array() {
+            for user in list {
+                if let (Some(id), Some(name)) = (user["id"].as_str(), mention_display_name(user)) {
+                    found.push((id.to_string(), name));
+                }
+            }
+        }
+    }
+    if found.is_empty() {
+        return;
+    }
+    if let Ok(mut map) = mention_names().lock() {
+        if map.len() > MENTION_NAMES_LIMIT {
+            map.clear();
+        }
+        map.extend(found);
+    }
+}
+
+fn mention_label(id: &str) -> String {
+    let id = id.trim();
+    match mention_names().lock().ok().and_then(|map| map.get(id).cloned()) {
+        Some(name) => format!("@{name}"),
+        None => "@user".to_string(),
+    }
+}
+
+/// Whether a message pings this user: a direct mention, @everyone/@here, or one of their roles.
+pub fn is_mentioned(m: &Value, own_id: &str, own_roles: &[String]) -> bool {
+    if own_id.is_empty() {
+        return false;
+    }
+    if m["mention_everyone"].as_bool().unwrap_or(false) {
+        return true;
+    }
+    if m["mentions"].as_array().is_some_and(|l| l.iter().any(|u| u["id"].as_str() == Some(own_id))) {
+        return true;
+    }
+    m["mention_roles"].as_array().is_some_and(|l| l.iter().filter_map(|r| r.as_str()).any(|r| own_roles.iter().any(|o| o == r)))
+}
+
+/// Whether a message was edited (`edited_timestamp` is a string, not null).
+pub fn is_edited(m: &Value) -> bool {
+    m["edited_timestamp"].as_str().is_some_and(|t| !t.is_empty())
+}
+
 pub fn parse_discord_markdown(input: &str) -> String {
     let cleaned_input = clean_discord_whitespace(input);
     let mut output_lines: Vec<String> = Vec::new();
@@ -210,12 +275,12 @@ fn apply_inline_markdown(input: &str) -> String {
     });
 
     // <@!USER_ID> and <@USER_ID> — user mentions
-    s = regex_replace_simple(&s, "<@!", ">", |_inner| "@user".to_string());
+    s = regex_replace_simple(&s, "<@!", ">", |inner| mention_label(inner));
     s = regex_replace_simple(&s, "<@&", ">", |_inner| "@role".to_string());
     s = regex_replace_simple(&s, "<@", ">", |inner| {
         // Only if purely numeric (user ID)
         if inner.chars().all(|c| c.is_ascii_digit()) {
-            "@user".to_string()
+            mention_label(inner)
         } else {
             format!("<@{}>", inner)
         }
@@ -1059,6 +1124,7 @@ pub fn extract_commands_from_text(text: &str, commands: &mut Vec<String>) {
 }
 
 pub fn format_discord_message_parts(m: &Value) -> (String, Vec<String>, Vec<MessageLineData>, String, Vec<MessageLineData>, String, String, String, String, String, String, Vec<LinkData>, Vec<MessageButtonData>, Vec<MessageAttachmentData>) {
+    register_mentions(m);
     let mut content_parts: Vec<String> = Vec::new();
     let mut commands: Vec<String> = Vec::new();
     let mut content_lines: Vec<MessageLineData> = Vec::new();
@@ -1626,6 +1692,30 @@ mod tests {
     fn styled_letters_in_messages_and_authors_become_plain() {
         assert_eq!(clean_discord_whitespace("➡ 𝗙𝘂𝗹𝗹 𝗪𝗮𝗹𝗸𝘁𝗵𝗿𝗼𝘂𝗴𝗵 ━━ 𝟭𝟬𝟬%"), "➡ Full Walkthrough ━━ 100%");
         assert_eq!(format_discord_author(&json!({ "author": { "global_name": "𝗗𝗿𝗼𝗽𝗶𝗻𝘅" } })), "Dropinx");
+    }
+
+    #[test]
+    fn mentions_show_names_with_nickname_first() {
+        register_mentions(&serde_json::json!({"mentions":[
+            {"id":"9001","username":"user_a","global_name":"Ana","member":{"nick":"Annie"}},
+            {"id":"9002","username":"user_b","global_name":"Bo"},
+            {"id":"9003","username":"user_c","global_name":null}]}));
+        assert_eq!(parse_discord_markdown("hi <@9001> and <@!9002> and <@9003>"), "hi @Annie and @Bo and @user_c");
+        assert_eq!(parse_discord_markdown("<@424242>"), "@user");
+        assert_eq!(parse_discord_markdown("<@&5>"), "@role");
+    }
+
+    #[test]
+    fn mention_detection_and_edited_flag() {
+        let m = serde_json::json!({"mentions":[{"id":"1"}],"mention_roles":["r9"],"mention_everyone":false,"edited_timestamp":"2026-01-01T00:00:00+00:00"});
+        assert!(is_mentioned(&m, "1", &[]));
+        assert!(is_mentioned(&m, "2", &["r9".to_string()]));
+        assert!(!is_mentioned(&m, "2", &["r1".to_string()]));
+        assert!(!is_mentioned(&m, "", &[]));
+        assert!(is_mentioned(&serde_json::json!({"mention_everyone":true}), "2", &[]));
+        assert!(is_edited(&m));
+        assert!(!is_edited(&serde_json::json!({"edited_timestamp":null})));
+        assert!(!is_edited(&serde_json::json!({})));
     }
 
     #[test]
