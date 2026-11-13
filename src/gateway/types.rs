@@ -677,3 +677,67 @@ pub fn get_user_name(user_id: u64) -> String {
     }
 }
 
+/// Mute/deafen state of someone in a voice channel, self-set or applied by the server.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct VoiceFlags {
+    pub muted: bool,
+    pub deafened: bool,
+}
+
+/// Reads `self_mute`, `self_deaf`, `mute` and `deaf` from a voice state object.
+/// Missing or non-boolean fields count as false.
+pub fn parse_voice_flags(vs: &Value) -> VoiceFlags {
+    let flag = |key: &str| vs[key].as_bool().unwrap_or(false);
+    VoiceFlags {
+        muted: flag("self_mute") || flag("mute"),
+        deafened: flag("self_deaf") || flag("deaf"),
+    }
+}
+
+pub static GUILD_VOICE_FLAGS: std::sync::OnceLock<Arc<std::sync::Mutex<std::collections::HashMap<u64, VoiceFlags>>>> = std::sync::OnceLock::new();
+
+pub fn get_guild_voice_flags_store() -> Arc<std::sync::Mutex<std::collections::HashMap<u64, VoiceFlags>>> {
+    GUILD_VOICE_FLAGS.get_or_init(|| Arc::new(std::sync::Mutex::new(std::collections::HashMap::new()))).clone()
+}
+
+/// Stores the flags of `vs` for `user_id`; clears them when the user left voice.
+pub fn record_voice_flags(user_id: u64, in_voice: bool, vs: &Value) {
+    if let Ok(mut map) = get_guild_voice_flags_store().lock() {
+        if in_voice {
+            map.insert(user_id, parse_voice_flags(vs));
+        } else {
+            map.remove(&user_id);
+        }
+    }
+}
+
+pub fn get_voice_flags(user_id: u64) -> VoiceFlags {
+    get_guild_voice_flags_store()
+        .lock()
+        .ok()
+        .and_then(|map| map.get(&user_id).copied())
+        .unwrap_or_default()
+}
+
+#[cfg(test)]
+mod voice_flags_tests {
+    use super::*;
+
+    #[test]
+    fn parses_self_and_server_flags() {
+        let vs: Value = serde_json::json!({"self_mute": true, "self_deaf": false, "mute": false, "deaf": false});
+        assert_eq!(parse_voice_flags(&vs), VoiceFlags { muted: true, deafened: false });
+        let vs: Value = serde_json::json!({"self_mute": false, "self_deaf": false, "mute": false, "deaf": true});
+        assert_eq!(parse_voice_flags(&vs), VoiceFlags { muted: false, deafened: true });
+        let vs: Value = serde_json::json!({"mute": true, "self_deaf": true});
+        assert_eq!(parse_voice_flags(&vs), VoiceFlags { muted: true, deafened: true });
+    }
+
+    #[test]
+    fn missing_or_odd_fields_are_false() {
+        assert_eq!(parse_voice_flags(&serde_json::json!({})), VoiceFlags::default());
+        assert_eq!(parse_voice_flags(&serde_json::json!({"self_mute": "yes"})), VoiceFlags::default());
+        assert_eq!(parse_voice_flags(&Value::Null), VoiceFlags::default());
+    }
+}
+

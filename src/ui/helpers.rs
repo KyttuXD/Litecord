@@ -1086,6 +1086,7 @@ pub fn build_ui_channels(
             });
 
             for (user_id, name) in voice_participants {
+                let voice_flags = gateway::get_voice_flags(user_id);
                 let avatar_url = gateway::get_user_avatar_url(user_id);
                 let avatar_text: String = name
                     .split_whitespace()
@@ -1108,6 +1109,8 @@ pub fn build_ui_channels(
                     is_collapsed: false,
                     has_separator: false,
                     unread_count: 0,
+                    voice_muted: voice_flags.muted,
+                    voice_deafened: voice_flags.deafened,
                     ..Default::default()
                 });
             }

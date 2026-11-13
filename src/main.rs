@@ -1981,7 +1981,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let active_guild_badges = Arc::clone(&active_guild_id);
     tokio::spawn(async move {
         let mut interval = tokio::time::interval(std::time::Duration::from_millis(1500));
-        let mut last_fingerprint: Vec<(String, Vec<(u64, String)>)> = Vec::new();
+        let mut last_fingerprint: Vec<(String, Vec<(u64, String)>, Vec<(bool, bool)>)> = Vec::new();
         let mut last_gid = String::new();
         interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
         loop {
@@ -2010,7 +2010,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     } else {
                         Vec::new()
                     };
-                    current_fingerprint.push((ch.id.clone(), participants));
+                    let flags: Vec<(bool, bool)> = participants.iter().map(|(uid, _)| { let f = gateway::get_voice_flags(*uid); (f.muted, f.deafened) }).collect();
+                    current_fingerprint.push((ch.id.clone(), participants, flags));
                 }
 
                 let guild_changed = gid != last_gid;
@@ -2032,6 +2033,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 for (i, new_c) in ui_channels.iter().enumerate() {
                                     if let Some(old_c) = cur_chans.row_data(i) {
                                         if old_c.voice_count != new_c.voice_count
+                                            || old_c.voice_muted != new_c.voice_muted
+                                            || old_c.voice_deafened != new_c.voice_deafened
                                             || old_c.name != new_c.name
                                             || old_c.id != new_c.id
                                         {
@@ -2666,6 +2669,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 if let Ok(mut gvs) = gateway::get_guild_voice_states_store().lock() {
                     gvs.remove(&my_uid);
                 }
+                gateway::record_voice_flags(my_uid, false, &serde_json::Value::Null);
             }
 
             let gid = active_guild_leave.lock().unwrap().clone();

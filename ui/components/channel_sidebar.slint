@@ -17,6 +17,9 @@ export struct ChannelItem {
     is_collapsed: bool,
     has_separator: bool,
     unread_count: int,  // Unread messages badge (0 = no badge)
+    // Voice members only: muted (self or server) and deafened (self or server).
+    voice_muted: bool,
+    voice_deafened: bool,
     // Leading emoji of the name, drawn as a colour image; `label` is the rest of the name.
     emoji_id: string,
     emoji_slot: int,    // index into `emoji_pool`
@@ -347,6 +350,28 @@ export component ChannelSidebar inherits Rectangle {
                                 horizontal-stretch: 1;
                                 overflow: elide;
                                 animate color { duration: 120ms; }
+                            }
+                            if channel.voice_muted && !channel.voice_deafened : VerticalLayout {
+                                alignment: center;
+                                width: 14px;
+                                Image {
+                                    source: @image-url("../../assets/microphone-mute.svg");
+                                    width: 14px;
+                                    height: 14px;
+                                    colorize: AppTheme.danger;
+                                    image-fit: contain;
+                                }
+                            }
+                            if channel.voice_deafened : VerticalLayout {
+                                alignment: center;
+                                width: 14px;
+                                Image {
+                                    source: @image-url("../../assets/headphones-mute.svg");
+                                    width: 14px;
+                                    height: 14px;
+                                    colorize: AppTheme.danger;
+                                    image-fit: contain;
+                                }
                             }
                         }
 

@@ -588,6 +588,7 @@ impl GatewayClient {
                                         String::new()
                                     };
                                     if u_id > 0 && !c_str.is_empty() {
+                                        record_voice_flags(u_id, true, vs);
                                         if let Ok(mut gvs) = get_guild_voice_states_store().lock() {
                                             gvs.insert(u_id, c_str.clone());
                                             info!("📌 [READY] Preloaded voice state: User {} -> Channel {}", u_id, c_str);
@@ -625,6 +626,7 @@ impl GatewayClient {
                                 String::new()
                             };
                             if u_id > 0 && !c_str.is_empty() {
+                                record_voice_flags(u_id, true, vs);
                                 if let Ok(mut gvs) = get_guild_voice_states_store().lock() {
                                     gvs.insert(u_id, c_str.clone());
                                     info!("📌 [READY_SUPPLEMENTAL] Preloaded voice state: User {} -> Channel {}", u_id, c_str);
@@ -651,6 +653,7 @@ impl GatewayClient {
                                         String::new()
                                     };
                                     if u_id > 0 && !c_str.is_empty() {
+                                        record_voice_flags(u_id, true, vs);
                                         if let Ok(mut gvs) = get_guild_voice_states_store().lock() {
                                             gvs.insert(u_id, c_str.clone());
                                             info!("📌 [READY_SUPPLEMENTAL] Preloaded voice state: User {} -> Channel {}", u_id, c_str);
@@ -725,6 +728,7 @@ impl GatewayClient {
                             None
                         };
 
+                        record_voice_flags(event_uid, event_chan.is_some(), &v["d"]);
                         let previous_chan = if let Ok(mut gvs) = get_guild_voice_states_store().lock() {
                             if let Some(ref cid) = event_chan {
                                 info!("📌 [VOICE_STATE_UPDATE] User {} -> Channel {}", event_uid, cid);
@@ -1078,6 +1082,7 @@ impl GatewayClient {
                             };
 
                             if uid > 0 && !cid_str.is_empty() {
+                                record_voice_flags(uid, true, vs);
                                 if let Ok(mut gvs) = get_guild_voice_states_store().lock() {
                                     gvs.insert(uid, cid_str.clone());
                                     info!("📌 [GUILD_CREATE] Preloaded voice state: User {} -> Channel {}", uid, cid_str);
