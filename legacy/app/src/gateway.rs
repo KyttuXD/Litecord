@@ -7,6 +7,8 @@ pub mod formatting;
 pub mod channel_names;
 #[path = "../../../src/gateway/presence.rs"]
 pub mod presence;
+#[path = "../../../src/gateway/channel_events.rs"]
+pub mod channel_events;
 #[path = "../../../src/gateway/client.rs"]
 pub mod client;
 

@@ -541,7 +541,7 @@ pub async fn apply_live_channel_change(
     change: ChannelChange,
 ) {
     use crate::gateway::channel_events::{apply_channel_create, apply_channel_delete, apply_channel_update};
-    // None while the server's permissions are not cached: the channel is then not judged.
+    // None while the server's permissions are not cached: the channel is then not judged (and shown).
     let visible = |ch: &ChannelData, raw: &serde_json::Value| -> Option<bool> {
         if ch.is_category {
             return None;
@@ -557,7 +557,7 @@ pub async fn apply_live_channel_change(
         let (changed, id) = match change {
             ChannelChange::Created(ch, raw) => {
                 let id = ch.id.clone();
-                let seen = visible(&ch, &raw) == Some(true);
+                let seen = visible(&ch, &raw) != Some(false);
                 (seen && apply_channel_create(&mut guild.channels, ch), id)
             }
             ChannelChange::Updated(ch, raw) => {
