@@ -3,6 +3,7 @@
 //! into one picture and shown through OpenGL 2.1 (miniquad with the old-Mac changes of
 //! TheLastRoute), the path proven on a Mac Pro 3,1 with OS X 10.6.8.
 
+mod accounts;
 mod backend;
 
 use std::collections::HashMap;
@@ -60,6 +61,14 @@ const INFO_H: i32 = 22;
 
 /// Reactions offered for a selected message: the action's name, and the emoji it gives.
 const QUICK_REACTIONS: [(&str, &str); 4] = [("+1", "\u{1F44D}"), ("<3", "\u{2764}\u{FE0F}"), ("haha", "\u{1F602}"), ("party", "\u{1F389}")];
+
+/// A row of the account switcher above the user panel.
+#[derive(Clone)]
+enum Switcher {
+    Switch(String),
+    Add,
+    LogOut,
+}
 
 /// What Return does with the text in the input.
 enum Compose {
@@ -334,6 +343,13 @@ struct Stage {
     wanted: Vec<String>,
     /// "Log out" in the user panel: x from, x to, y.
     logout: (i32, i32, i32),
+    /// The account switcher: open, its rows (top, bottom, what they do) for clicks.
+    switcher_open: bool,
+    switcher_rows: Vec<(i32, i32, Switcher)>,
+    /// "Attach file" in the line above the input: x from, x to, y from, y to.
+    attach_rect: Option<(i32, i32, i32, i32)>,
+    /// Saved accounts on the login screen: (top, bottom, account key).
+    login_account_rows: Vec<(i32, i32, String)>,
     action_buttons: Vec<(&'static str, i32, i32, i32)>,
     last_typing_sent: Option<std::time::Instant>,
     /// Login form: the three text fields, which one has the keyboard, and what was drawn
@@ -412,6 +428,10 @@ impl Stage {
             requested: std::collections::HashSet::new(),
             wanted: Vec::new(),
             logout: (i32::MAX, i32::MAX, 0),
+            switcher_open: false,
+            switcher_rows: Vec::new(),
+            attach_rect: None,
+            login_account_rows: Vec::new(),
             action_buttons: Vec::new(),
             last_typing_sent: None,
             logged_in: false,
@@ -559,6 +579,7 @@ impl Stage {
 
     fn paint_login(&mut self, state: &Shared) {
         let (w, h) = (self.canvas.w, self.canvas.h);
+        let images = &state.images;
         self.guild_rows.clear();
         self.channel_rows.clear();
         self.logout = (i32::MAX, i32::MAX, 0);
@@ -660,6 +681,27 @@ impl Stage {
             self.canvas.text(fx, y + 20 + i as i32 * LINE_H, line, FONT, TEXT, w);
         }
 
+        // Saved accounts: one click signs in with that one. Back returns from adding one.
+        self.login_account_rows.clear();
+        if !state.accounts.is_empty() {
+            let mut ay = y + 20 + lines.len() as i32 * LINE_H + 20;
+            self.canvas.text(fx, ay, "Saved accounts", SMALL, MUTED, w);
+            ay += 12;
+            for account in &state.accounts {
+                self.canvas.round_rect(fx, ay, fw, 30, 6, INPUT);
+                self.avatar(images, &account.avatar, &account.name, fx + 6, ay + 5, 20, 10);
+                let who = spans_from_text(&account.name);
+                self.spans(images, fx + 34, ay + 20, &who, FONT, TEXT, fx + fw - 70);
+                self.canvas.text(fx + fw - 62, ay + 20, "Use", SMALL + 1.0, ACCENT, fx + fw);
+                self.login_account_rows.push((ay, ay + 30, account.key.clone()));
+                ay += 36;
+            }
+            if state.adding {
+                button(self, "Back", fx, ay + 6, false);
+            }
+        } else if state.adding {
+            button(self, "Back", fx, y + 20 + lines.len() as i32 * LINE_H + 24, false);
+        }
         let lines = self.canvas.wrap(&state.status, FONT, w - 80);
         for (i, line) in lines.iter().enumerate() {
             let lw = self.canvas.text_width(line, FONT);
@@ -724,7 +766,27 @@ impl Stage {
         self.dirty = true;
     }
 
+    /// Asks for a file to send to the open channel: the system's dialog runs in the backend.
+    fn request_pick(&mut self) {
+        let channel_id = self.shared.lock().map(|s| s.channel_id.clone()).unwrap_or_default();
+        if channel_id.is_empty() {
+            return;
+        }
+        let reply_to = match &self.compose {
+            Compose::Reply { id, .. } => Some(id.clone()),
+            _ => None,
+        };
+        self.compose = Compose::Normal;
+        let _ = self.actions.send(Action::PickFile { channel_id, reply_to });
+        self.dirty = true;
+    }
+
     fn click_login(&mut self, x: i32, y: i32) {
+        if let Some((_, _, key)) = self.login_account_rows.iter().find(|(top, bottom, _)| y >= *top && y < *bottom && x >= 0) {
+            let _ = self.actions.send(Action::SwitchAccount(key.clone()));
+            self.dirty = true;
+            return;
+        }
         if let Some((index, ..)) = self.login_field_rects.iter().find(|(_, fx, fy, fw, fh)| x >= *fx && x < fx + fw && y >= *fy && y < fy + fh) {
             self.login_focus = *index;
             self.dirty = true;
@@ -732,6 +794,9 @@ impl Stage {
         }
         let hit = self.login_buttons.iter().find(|(_, x0, x1, by)| x >= *x0 - 4 && x <= *x1 + 4 && y >= by - 18 && y <= by + 8).map(|b| b.0);
         match hit {
+            Some("Back") => {
+                let _ = self.actions.send(Action::LoginBack);
+            }
             Some("Log in") | Some("Verify") => self.submit_login(),
             Some("Cancel") => {
                 self.login_fields[2].clear();
@@ -931,6 +996,16 @@ impl Stage {
             let notice = spans_from_text(&notice);
             self.spans(images, mx + 20, info_y, &notice, SMALL + 1.0, MUTED, w - 8);
         }
+        // "Attach file": opens the system's file dialog (Ctrl or Cmd+O does the same).
+        self.attach_rect = None;
+        if !state.channel_id.is_empty() {
+            let label = "Attach file";
+            let x1 = w - 24;
+            let x0 = x1 - self.canvas.text_width(label, SMALL + 1.0) - 16;
+            self.canvas.round_rect(x0, info_y - 16, x1 - x0, 22, 6, PANEL);
+            self.canvas.text(x0 + 8, info_y, label, SMALL + 1.0, ACCENT, x1);
+            self.attach_rect = Some((x0, x1, info_y - 18, info_y + 8));
+        }
         self.canvas.round_rect(mx + 16, h - INPUT_H + 4, w - mx - 32, 44, 8, INPUT);
         let channel_label = open_channel.map(|(g, c)| if g.id == "@me" { format!("@{}", c.name) } else { format!("#{}", c.name) });
         let (mut shown, colour) = if self.input.is_empty() {
@@ -1043,6 +1118,37 @@ impl Stage {
         self.canvas.text(logout_x, panel_top + 31, "Log out", SMALL, MUTED, mx);
         self.logout = (logout_x, mx, panel_top);
 
+        // The account switcher: a popup above the user panel, opened by a click on it.
+        self.switcher_rows.clear();
+        if self.switcher_open {
+            let rows = state.accounts.len() as i32 + 2;
+            let box_h = rows * 34 + 12;
+            let box_top = panel_top - box_h - 6;
+            self.canvas.round_rect(GUILDS_W + 8, box_top, CHANNELS_W - 16, box_h, 8, [0x18, 0x19, 0x1C]);
+            let mut ry = box_top + 6;
+            for account in &state.accounts {
+                if account.active {
+                    self.canvas.round_rect(GUILDS_W + 12, ry, CHANNELS_W - 24, 30, 6, [0x3A, 0x3F, 0x66]);
+                }
+                self.avatar(images, &account.avatar, &account.name, GUILDS_W + 18, ry + 5, 20, 10);
+                let who = spans_from_text(&account.name);
+                let colour = if account.active { WHITE } else { TEXT };
+                self.spans(images, GUILDS_W + 46, ry + 20, &who, FONT, colour, mx - 40);
+                if account.active {
+                    self.canvas.text(mx - 66, ry + 20, "current", SMALL, MUTED, mx - 8);
+                }
+                self.switcher_rows.push((ry, ry + 30, Switcher::Switch(account.key.clone())));
+                ry += 34;
+            }
+            for (label, action) in [("Add account", Switcher::Add), ("Log out", Switcher::LogOut)] {
+                self.canvas.round_rect(GUILDS_W + 12, ry, CHANNELS_W - 24, 30, 6, INPUT);
+                let colour = if matches!(action, Switcher::LogOut) { DANGER } else { TEXT };
+                self.canvas.text(GUILDS_W + 26, ry + 20, label, FONT, colour, mx - 20);
+                self.switcher_rows.push((ry, ry + 30, action));
+                ry += 34;
+            }
+        }
+
         // ---- Server rail: round icons, a white pill beside the open one.
         self.canvas.rect(0, 0, GUILDS_W, h, RAIL);
         self.guild_rows.clear();
@@ -1074,6 +1180,31 @@ impl Stage {
             self.click_login(x, y);
             return;
         }
+        // An open switcher takes this click: its row acts, any other place closes it.
+        if self.switcher_open {
+            self.switcher_open = false;
+            self.dirty = true;
+            let row = self.switcher_rows.iter().find(|(top, bottom, _)| y >= *top && y < *bottom).map(|(_, _, what)| what.clone());
+            match row {
+                Some(Switcher::Switch(key)) => {
+                    let _ = self.actions.send(Action::SwitchAccount(key));
+                }
+                Some(Switcher::Add) => {
+                    let _ = self.actions.send(Action::AddAccount);
+                }
+                Some(Switcher::LogOut) => {
+                    let _ = self.actions.send(Action::LogOut);
+                }
+                None => {}
+            }
+            return;
+        }
+        if let Some((x0, x1, y0, y1)) = self.attach_rect {
+            if x >= x0 && x <= x1 && y >= y0 && y <= y1 {
+                self.request_pick();
+                return;
+            }
+        }
         if x < GUILDS_W {
             if let Some((_, i)) = self.guild_rows.iter().find(|(ry, _)| y >= *ry && y < *ry + ICON) {
                 self.guild = *i;
@@ -1082,9 +1213,13 @@ impl Stage {
             }
         } else if x < GUILDS_W + CHANNELS_W {
             if y >= self.logout.2 {
+                // "Log out" signs this account out; a click elsewhere on the panel opens the switcher.
                 if x >= self.logout.0 - 6 && x <= self.logout.1 {
                     let _ = self.actions.send(Action::LogOut);
+                } else {
+                    self.switcher_open = true;
                 }
+                self.dirty = true;
                 return;
             }
             if let Some((top, mute, leave)) = self.voice_bar {
@@ -1214,7 +1349,11 @@ impl EventHandler for Stage {
         self.dirty = true;
     }
 
-    fn key_down_event(&mut self, keycode: KeyCode, _keymods: KeyMods, _repeat: bool) {
+    fn key_down_event(&mut self, keycode: KeyCode, keymods: KeyMods, _repeat: bool) {
+        if self.logged_in && (keymods.ctrl || keymods.logo) && matches!(keycode, KeyCode::O) {
+            self.request_pick();
+            return;
+        }
         if !self.logged_in {
             match keycode {
                 KeyCode::Backspace => {
@@ -1244,6 +1383,7 @@ impl EventHandler for Stage {
                 self.dirty = true;
             }
             KeyCode::Escape => {
+                self.switcher_open = false;
                 if matches!(self.compose, Compose::Edit { .. }) {
                     self.input.clear();
                 }
@@ -1385,6 +1525,7 @@ fn render_demo(path: &str) -> Result<(), String> {
             }
         });
     }
+    stage.switcher_open = true;
     stage.paint();
     let file = std::fs::File::create(path).map_err(|e| format!("{path}: {e}"))?;
     let mut encoder = png::Encoder::new(std::io::BufWriter::new(file), stage.canvas.w as u32, stage.canvas.h as u32);

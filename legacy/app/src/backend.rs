@@ -7,6 +7,7 @@ use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
 use litecord_legacy::audio::engine::{start_mic_capture, MicCapture};
+use crate::accounts::Store;
 use litecord_legacy::auth::password_auth::{self, LoginStep};
 pub use litecord_legacy::auth::password_auth::CodeKind;
 pub use litecord_legacy::http_messaging::ReactionData;
@@ -135,9 +136,23 @@ pub struct Message {
     pub reactions: Vec<ReactionData>,
 }
 
+/// One saved account as the window shows it. Tokens never leave the backend.
+#[derive(Clone, Debug)]
+pub struct AccountView {
+    /// Identifies the account in the actions (see `accounts::Account::key`).
+    pub key: String,
+    pub name: String,
+    pub avatar: String,
+    pub active: bool,
+}
+
 pub struct Shared {
     /// Bumped on every change, so the window knows when to redraw.
     pub version: u64,
+    /// The saved accounts, the active one marked.
+    pub accounts: Vec<AccountView>,
+    /// The login screen is open to add one more account (it has a Back button).
+    pub adding: bool,
     pub logged_in: bool,
     pub status: String,
     pub user: String,
@@ -199,12 +214,43 @@ pub enum Action {
     LeaveVoice,
     ToggleMute,
     LogOut,
+    /// Signs the current account out and moves on to another saved one (or the login screen).
+    SwitchAccount(String),
+    /// Opens the login screen to add one more account, keeping the current one.
+    AddAccount,
+    /// Back from adding an account, to the one that was active.
+    LoginBack,
+    /// Opens the system's file dialog and sends the chosen file to the open channel.
+    PickFile { channel_id: String, reply_to: Option<String> },
 }
+
+/// How the login screen ended.
+pub enum LoginOutcome {
+    /// A token to check and use.
+    Token(String),
+    /// The user picked a saved account instead.
+    Switch(String),
+    /// Adding an account was cancelled.
+    Back,
+}
+
+/// Why a logged-in session ended.
+pub enum SessionEnd {
+    /// Go on with whichever account is active now (switched, signed out, or failed).
+    Next,
+    /// Show the login screen to add an account.
+    Add,
+}
+
+/// Set while the system's file dialog is open: one at a time.
+static PICKER_OPEN: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
 impl Default for Shared {
     fn default() -> Self {
         Shared {
             version: 0,
+            accounts: Vec::new(),
+            adding: false,
             logged_in: false,
             status: String::new(),
             user: String::new(),
@@ -250,29 +296,29 @@ pub fn data_dir() -> PathBuf {
     dir
 }
 
-fn token_path() -> PathBuf {
+/// The saved accounts (see accounts.rs). The single session file of earlier versions is
+/// read once, for migration.
+fn accounts_path() -> PathBuf {
+    data_dir().join("accounts.json")
+}
+
+fn session_path() -> PathBuf {
     data_dir().join("session")
 }
 
-fn load_token() -> Option<String> {
-    let token = std::fs::read_to_string(token_path()).ok()?.trim().to_string();
-    if token.is_empty() {
-        None
-    } else {
-        Some(token)
-    }
-}
-
-/// The session token, readable by this user only. It is not encrypted.
-fn save_token(token: &str) {
-    let path = token_path();
-    if std::fs::write(&path, token).is_ok() {
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            let _ = std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600));
-        }
-    }
+/// Copies the store's accounts into the window's list, without the tokens.
+fn publish_accounts(shared: &SharedRef, store: &Store) {
+    let views: Vec<AccountView> = store
+        .accounts
+        .iter()
+        .map(|a| AccountView {
+            key: a.key(),
+            name: if a.name.is_empty() { "Account".to_string() } else { a.name.clone() },
+            avatar: a.avatar.clone(),
+            active: a.key() == store.active,
+        })
+        .collect();
+    update(shared, |s| s.accounts = views);
 }
 
 fn display_name(user: &Value) -> String {
@@ -337,7 +383,7 @@ fn message_from_rest(m: &Value, my_id: &str) -> Message {
 
 /// Shows the login screen until a login succeeds: the QR code, and the email and password
 /// form (src/auth/password_auth.rs). Returns the session token.
-async fn log_in(shared: &SharedRef, actions: &mut mpsc::UnboundedReceiver<Action>) -> String {
+async fn log_in(shared: &SharedRef, actions: &mut mpsc::UnboundedReceiver<Action>, adding: bool) -> LoginOutcome {
     let mut ticket = String::new();
     loop {
         update(shared, |s| {
@@ -363,8 +409,7 @@ async fn log_in(shared: &SharedRef, actions: &mut mpsc::UnboundedReceiver<Action
                             update(shared, |s| s.status = format!("{username}: confirm the login on your phone."))
                         }
                         Some(RemoteAuthEvent::TokenReceived(token)) => {
-                            save_token(&token);
-                            return token;
+                            return LoginOutcome::Token(token);
                         }
                         Some(RemoteAuthEvent::Error(e)) => {
                             update(shared, |s| s.status = format!("QR login failed: {e}. Trying again..."));
@@ -374,7 +419,7 @@ async fn log_in(shared: &SharedRef, actions: &mut mpsc::UnboundedReceiver<Action
                     }
                 }
                 action = actions.recv() => {
-                    let Some(action) = action else { return std::future::pending::<String>().await };
+                    let Some(action) = action else { return std::future::pending::<LoginOutcome>().await };
                     match action {
                         Action::PasswordLogin { login, password } => {
                             update(shared, |s| {
@@ -388,8 +433,7 @@ async fn log_in(shared: &SharedRef, actions: &mut mpsc::UnboundedReceiver<Action
                                         s.login_stage = LoginStage::Form;
                                         s.login_message.clear();
                                     });
-                                    save_token(&token);
-                                    return token;
+                                    return LoginOutcome::Token(token);
                                 }
                                 Ok(LoginStep::SecondStep { ticket: new_ticket, totp, sms, backup: _ }) => {
                                     ticket = new_ticket;
@@ -421,8 +465,7 @@ async fn log_in(shared: &SharedRef, actions: &mut mpsc::UnboundedReceiver<Action
                                         s.login_stage = LoginStage::Form;
                                         s.login_message.clear();
                                     });
-                                    save_token(&token);
-                                    return token;
+                                    return LoginOutcome::Token(token);
                                 }
                                 Err(message) => update(shared, |s| s.login_message = message),
                             }
@@ -448,6 +491,8 @@ async fn log_in(shared: &SharedRef, actions: &mut mpsc::UnboundedReceiver<Action
                                 s.login_message.clear();
                             });
                         }
+                        Action::SwitchAccount(key) => return LoginOutcome::Switch(key),
+                        Action::LoginBack if adding => return LoginOutcome::Back,
                         // Everything else belongs to a logged-in session.
                         _ => {}
                     }
@@ -520,30 +565,50 @@ async fn leave_voice(shared: &SharedRef, cmd_tx: &mpsc::Sender<GatewayCommand>, 
 }
 
 /// Runs one logged-in session. Returns when the user logs out or the token is refused.
-async fn run_session(token: String, shared: &SharedRef, actions: &mut mpsc::UnboundedReceiver<Action>) {
+async fn run_session(token: String, shared: &SharedRef, actions: &mut mpsc::UnboundedReceiver<Action>, store: &mut Store) -> SessionEnd {
     let http = Arc::new(DiscordHttpClient::new(token.clone()));
     match http.get_current_user().await {
-        Ok(user) => update(shared, |s| {
-            s.logged_in = true;
-            s.my_id = user["id"].as_str().unwrap_or("").to_string();
-            if let (Some(id), Some(hash)) = (user["id"].as_str(), user["avatar"].as_str()) {
-                if litecord_legacy::ui::message_grouping::valid_avatar_hash(hash) {
-                    s.my_avatar = format!("https://cdn.discordapp.com/avatars/{id}/{hash}.png?size=64");
+        Ok(user) => {
+            let id = user["id"].as_str().unwrap_or("").to_string();
+            let avatar = match user["avatar"].as_str() {
+                Some(hash) if !id.is_empty() && litecord_legacy::ui::message_grouping::valid_avatar_hash(hash) => {
+                    format!("https://cdn.discordapp.com/avatars/{id}/{hash}.png?size=64")
                 }
-            }
-            s.user = display_name(&user);
-            s.status = "Connecting...".to_string();
-        }),
-        Err(e) if e.contains("401") => {
-            let _ = std::fs::remove_file(token_path());
-            update(shared, |s| s.status = "The saved login is no longer valid.".to_string());
-            return;
+                _ => String::new(),
+            };
+            let name = display_name(&user);
+            store.upsert(&token, &id, &name, &avatar);
+            publish_accounts(shared, store);
+            update(shared, |s| {
+                s.logged_in = true;
+                s.my_id = id.clone();
+                s.my_avatar = avatar.clone();
+                s.user = name.clone();
+                s.status = "Connecting...".to_string();
+            });
         }
-        Err(e) => update(shared, |s| {
-            s.logged_in = true;
-            s.status = format!("Could not read the account ({e}). Connecting anyway...");
-        }),
+        Err(e) if e.contains("401") => {
+            // This account's login is refused; the others stay.
+            let name = store.accounts.iter().find(|a| a.token == token).map(|a| a.name.clone()).unwrap_or_default();
+            if let Some(key) = store.accounts.iter().find(|a| a.token == token).map(|a| a.key()) {
+                store.remove(&key);
+            }
+            publish_accounts(shared, store);
+            let who = if name.is_empty() { "This account".to_string() } else { name };
+            update(shared, |s| s.status = format!("The saved login for {who} is no longer valid. Choose another account or sign in again."));
+            return SessionEnd::Next;
+        }
+        Err(e) => {
+            // Could not be checked (offline, say): the account is kept, and the session goes on.
+            store.upsert(&token, "", "", "");
+            publish_accounts(shared, store);
+            update(shared, |s| {
+                s.logged_in = true;
+                s.status = format!("Could not read the account ({e}). Connecting anyway...");
+            });
+        }
     }
+    let mut end = SessionEnd::Next;
 
     let (event_tx, mut event_rx) = mpsc::channel::<GatewayEvent>(512);
     let (cmd_tx, cmd_rx) = mpsc::channel::<GatewayCommand>(32);
@@ -827,11 +892,47 @@ async fn run_session(token: String, shared: &SharedRef, actions: &mut mpsc::Unbo
                             }).await;
                         }
                     }
-                    Action::PasswordLogin { .. } | Action::LoginCode { .. } | Action::LoginSendSms | Action::LoginUseKind(_) | Action::LoginCancel => {}
+                    Action::PasswordLogin { .. } | Action::LoginCode { .. } | Action::LoginSendSms | Action::LoginUseKind(_) | Action::LoginCancel | Action::LoginBack => {}
                     Action::LogOut => {
                         leave_voice(shared, &cmd_tx, &mut mic, &voice_guild).await;
-                        let _ = std::fs::remove_file(token_path());
+                        if let Some(key) = store.active_account().map(|a| a.key()) {
+                            store.remove(&key);
+                        }
+                        publish_accounts(shared, store);
                         break;
+                    }
+                    Action::SwitchAccount(key) => {
+                        leave_voice(shared, &cmd_tx, &mut mic, &voice_guild).await;
+                        store.set_active(&key);
+                        publish_accounts(shared, store);
+                        break;
+                    }
+                    Action::AddAccount => {
+                        leave_voice(shared, &cmd_tx, &mut mic, &voice_guild).await;
+                        end = SessionEnd::Add;
+                        break;
+                    }
+                    Action::PickFile { channel_id, reply_to } => {
+                        if PICKER_OPEN.swap(true, std::sync::atomic::Ordering::SeqCst) {
+                            continue;
+                        }
+                        update(shared, |s| s.status = "Choose a file in the dialog...".to_string());
+                        let (http_pick, shared_pick) = (Arc::clone(&http), Arc::clone(shared));
+                        tokio::spawn(async move {
+                            let picked = tokio::task::spawn_blocking(|| litecord_legacy::file_picker::pick_file("Choose a file to send")).await;
+                            PICKER_OPEN.store(false, std::sync::atomic::Ordering::SeqCst);
+                            let result = match picked {
+                                Ok(Ok(Some(path))) => {
+                                    let name = path.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default();
+                                    update(&shared_pick, |s| s.status = format!("Sending {name}..."));
+                                    http_pick.send_path(&channel_id, reply_to.as_deref(), &path).await
+                                }
+                                Ok(Ok(None)) => Ok(()),
+                                Ok(Err(e)) => Err(e),
+                                Err(e) => Err(format!("The file dialog failed: {e}")),
+                            };
+                            update(&shared_pick, |s| s.status = result.err().unwrap_or_default());
+                        });
                     }
                 }
             }
@@ -852,15 +953,45 @@ async fn run_session(token: String, shared: &SharedRef, actions: &mut mpsc::Unbo
         s.channel_id.clear();
         s.user.clear();
     });
+    end
 }
 
 pub async fn run(shared: SharedRef, mut actions: mpsc::UnboundedReceiver<Action>) {
+    let mut store = Store::load(&accounts_path(), &session_path());
+    // A token from the login screen to use next (after adding an account).
+    let mut next: Option<String> = None;
     loop {
-        let token = match load_token() {
+        publish_accounts(&shared, &store);
+        let token = match next.take() {
             Some(token) => token,
-            None => log_in(&shared, &mut actions).await,
+            None => match store.active_account().map(|a| a.token.clone()) {
+                Some(token) => token,
+                None => {
+                    update(&shared, |s| s.adding = false);
+                    match log_in(&shared, &mut actions, false).await {
+                        LoginOutcome::Token(token) => token,
+                        LoginOutcome::Switch(key) => {
+                            store.set_active(&key);
+                            continue;
+                        }
+                        LoginOutcome::Back => continue,
+                    }
+                }
+            },
         };
-        run_session(token, &shared, &mut actions).await;
+        match run_session(token, &shared, &mut actions, &mut store).await {
+            SessionEnd::Next => {}
+            SessionEnd::Add => {
+                update(&shared, |s| s.adding = true);
+                match log_in(&shared, &mut actions, true).await {
+                    LoginOutcome::Token(token) => next = Some(token),
+                    LoginOutcome::Switch(key) => store.set_active(&key),
+                    // Back: the account that was active is used again.
+                    LoginOutcome::Back => {}
+                }
+                update(&shared, |s| s.adding = false);
+            }
+        }
         tokio::time::sleep(std::time::Duration::from_secs(1)).await;
     }
 }
@@ -944,6 +1075,10 @@ pub fn demo_state() -> Shared {
             embed,
         ],
         typing: vec![("Ana Souza".to_string(), std::time::Instant::now())],
+        accounts: vec![
+            AccountView { key: "1".to_string(), name: "Kyttu".to_string(), avatar: String::new(), active: true },
+            AccountView { key: "2".to_string(), name: "Ana Souza".to_string(), avatar: String::new(), active: false },
+        ],
         voice_channel_id: "c4".to_string(),
         voice_channel_name: "Lounge".to_string(),
         voice_connected: true,

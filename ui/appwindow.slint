@@ -117,6 +117,9 @@ export component AppWindow inherits Window {
     in-out property <bool> password_login_has_sms: false;
     in-out property <string> password_login_message: "";
     callback send_message(string /* content */);
+    // Attach: opens the system's file dialog and sends the chosen file to the open channel.
+    callback pick_file();
+    in-out property <string> tr_attach: "Attach";
     callback select_channel(string /* channel_id */);
     callback toggle_category(string /* category_id */);
     callback select_guild(string /* guild_id */);
@@ -3205,6 +3208,13 @@ export component AppWindow inherits Window {
                                             root.show_command_suggestions = false;
                                         }
                                     }
+                                }
+                            }
+
+                            Button {
+                                text: root.tr_attach;
+                                clicked => {
+                                    root.pick_file();
                                 }
                             }
 

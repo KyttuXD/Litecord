@@ -36,6 +36,11 @@ jobs:
         working-directory: legacy/app
         run: cargo +1.77.0 check --locked --color never
 
+      # Unit tests: the account store (accounts.rs), the file picker's parsing, the message actions.
+      - name: Unit tests
+        working-directory: legacy/app
+        run: cargo +1.77.0 test --locked --color never
+
       # The interface drawn with made-up content, kept as a picture to look at.
       - name: Render the interface to a picture
         working-directory: legacy/app

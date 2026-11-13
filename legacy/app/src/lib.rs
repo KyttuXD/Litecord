@@ -9,6 +9,8 @@ pub mod utils;
 
 #[path = "../../../src/http.rs"]
 pub mod http;
+#[path = "../../../src/file_picker.rs"]
+pub mod file_picker;
 #[path = "../../../src/http_messaging.rs"]
 pub mod http_messaging;
 #[path = "../../../src/channel_permissions.rs"]

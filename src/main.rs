@@ -8,6 +8,7 @@ pub mod utils;
 pub mod gateway;
 pub mod http;
 pub mod http_messaging;
+pub mod file_picker;
 pub mod channel_permissions;
 pub mod encoder;
 pub mod screen_capture;
@@ -29,6 +30,9 @@ use std::sync::{Arc, Mutex, atomic::{AtomicBool, Ordering}};
 use std::collections::HashMap;
 use tokio::sync::mpsc;
 use log::{info, warn, error};
+
+/// Set while the file dialog is open: one at a time.
+static PICKER_OPEN: AtomicBool = AtomicBool::new(false);
 
 #[global_allocator]
 static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
@@ -3149,8 +3153,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     if let Some(old) = active_qr_session_qr.lock().unwrap().take() {
                         old.cancel();
                     }
-                    try_login_with_candidates(
-                        vec![token],
+                    // Spawned, not awaited: the login runs the gateway for as long as the account is
+                    // open, and this loop must keep handling the next QR or password login.
+                    let (aw, http, last, guilds, active_guild, active_channel, cmd_tx, event_tx) = (
                         app_weak_qr.clone(),
                         Arc::clone(&http_client_qr),
                         Arc::clone(&last_token_qr),
@@ -3159,7 +3164,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         Arc::clone(&active_channel_qr),
                         Arc::clone(&cmd_tx_qr),
                         event_tx_qr.clone(),
-                    ).await;
+                    );
+                    tokio::spawn(async move {
+                        let _ = try_login_with_candidates(
+                            vec![token], aw, http, last, guilds, active_guild, active_channel, cmd_tx, event_tx,
+                        ).await;
+                    });
                 }
                 RemoteAuthEvent::Cancelled => {
                     let app_w = app_weak_qr.clone();
@@ -3854,7 +3864,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             ).await;
 
             if !success {
-                delete_secure_token();
+                // The saved accounts are kept (this may only be a network problem). The list
+                // on the login screen still switches to another account or signs in again.
+                info!("The saved login could not be used now; its account stays in the list.");
                 let session = remote_auth::RemoteAuthSession::start(qr_tx_startup.clone());
                 *active_qr_startup.lock().unwrap() = Some(session);
             }
@@ -4407,6 +4419,57 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
             ui.set_compose_notice("".into());
         }
+    });
+
+    // Attach: the system's file dialog (file_picker.rs), then the file goes to the open channel
+    // (as a reply when one was started). One dialog at a time.
+    let (app_weak_pick, http_pick, channel_pick, compose_pick) = (
+        app_weak.clone(),
+        Arc::clone(&http_client),
+        Arc::clone(&active_channel_id),
+        Arc::clone(&compose_state),
+    );
+    app.on_pick_file(move || {
+        if PICKER_OPEN.swap(true, Ordering::SeqCst) {
+            return;
+        }
+        let channel_id = channel_pick.lock().unwrap().clone();
+        let http_opt = http_pick.lock().unwrap().as_ref().cloned();
+        let reply_to = {
+            let mut compose = compose_pick.lock().unwrap();
+            let reply = if compose.0 == "reply" { Some(compose.1.clone()) } else { None };
+            if reply.is_some() {
+                *compose = (String::new(), String::new());
+            }
+            reply
+        };
+        let http = match http_opt {
+            Some(http) if !channel_id.is_empty() => http,
+            _ => {
+                PICKER_OPEN.store(false, Ordering::SeqCst);
+                return;
+            }
+        };
+        let app_weak = app_weak_pick.clone();
+        tokio::spawn(async move {
+            let picked = tokio::task::spawn_blocking(|| crate::file_picker::pick_file("Choose a file to send")).await;
+            let result = match picked {
+                Ok(Ok(Some(path))) => http.send_path(&channel_id, reply_to.as_deref(), &path).await,
+                Ok(Ok(None)) => Ok(()),
+                Ok(Err(e)) => Err(e),
+                Err(e) => Err(format!("The file dialog failed: {e}")),
+            };
+            PICKER_OPEN.store(false, Ordering::SeqCst);
+            if reply_to.is_some() {
+                let clear = app_weak.clone();
+                let _ = slint::invoke_from_event_loop(move || {
+                    if let Some(ui) = clear.upgrade() {
+                        ui.set_compose_notice("".into());
+                    }
+                });
+            }
+            report_message_error(&app_weak, result);
+        });
     });
 
     // Click Command Callback (fills input with command parameter pill)
