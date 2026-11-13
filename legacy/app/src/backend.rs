@@ -2,6 +2,7 @@
 //! All of it is Litecord's own network code (see lib.rs); this file only moves its results
 //! into the state the window draws.
 
+use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
@@ -17,9 +18,101 @@ use litecord_legacy::http::DiscordHttpClient;
 use serde_json::Value;
 use tokio::sync::mpsc;
 
+/// A decoded picture (avatar, server icon, emoji): RGBA, row by row.
+pub struct Picture {
+    pub w: u32,
+    pub h: u32,
+    pub rgba: Vec<u8>,
+}
+
+/// A piece of a line of text.
+#[derive(Clone)]
+pub enum Span {
+    Text(String),
+    Link(String),
+    /// Picture address, and the text to fall back on.
+    Emoji(String, String),
+}
+
+/// Where the picture of an emoji id from the message parser is: `u_<code points>` is a
+/// Unicode emoji (Twemoji 14, as the main app uses), anything else a Discord custom emoji.
+pub fn emoji_url(id: &str) -> String {
+    match id.strip_prefix("u_") {
+        Some(hex) => format!("https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/72x72/{hex}.png"),
+        None => format!("https://cdn.discordapp.com/emojis/{id}.png?size=48&quality=lossless"),
+    }
+}
+
+/// Plain text (a name, a status) split into text and Unicode emoji.
+pub fn spans_from_text(text: &str) -> Vec<Span> {
+    let mut spans = Vec::new();
+    let mut rest = text;
+    while let Some((start, len, emoji, id)) = gateway::find_next_unicode_emoji(rest) {
+        if start > 0 {
+            spans.push(Span::Text(rest[..start].to_string()));
+        }
+        spans.push(Span::Emoji(emoji_url(&id), emoji));
+        rest = &rest[start + len..];
+    }
+    if !rest.is_empty() {
+        spans.push(Span::Text(rest.to_string()));
+    }
+    spans
+}
+
+/// The parser's lines (text, links, custom and Unicode emoji) as spans.
+fn spans_from_lines(lines: &[gateway::MessageLineData]) -> Vec<Vec<Span>> {
+    lines
+        .iter()
+        .map(|line| {
+            let mut spans = Vec::new();
+            for block in &line.blocks {
+                if block.is_emoji && !block.emoji_id.is_empty() {
+                    spans.push(Span::Emoji(emoji_url(&block.emoji_id), block.text.clone()));
+                } else if block.is_link {
+                    spans.push(Span::Link(block.text.clone()));
+                } else {
+                    spans.extend(spans_from_text(&block.text));
+                }
+            }
+            spans
+        })
+        .collect()
+}
+
+/// Discord serves avatars and icons as WebP by default; this app reads PNG.
+fn as_png(url: &str) -> String {
+    url.replace(".webp", ".png")
+}
+
+fn decode_png(bytes: &[u8]) -> Option<Picture> {
+    let mut decoder = png::Decoder::new(bytes);
+    decoder.set_transformations(png::Transformations::EXPAND | png::Transformations::STRIP_16);
+    let mut reader = decoder.read_info().ok()?;
+    let mut buffer = vec![0; reader.output_buffer_size()];
+    let info = reader.next_frame(&mut buffer).ok()?;
+    let data = &buffer[..info.buffer_size()];
+    let rgba: Vec<u8> = match info.color_type {
+        png::ColorType::Rgba => data.to_vec(),
+        png::ColorType::Rgb => data.chunks_exact(3).flat_map(|p| [p[0], p[1], p[2], 0xFF]).collect(),
+        png::ColorType::GrayscaleAlpha => data.chunks_exact(2).flat_map(|p| [p[0], p[0], p[0], p[1]]).collect(),
+        png::ColorType::Grayscale => data.iter().flat_map(|g| [*g, *g, *g, 0xFF]).collect(),
+        png::ColorType::Indexed => return None, // EXPAND turns palettes into RGB(A)
+    };
+    if rgba.len() != (info.width * info.height * 4) as usize || info.width > 1024 || info.height > 1024 {
+        return None;
+    }
+    Some(Picture { w: info.width, h: info.height, rgba })
+}
+
 pub struct Message {
     pub id: String,
     pub author: String,
+    /// Address of the author's picture (empty: none, a coloured circle is drawn).
+    pub avatar_url: String,
+    /// The text as lines of text, links and emoji; then what the embeds say.
+    pub lines: Vec<Vec<Span>>,
+    pub embed_lines: Vec<Vec<Span>>,
     /// Written by the logged-in user (so it can be edited and deleted).
     pub mine: bool,
     pub time: String,
@@ -46,8 +139,13 @@ pub struct Shared {
     pub guilds: Vec<GuildData>,
     pub channel_id: String,
     pub messages: Vec<Message>,
-    /// Id of the logged-in user.
+    /// Id and picture address of the logged-in user.
     pub my_id: String,
+    pub my_avatar: String,
+    /// Server id to icon address.
+    pub guild_icons: HashMap<String, String>,
+    /// Pictures by address: `None` while loading or when it could not be loaded.
+    pub images: HashMap<String, Option<Arc<Picture>>>,
     /// Who is typing in the open channel, and since when.
     pub typing: Vec<(String, std::time::Instant)>,
     /// Voice channel joined (empty: none), its name, who is in it, and this user's mute switch.
@@ -77,6 +175,8 @@ pub enum Action {
     React { channel_id: String, message_id: String, key: String, label: String },
     Typing { channel_id: String },
     Upload { channel_id: String, path: String, reply_to: Option<String> },
+    /// The window needs this picture (asked once per address).
+    FetchImage(String),
     PasswordLogin { login: String, password: String },
     LoginCode { code: String },
     LoginSendSms,
@@ -104,6 +204,9 @@ impl Default for Shared {
             channel_id: String::new(),
             messages: Vec::new(),
             my_id: String::new(),
+            my_avatar: String::new(),
+            guild_icons: HashMap::new(),
+            images: HashMap::new(),
             typing: Vec::new(),
             voice_channel_id: String::new(),
             voice_channel_name: String::new(),
@@ -183,21 +286,21 @@ fn short(text: &str, max: usize) -> String {
     }
 }
 
+/// Lines for the attachments of a message: this window shows their names only.
+fn attachment_lines(attachments: &[gateway::MessageAttachmentData]) -> Vec<Vec<Span>> {
+    attachments.iter().map(|a| vec![Span::Text(format!("[file] {} ({})", a.filename, a.size_str))]).collect()
+}
+
 fn message_from_rest(m: &Value, my_id: &str) -> Message {
-    let mut text = m["content"].as_str().unwrap_or("").to_string();
-    let attachments = m["attachments"].as_array().map(|a| a.len()).unwrap_or(0);
-    let embeds = m["embeds"].as_array().map(|a| a.len()).unwrap_or(0);
-    if attachments > 0 {
-        if !text.is_empty() {
-            text.push('\n');
-        }
-        text.push_str(&format!("[{attachments} attachment(s)]"));
-    }
-    if text.is_empty() && embeds > 0 {
-        text.push_str("[embed]");
-    }
+    let parts = gateway::format_discord_message_parts(m);
+    let (content_lines, embed_lines, attachments) = (&parts.2, &parts.4, &parts.13);
+    let mut lines = spans_from_lines(content_lines);
+    lines.extend(attachment_lines(attachments));
     if m["edited_timestamp"].is_string() {
-        text.push_str(" (edited)");
+        match lines.last_mut() {
+            Some(last) => last.push(Span::Text(" (edited)".to_string())),
+            None => lines.push(vec![Span::Text("(edited)".to_string())]),
+        }
     }
     let replied = &m["referenced_message"];
     let reply_to = if replied.is_object() {
@@ -208,9 +311,12 @@ fn message_from_rest(m: &Value, my_id: &str) -> Message {
     Message {
         id: m["id"].as_str().unwrap_or("").to_string(),
         author: display_name(&m["author"]),
+        avatar_url: as_png(&litecord_legacy::ui::message_grouping::avatar_url_for_message(m)),
+        lines,
+        embed_lines: spans_from_lines(embed_lines),
         mine: !my_id.is_empty() && m["author"]["id"].as_str() == Some(my_id),
         time: local_time(m["timestamp"].as_str().unwrap_or("")),
-        text,
+        text: m["content"].as_str().unwrap_or("").to_string(),
         reply_to,
         reactions: reactions_from_message(m),
     }
@@ -407,6 +513,11 @@ async fn run_session(token: String, shared: &SharedRef, actions: &mut mpsc::Unbo
         Ok(user) => update(shared, |s| {
             s.logged_in = true;
             s.my_id = user["id"].as_str().unwrap_or("").to_string();
+            if let (Some(id), Some(hash)) = (user["id"].as_str(), user["avatar"].as_str()) {
+                if litecord_legacy::ui::message_grouping::valid_avatar_hash(hash) {
+                    s.my_avatar = format!("https://cdn.discordapp.com/avatars/{id}/{hash}.png?size=64");
+                }
+            }
             s.user = display_name(&user);
             s.status = "Connecting...".to_string();
         }),
@@ -426,6 +537,21 @@ async fn run_session(token: String, shared: &SharedRef, actions: &mut mpsc::Unbo
     let gateway = Arc::new(GatewayClient::new(token, event_tx));
     let gateway_task = tokio::spawn(async move { gateway.start(cmd_rx).await });
     load_direct_messages(&http, shared).await;
+    // Server icons: the gateway's server data here has names and channels only.
+    if let Ok(guilds) = http.get_user_guilds().await {
+        update(shared, |s| {
+            for guild in &guilds {
+                if let (Some(id), Some(icon)) = (guild["id"].as_str(), guild["icon"].as_str()) {
+                    if id.bytes().all(|b| b.is_ascii_digit()) && litecord_legacy::ui::message_grouping::valid_avatar_hash(icon) {
+                        s.guild_icons.insert(id.to_string(), format!("https://cdn.discordapp.com/icons/{id}/{icon}.png?size=64"));
+                    }
+                }
+            }
+        });
+    }
+    // Pictures are fetched without the login: they come from public image servers.
+    let picture_client = litecord_legacy::utils::build_generic_http_client();
+    let picture_slots = Arc::new(tokio::sync::Semaphore::new(6));
 
     // Voice: the open microphone and the guild of the joined channel. The voice connection
     // itself (signalling, DAVE encryption, Opus, playback) is Litecord's src/gateway/voice.rs.
@@ -471,24 +597,31 @@ async fn run_session(token: String, shared: &SharedRef, actions: &mut mpsc::Unbo
                             None => s.guilds.push(guild),
                         }
                     }),
-                    GatewayEvent::MessageCreated { id, channel_id, author, author_id, created_at, content, attachments, reply_author, reply_content, is_self, .. } => {
+                    GatewayEvent::MessageCreated { id, channel_id, author, author_id, created_at, avatar_url, content, content_lines, embed_lines, attachments, reply_author, reply_content, is_self, .. } => {
                         let open = shared.lock().map(|s| s.channel_id == channel_id).unwrap_or(false);
                         if !open {
                             continue;
                         }
                         update(shared, |s| {
-                            let mut text = content;
-                            if !attachments.is_empty() {
-                                if !text.is_empty() {
-                                    text.push('\n');
-                                }
-                                text.push_str(&format!("[{} attachment(s)]", attachments.len()));
-                            }
+                            let text = content;
+                            let mut lines = spans_from_lines(&content_lines);
+                            lines.extend(attachment_lines(&attachments));
                             let reply_to = if reply_author.is_empty() { String::new() } else { format!("{}: {}", reply_author, short(&reply_content, 60)) };
                             let mine = is_self || (!s.my_id.is_empty() && author_id == s.my_id);
                             // Whoever sent a message is no longer typing.
                             s.typing.retain(|(name, _)| *name != author);
-                            s.messages.push(Message { id: id.clone(), author, mine, time: created_at, text, reply_to, reactions: Vec::new() });
+                            s.messages.push(Message {
+                                id: id.clone(),
+                                author,
+                                avatar_url: as_png(&avatar_url),
+                                lines,
+                                embed_lines: spans_from_lines(&embed_lines),
+                                mine,
+                                time: created_at,
+                                text,
+                                reply_to,
+                                reactions: Vec::new(),
+                            });
                         });
                         // The channel is on screen: tell Discord it was read.
                         let (http_ack, channel_ack) = (Arc::clone(&http), channel_id.clone());
@@ -496,12 +629,20 @@ async fn run_session(token: String, shared: &SharedRef, actions: &mut mpsc::Unbo
                             let _ = http_ack.ack_message(&channel_ack, &id).await;
                         });
                     }
-                    GatewayEvent::MessageUpdated { id, channel_id, content, .. } => update(shared, |s| {
+                    GatewayEvent::MessageUpdated { id, channel_id, content, content_lines, embed_lines, .. } => update(shared, |s| {
                         if s.channel_id == channel_id {
                             if let Some(message) = s.messages.iter_mut().find(|m| m.id == id) {
                                 // Embed-only updates come with an empty text: keep what is shown.
                                 if !content.is_empty() {
-                                    message.text = format!("{content} (edited)");
+                                    message.text = content;
+                                    message.lines = spans_from_lines(&content_lines);
+                                    match message.lines.last_mut() {
+                                        Some(last) => last.push(Span::Text(" (edited)".to_string())),
+                                        None => {}
+                                    }
+                                }
+                                if !embed_lines.is_empty() {
+                                    message.embed_lines = spans_from_lines(&embed_lines);
                                 }
                             }
                         }
@@ -601,6 +742,27 @@ async fn run_session(token: String, shared: &SharedRef, actions: &mut mpsc::Unbo
                             update(shared, |s| s.status = e);
                         }
                     }
+                    Action::FetchImage(url) => {
+                        // Only the image servers this app builds addresses for.
+                        if !(url.starts_with("https://cdn.discordapp.com/") || url.starts_with("https://cdnjs.cloudflare.com/ajax/libs/twemoji/")) {
+                            continue;
+                        }
+                        let (client, slots, shared_pictures) = (picture_client.clone(), Arc::clone(&picture_slots), Arc::clone(shared));
+                        tokio::spawn(async move {
+                            let _slot = slots.acquire().await;
+                            let picture = match client.get(&url).timeout(std::time::Duration::from_secs(15)).send().await {
+                                Ok(reply) if reply.status().is_success() => match reply.bytes().await {
+                                    Ok(bytes) if bytes.len() <= 2 * 1024 * 1024 => decode_png(&bytes).map(Arc::new),
+                                    _ => None,
+                                },
+                                _ => None,
+                            };
+                            // A failed picture stays `None`: it is not asked for again.
+                            update(&shared_pictures, |s| {
+                                s.images.insert(url, picture);
+                            });
+                        });
+                    }
                     Action::Typing { channel_id } => {
                         let http_typing = Arc::clone(&http);
                         tokio::spawn(async move {
@@ -676,6 +838,8 @@ async fn run_session(token: String, shared: &SharedRef, actions: &mut mpsc::Unbo
         s.voice_connected = false;
         s.voice_users.clear();
         s.logged_in = false;
+        s.guild_icons.clear();
+        s.my_avatar.clear();
         s.guilds.clear();
         s.messages.clear();
         s.channel_id.clear();
@@ -691,5 +855,92 @@ pub async fn run(shared: SharedRef, mut actions: mpsc::UnboundedReceiver<Action>
         };
         run_session(token, &shared, &mut actions).await;
         tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+    }
+}
+
+/// Made-up content for `--render-demo`: a few servers, channels and messages that use
+/// every part of the interface (replies, links, emoji, reactions, an embed, voice).
+pub fn demo_state() -> Shared {
+    let channel = |id: &str, name: &str, voice: bool, category: bool, position: i64| ChannelData {
+        id: id.to_string(),
+        name: name.to_string(),
+        is_voice: voice,
+        is_category: category,
+        parent_id: None,
+        position,
+    };
+    let guild = |id: &str, name: &str, channels: Vec<ChannelData>| GuildData { id: id.to_string(), name: name.to_string(), channels };
+    let text = |t: &str| vec![spans_from_text(t)];
+    let message = |id: &str, author: &str, time: &str, lines: Vec<Vec<Span>>, reply: &str, mine: bool, reactions: Vec<ReactionData>| Message {
+        id: id.to_string(),
+        author: author.to_string(),
+        avatar_url: String::new(),
+        lines,
+        embed_lines: Vec::new(),
+        mine,
+        time: time.to_string(),
+        text: String::new(),
+        reply_to: reply.to_string(),
+        reactions,
+    };
+    let reaction = |emoji: &str, count: u32, me: bool| ReactionData { key: emoji.to_string(), label: emoji.to_string(), count, me };
+    let mut embed = message("5", "News Bot", "12/11 20:41", text("A new build is out."), "", false, Vec::new());
+    embed.embed_lines = vec![
+        vec![Span::Text("Litecord nightly".to_string())],
+        vec![Span::Text("Text chat, voice, reactions and more. ".to_string()), Span::Link("github.com/KyttuXD/Litecord".to_string())],
+    ];
+    Shared {
+        logged_in: true,
+        user: "Kyttu".to_string(),
+        status: "Connected as kyttu".to_string(),
+        guilds: vec![
+            guild("@me", "Direct Messages", vec![channel("d1", "Ana Souza", false, false, 0)]),
+            guild(
+                "1",
+                "Old Macs Club",
+                vec![
+                    channel("c0", "Text channels", false, true, 0),
+                    channel("c1", "general", false, false, 1),
+                    channel("c2", "snow-leopard", false, false, 2),
+                    channel("c3", "Voice channels", false, true, 3),
+                    channel("c4", "Lounge", true, false, 4),
+                ],
+            ),
+            guild("2", "Rust Brasil", vec![channel("c5", "geral", false, false, 0)]),
+            guild("3", "Pixel Art", vec![channel("c6", "showcase", false, false, 0)]),
+        ],
+        channel_id: "c1".to_string(),
+        messages: vec![
+            message("1", "Ana Souza", "12/11 20:30", text("Did the Mac Pro boot with the new build?"), "", false, Vec::new()),
+            message("2", "Ana Souza", "12/11 20:30", text("I can test on the MacBook Air later today."), "", false, Vec::new()),
+            message(
+                "3",
+                "Kyttu",
+                "12/11 20:34",
+                text("It did! Window, sound and the login code all work on 10.6.8 \u{1F389}"),
+                "Ana Souza: Did the Mac Pro boot with the new build?",
+                true,
+                vec![reaction("\u{1F44D}", 3, true), reaction("\u{2764}\u{FE0F}", 1, false)],
+            ),
+            message(
+                "4",
+                "Bo Lindqvist",
+                "12/11 20:36",
+                vec![
+                    spans_from_text("Nice \u{1F602} here is the long line that has to wrap around the edge of the window so that the wrapping of words can be seen in the picture, with a link in it:"),
+                    vec![Span::Link("https://github.com/KyttuXD/Litecord/releases/tag/nightly".to_string())],
+                ],
+                "",
+                false,
+                vec![reaction("\u{1F525}", 2, false)],
+            ),
+            embed,
+        ],
+        typing: vec![("Ana Souza".to_string(), std::time::Instant::now())],
+        voice_channel_id: "c4".to_string(),
+        voice_channel_name: "Lounge".to_string(),
+        voice_connected: true,
+        voice_users: vec!["Kyttu".to_string(), "Bo Lindqvist".to_string()],
+        ..Shared::default()
     }
 }

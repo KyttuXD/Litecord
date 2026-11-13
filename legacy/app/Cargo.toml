@@ -33,6 +33,8 @@ opus-rs = { path = "../vendor/opus-rs" }
 aes-gcm = "0.10"
 cpal = "0.15"
 nnnoiseless = { version = "0.5", default-features = false }
+# Avatars, server icons and emoji arrive as PNG.
+png = "0.17"
 # 0.9.4+ uses a function Rust 1.77 does not have.
 fontdue = "=0.9.3"
 miniquad = { git = "https://github.com/KyttuXD/TheLastRoute", rev = "7d2bc5aedebec634ebb4a7f081972b4fe1e53820" }

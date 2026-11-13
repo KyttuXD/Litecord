@@ -35,3 +35,15 @@ jobs:
       - name: Check
         working-directory: legacy/app
         run: cargo +1.77.0 check --locked --color never
+
+      # The interface drawn with made-up content, kept as a picture to look at.
+      - name: Render the interface to a picture
+        working-directory: legacy/app
+        run: |
+          cargo +1.77.0 build --locked --color never
+          target/debug/litecord-legacy --render-demo "$GITHUB_WORKSPACE/litecord-legacy-demo.png"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: litecord-legacy-demo
+          path: litecord-legacy-demo.png

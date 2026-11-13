@@ -8,7 +8,24 @@ mod backend;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
-use backend::{Action, CodeKind, LoginStage, Shared, SharedRef};
+use backend::{spans_from_text, Action, CodeKind, LoginStage, Picture, Shared, SharedRef, Span};
+
+/// Pictures by address, as the backend keeps them.
+type Images = HashMap<String, Option<Arc<Picture>>>;
+
+/// Fonts of the system tried, in this order, for characters the bundled font lacks
+/// (symbols, Chinese, Japanese, Korean...). Each is read the first time it is needed.
+const FALLBACK_FONTS: [&str; 9] = [
+    "/System/Library/Fonts/Apple Symbols.ttf",
+    "/Library/Fonts/Arial Unicode.ttf",
+    "/System/Library/Fonts/Supplemental/Arial Unicode.ttf",
+    "/System/Library/Fonts/AppleGothic.ttf",
+    "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+    "/usr/share/fonts/TTF/DejaVuSans.ttf",
+    "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
+    "/usr/share/fonts/noto-cjk/NotoSansCJK-Regular.ttc",
+    "/usr/share/fonts/google-noto-cjk/NotoSansCJK-Regular.ttc",
+];
 use miniquad::*;
 use tokio::sync::mpsc::UnboundedSender;
 
@@ -21,36 +38,29 @@ const TEXT: [u8; 3] = [0xDB, 0xDE, 0xE1];
 const MUTED: [u8; 3] = [0x94, 0x9B, 0xA4];
 const WHITE: [u8; 3] = [0xFF, 0xFF, 0xFF];
 
-const GUILDS_W: i32 = 190;
-const CHANNELS_W: i32 = 220;
-const TOP_H: i32 = 30;
-const INPUT_H: i32 = 40;
-const ROW_H: i32 = 26;
-const LINE_H: i32 = 20;
+/// Layout, after Discord's: a rail of round server icons, the channel list with the
+/// server's name above and the user below, then the chat with a header and the input.
+const GUILDS_W: i32 = 72;
+const CHANNELS_W: i32 = 240;
+const TOP_H: i32 = 48;
+const INPUT_H: i32 = 60;
+const ROW_H: i32 = 32;
+const LINE_H: i32 = 21;
+const ICON: i32 = 48;
+const AVATAR: i32 = 40;
+const USER_H: i32 = 52;
+const RAIL: [u8; 3] = [0x1E, 0x1F, 0x22];
+const USER_PANEL: [u8; 3] = [0x23, 0x24, 0x28];
+const HOVER: [u8; 3] = [0x2E, 0x30, 0x35];
+const LINK: [u8; 3] = [0x00, 0xA8, 0xFC];
+const DANGER: [u8; 3] = [0xED, 0x42, 0x45];
+const SMALL: f32 = 12.0;
 const FONT: f32 = 15.0;
 /// Height of the line between the messages and the input.
 const INFO_H: i32 = 22;
 
-/// Reactions offered for a selected message: what the button says, and the emoji it gives.
-/// The built-in font has no emoji pictures, so reactions are shown by these names.
+/// Reactions offered for a selected message: the action's name, and the emoji it gives.
 const QUICK_REACTIONS: [(&str, &str); 4] = [("+1", "\u{1F44D}"), ("<3", "\u{2764}\u{FE0F}"), ("haha", "\u{1F602}"), ("party", "\u{1F389}")];
-
-/// A name the built-in font can draw for a reaction.
-fn emoji_label(label: &str) -> String {
-    let known = [
-        ("\u{1F44D}", "+1"), ("\u{1F44E}", "-1"), ("\u{2764}", "<3"), ("\u{1F602}", "haha"), ("\u{1F389}", "party"),
-        ("\u{1F62E}", "wow"), ("\u{1F622}", "sad"), ("\u{1F525}", "fire"), ("\u{2705}", "ok"), ("\u{1F440}", "eyes"),
-        ("\u{1F64F}", "thanks"), ("\u{1F923}", "lol"), ("\u{1F60D}", "love"), ("\u{1F4AF}", "100"),
-    ];
-    if let Some((_, name)) = known.iter().find(|(emoji, _)| label.starts_with(emoji)) {
-        return name.to_string();
-    }
-    if label.is_ascii() {
-        label.to_string() // a custom emoji, already ":name:"
-    } else {
-        "emoji".to_string()
-    }
-}
 
 /// What Return does with the text in the input.
 enum Compose {
@@ -64,7 +74,10 @@ struct Canvas {
     w: i32,
     h: i32,
     px: Vec<u8>,
-    font: fontdue::Font,
+    /// The bundled font first, then the system fonts read so far.
+    fonts: Vec<fontdue::Font>,
+    /// System fonts not tried yet.
+    fallbacks: Vec<&'static str>,
     glyphs: HashMap<(char, u32), (fontdue::Metrics, Vec<u8>)>,
 }
 
@@ -75,7 +88,36 @@ impl Canvas {
             fontdue::FontSettings::default(),
         )
         .expect("the bundled font is readable");
-        Canvas { w, h, px: vec![0; (w * h * 4) as usize], font, glyphs: HashMap::new() }
+        let mut fallbacks: Vec<&'static str> = FALLBACK_FONTS.to_vec();
+        fallbacks.reverse(); // popped from the end, so the first of the list is tried first
+        Canvas { w, h, px: vec![0; (w * h * 4) as usize], fonts: vec![font], fallbacks, glyphs: HashMap::new() }
+    }
+
+    /// The font to draw `ch` with: the first that has it, reading more system fonts if needed.
+    fn font_for(&mut self, ch: char) -> usize {
+        if let Some(i) = self.fonts.iter().position(|f| f.lookup_glyph_index(ch) != 0) {
+            return i;
+        }
+        // Nothing to look for: invisible characters, and the joiners and selectors of emoji.
+        if ch.is_whitespace() || ch.is_control() || matches!(ch as u32, 0x200B..=0x200F | 0xFE00..=0xFE0F | 0x2060..=0x206F | 0xE0000..=0xE007F) {
+            return 0;
+        }
+        while let Some(path) = self.fallbacks.pop() {
+            let Ok(bytes) = std::fs::read(path) else { continue };
+            let started = std::time::Instant::now();
+            match fontdue::Font::from_bytes(bytes, fontdue::FontSettings::default()) {
+                Ok(font) => {
+                    log::info!("extra font {path} read in {} ms", started.elapsed().as_millis());
+                    let has = font.lookup_glyph_index(ch) != 0;
+                    self.fonts.push(font);
+                    if has {
+                        return self.fonts.len() - 1;
+                    }
+                }
+                Err(e) => log::warn!("extra font {path} not usable: {e}"),
+            }
+        }
+        0
     }
 
     fn resize(&mut self, w: i32, h: i32) {
@@ -101,8 +143,88 @@ impl Canvas {
 
     fn glyph(&mut self, ch: char, size: f32) -> &(fontdue::Metrics, Vec<u8>) {
         let key = (ch, size as u32);
-        let font = &self.font;
-        self.glyphs.entry(key).or_insert_with(|| font.rasterize(ch, size))
+        if !self.glyphs.contains_key(&key) {
+            let font = self.font_for(ch);
+            let glyph = self.fonts[font].rasterize(ch, size);
+            self.glyphs.insert(key, glyph);
+        }
+        &self.glyphs[&key]
+    }
+
+    fn blend(&mut self, x: i32, y: i32, c: [u8; 3], alpha: u32) {
+        if x < 0 || y < 0 || x >= self.w || y >= self.h || alpha == 0 {
+            return;
+        }
+        let i = ((y * self.w + x) * 4) as usize;
+        for k in 0..3 {
+            let old = self.px[i + k] as u32;
+            self.px[i + k] = ((c[k] as u32 * alpha + old * (255 - alpha)) / 255) as u8;
+        }
+        self.px[i + 3] = 0xFF;
+    }
+
+    /// How much of the pixel at (dx, dy) of a w x h box lies inside its rounded shape, 0..255.
+    fn corner_alpha(dx: i32, dy: i32, w: i32, h: i32, r: i32) -> u32 {
+        let cx = if dx < r { r } else if dx >= w - r { w - r - 1 } else { dx };
+        let cy = if dy < r { r } else if dy >= h - r { h - r - 1 } else { dy };
+        if cx == dx || cy == dy {
+            return 255;
+        }
+        let d = (((dx - cx) * (dx - cx) + (dy - cy) * (dy - cy)) as f32).sqrt();
+        ((r as f32 + 0.5 - d).clamp(0.0, 1.0) * 255.0) as u32
+    }
+
+    fn round_rect(&mut self, x: i32, y: i32, w: i32, h: i32, r: i32, c: [u8; 3]) {
+        let r = r.min(w / 2).min(h / 2).max(0);
+        for dy in 0..h {
+            for dx in 0..w {
+                self.blend(x + dx, y + dy, c, Self::corner_alpha(dx, dy, w, h, r));
+            }
+        }
+    }
+
+    /// Draws a picture scaled to `size` x `size`; `radius` rounds its corners (size / 2: a circle).
+    fn image(&mut self, picture: &Picture, x: i32, y: i32, size: i32, radius: i32) {
+        let (pw, ph) = (picture.w as i32, picture.h as i32);
+        if pw == 0 || ph == 0 || size <= 0 {
+            return;
+        }
+        for dy in 0..size {
+            for dx in 0..size {
+                let shape = if radius > 0 { Self::corner_alpha(dx, dy, size, size, radius) } else { 255 };
+                if shape == 0 {
+                    continue;
+                }
+                // Average of the source pixels this pixel covers (the pictures are larger than drawn).
+                let x0 = dx * pw / size;
+                let x1 = (((dx + 1) * pw + size - 1) / size).min(pw).max(x0 + 1);
+                let y0 = dy * ph / size;
+                let y1 = (((dy + 1) * ph + size - 1) / size).min(ph).max(y0 + 1);
+                let (mut r, mut g, mut b, mut a, mut n) = (0u32, 0u32, 0u32, 0u32, 0u32);
+                for sy in y0..y1 {
+                    for sx in x0..x1 {
+                        let i = ((sy * pw + sx) * 4) as usize;
+                        let pa = picture.rgba[i + 3] as u32;
+                        r += picture.rgba[i] as u32 * pa;
+                        g += picture.rgba[i + 1] as u32 * pa;
+                        b += picture.rgba[i + 2] as u32 * pa;
+                        a += pa;
+                        n += 1;
+                    }
+                }
+                if a == 0 {
+                    continue;
+                }
+                let colour = [(r / a) as u8, (g / a) as u8, (b / a) as u8];
+                self.blend(x + dx, y + dy, colour, (a / n) * shape / 255);
+            }
+        }
+    }
+
+    /// Text drawn twice, one pixel apart: the bundled font file has one weight only.
+    fn bold(&mut self, x: i32, y: i32, text: &str, size: f32, c: [u8; 3], max_x: i32) -> i32 {
+        self.text(x, y, text, size, c, max_x);
+        self.text(x + 1, y, text, size, c, max_x) + 1
     }
 
     fn text_width(&mut self, text: &str, size: f32) -> i32 {
@@ -185,9 +307,8 @@ impl Canvas {
 }
 
 struct Stage {
-    ctx: Box<dyn RenderingBackend>,
-    pipeline: Pipeline,
-    bindings: Bindings,
+    /// The window's OpenGL side. None when drawing to a picture file (`--render-demo`).
+    gl: Option<(Box<dyn RenderingBackend>, Pipeline, Bindings)>,
     canvas: Canvas,
     shared: SharedRef,
     actions: UnboundedSender<Action>,
@@ -204,12 +325,16 @@ struct Stage {
     guild_rows: Vec<(i32, usize)>,
     /// (y, channel id, is voice, name).
     channel_rows: Vec<(i32, String, bool, String)>,
-    logout_x: i32,
     /// Message picked with a click, the reply/edit state, and what was drawn last frame for
     /// clicks: the top of each message line with its message id, and the action words.
     selected: Option<String>,
     compose: Compose,
-    message_rows: Vec<(i32, String)>,
+    message_rows: Vec<(i32, i32, String)>,
+    /// Pictures asked for already, and the ones the last frame missed.
+    requested: std::collections::HashSet<String>,
+    wanted: Vec<String>,
+    /// "Log out" in the user panel: x from, x to, y.
+    logout: (i32, i32, i32),
     action_buttons: Vec<(&'static str, i32, i32, i32)>,
     last_typing_sent: Option<std::time::Instant>,
     /// Login form: the three text fields, which one has the keyboard, and what was drawn
@@ -263,10 +388,12 @@ impl Stage {
             PipelineParams::default(),
         );
         log::info!("window ready: {} x {}", canvas.w, canvas.h);
+        Stage::with(canvas, Some((ctx, pipeline, bindings)), shared, actions)
+    }
+
+    fn with(canvas: Canvas, gl: Option<(Box<dyn RenderingBackend>, Pipeline, Bindings)>, shared: SharedRef, actions: UnboundedSender<Action>) -> Stage {
         Stage {
-            ctx,
-            pipeline,
-            bindings,
+            gl,
             canvas,
             shared,
             actions,
@@ -280,10 +407,12 @@ impl Stage {
             input: String::new(),
             guild_rows: Vec::new(),
             channel_rows: Vec::new(),
-            logout_x: i32::MAX,
             selected: None,
             compose: Compose::Normal,
             message_rows: Vec::new(),
+            requested: std::collections::HashSet::new(),
+            wanted: Vec::new(),
+            logout: (i32::MAX, i32::MAX, 0),
             action_buttons: Vec::new(),
             last_typing_sent: None,
             logged_in: false,
@@ -312,13 +441,128 @@ impl Stage {
         } else {
             self.paint_login(&state);
         }
+        drop(state);
+        // Pictures the frame needed and did not have: ask for each once.
+        for url in std::mem::take(&mut self.wanted) {
+            if self.requested.insert(url.clone()) {
+                let _ = self.actions.send(Action::FetchImage(url));
+            }
+        }
+    }
+
+    /// A picture if it is loaded; otherwise notes that it is wanted.
+    fn picture(&mut self, images: &Images, url: &str) -> Option<Arc<Picture>> {
+        if url.is_empty() {
+            return None;
+        }
+        match images.get(url) {
+            Some(picture) => picture.clone(),
+            None => {
+                self.wanted.push(url.to_string());
+                None
+            }
+        }
+    }
+
+    /// A round picture, or a coloured shape with initials while there is none.
+    fn avatar(&mut self, images: &Images, url: &str, name: &str, x: i32, y: i32, size: i32, radius: i32) {
+        if let Some(picture) = self.picture(images, url) {
+            self.canvas.image(&picture, x, y, size, radius);
+            return;
+        }
+        // A colour picked by the name, from Discord's default avatar colours.
+        let colours = [[0x58, 0x65, 0xF2], [0x75, 0x7E, 0x8A], [0x3B, 0xA5, 0x5C], [0xFA, 0xA6, 0x1A], [0xED, 0x42, 0x45], [0xEB, 0x45, 0x9E]];
+        let pick = name.bytes().fold(0usize, |a, b| a.wrapping_mul(31).wrapping_add(b as usize)) % colours.len();
+        self.canvas.round_rect(x, y, size, size, radius, colours[pick]);
+        let initials: String = name.split_whitespace().filter_map(|w| w.chars().find(|c| c.is_alphanumeric())).take(2).collect::<String>().to_uppercase();
+        let text_size = size as f32 * 0.4;
+        let tw = self.canvas.text_width(&initials, text_size);
+        self.canvas.text(x + (size - tw) / 2, y + size / 2 + (text_size * 0.36) as i32, &initials, text_size, WHITE, x + size);
+    }
+
+    fn span_width(&mut self, span: &Span, size: f32) -> i32 {
+        match span {
+            Span::Text(text) | Span::Link(text) => self.canvas.text_width(text, size),
+            Span::Emoji(..) => (size * 1.35) as i32 + 2,
+        }
+    }
+
+    /// Draws spans on one line with the baseline at `y`; returns the x after them.
+    fn spans(&mut self, images: &Images, x: i32, y: i32, spans: &[Span], size: f32, colour: [u8; 3], max_x: i32) -> i32 {
+        let mut pen = x;
+        for span in spans {
+            match span {
+                Span::Text(text) => pen = self.canvas.text(pen, y, text, size, colour, max_x),
+                Span::Link(text) => pen = self.canvas.text(pen, y, text, size, LINK, max_x),
+                Span::Emoji(url, alt) => {
+                    let side = (size * 1.35) as i32;
+                    if pen + side > max_x {
+                        break;
+                    }
+                    match self.picture(images, url) {
+                        Some(picture) => self.canvas.image(&picture, pen, y - (size * 1.05) as i32, side, 0),
+                        // Not loaded (yet): a custom emoji shows its :name:, a Unicode one stays blank.
+                        None if alt.is_ascii() => {
+                            self.canvas.text(pen, y, alt, SMALL, MUTED, pen + side);
+                        }
+                        None => {}
+                    }
+                    pen += side + 2;
+                }
+            }
+        }
+        pen
+    }
+
+    /// Adds one piece to the last line, starting a new line when it does not fit.
+    fn place(&mut self, lines: &mut Vec<Vec<Span>>, used: &mut i32, piece: Span, size: f32, max_w: i32) {
+        let width = self.span_width(&piece, size);
+        if *used + width > max_w && *used > 0 {
+            lines.push(Vec::new());
+            *used = 0;
+        }
+        *used += width;
+        let line = lines.last_mut().expect("there is always a line");
+        // Words of the same kind next to each other become one span again.
+        match (line.last_mut(), &piece) {
+            (Some(Span::Text(last)), Span::Text(word)) => last.push_str(word),
+            (Some(Span::Link(last)), Span::Link(word)) => last.push_str(word),
+            _ => line.push(piece),
+        }
+    }
+
+    /// Breaks spans into lines no wider than `max_w`, at spaces.
+    fn wrap_spans(&mut self, spans: &[Span], size: f32, max_w: i32) -> Vec<Vec<Span>> {
+        let mut lines: Vec<Vec<Span>> = vec![Vec::new()];
+        let mut used = 0;
+        for span in spans {
+            match span {
+                Span::Emoji(..) => self.place(&mut lines, &mut used, span.clone(), size, max_w),
+                Span::Text(text) | Span::Link(text) => {
+                    let link = matches!(span, Span::Link(_));
+                    for word in text.split_inclusive(' ') {
+                        // A word wider than the pane (a long address) is cut letter by letter.
+                        if self.canvas.text_width(word, size) > max_w {
+                            for ch in word.chars() {
+                                let piece = if link { Span::Link(ch.to_string()) } else { Span::Text(ch.to_string()) };
+                                self.place(&mut lines, &mut used, piece, size, max_w);
+                            }
+                        } else {
+                            let piece = if link { Span::Link(word.to_string()) } else { Span::Text(word.to_string()) };
+                            self.place(&mut lines, &mut used, piece, size, max_w);
+                        }
+                    }
+                }
+            }
+        }
+        lines
     }
 
     fn paint_login(&mut self, state: &Shared) {
         let (w, h) = (self.canvas.w, self.canvas.h);
         self.guild_rows.clear();
         self.channel_rows.clear();
-        self.logout_x = i32::MAX;
+        self.logout = (i32::MAX, i32::MAX, 0);
         self.voice_bar = None;
         self.login_field_rects.clear();
         self.login_buttons.clear();
@@ -427,7 +671,7 @@ impl Stage {
     /// A click in the message pane: an action word of the selected message, or a message.
     fn click_messages(&mut self, x: i32, y: i32) {
         self.dirty = true;
-        let action = self.action_buttons.iter().find(|(_, x0, x1, by)| x >= *x0 - 4 && x <= *x1 + 4 && y >= by - 16 && y <= by + 6).map(|b| b.0);
+        let action = self.action_buttons.iter().find(|(_, x0, x1, by)| x >= *x0 && x <= *x1 && y >= by - 18 && y <= by + 8).map(|b| b.0);
         if let (Some(action), Some(id)) = (action, self.selected.clone()) {
             let (channel_id, author, text) = match self.shared.lock() {
                 Ok(s) => match s.messages.iter().find(|m| m.id == id) {
@@ -439,7 +683,7 @@ impl Stage {
             match action {
                 "Reply" => self.compose = Compose::Reply { id, author },
                 "Edit" => {
-                    self.input = text.trim_end_matches(" (edited)").to_string();
+                    self.input = text;
                     self.compose = Compose::Edit { id };
                 }
                 "Delete" => {
@@ -455,7 +699,7 @@ impl Stage {
             self.selected = None;
             return;
         }
-        let hit = self.message_rows.iter().find(|(top, _)| y >= *top && y < *top + LINE_H).map(|(_, id)| id.clone());
+        let hit = self.message_rows.iter().find(|(top, bottom, _)| y >= *top && y < *bottom).map(|(_, _, id)| id.clone());
         // A second click on the same message, or a click on empty space, takes the selection away.
         self.selected = if hit == self.selected { None } else { hit };
     }
@@ -510,138 +754,146 @@ impl Stage {
 
     fn paint_main(&mut self, state: &Shared) {
         let (w, h) = (self.canvas.w, self.canvas.h);
+        let images = &state.images;
         if self.guild >= state.guilds.len() {
             self.guild = 0;
         }
-
-        // Servers.
-        self.canvas.rect(0, TOP_H, GUILDS_W, h - TOP_H, SIDEBAR);
-        self.guild_rows.clear();
-        for (i, guild) in state.guilds.iter().enumerate() {
-            let y = TOP_H + 6 + i as i32 * ROW_H - self.guild_scroll;
-            if y < TOP_H - ROW_H || y > h {
-                continue;
-            }
-            if i == self.guild {
-                self.canvas.rect(4, y, GUILDS_W - 8, ROW_H - 2, ACCENT);
-            }
-            let color = if i == self.guild { WHITE } else { TEXT };
-            self.canvas.text(12, y + 17, &guild.name, FONT, color, GUILDS_W - 8);
-            self.guild_rows.push((y, i));
-        }
-
-        // Channels of the selected server: text channels can be opened, the rest is shown in grey.
-        self.canvas.rect(GUILDS_W, TOP_H, CHANNELS_W, h - TOP_H, PANEL);
-        self.channel_rows.clear();
-        if let Some(guild) = state.guilds.get(self.guild) {
-            let mut channels: Vec<_> = guild.channels.iter().collect();
-            if guild.id != "@me" {
-                channels.sort_by_key(|c| c.position);
-            }
-            for (i, channel) in channels.iter().enumerate() {
-                let y = TOP_H + 6 + i as i32 * ROW_H - self.channel_scroll;
-                if y < TOP_H - ROW_H || y > h {
-                    continue;
-                }
-                let selected = channel.id == state.channel_id;
-                if selected {
-                    self.canvas.rect(GUILDS_W + 4, y, CHANNELS_W - 8, ROW_H - 2, INPUT);
-                }
-                let (label, color) = if channel.is_category {
-                    (channel.name.to_uppercase(), MUTED)
-                } else if channel.is_voice {
-                    let joined = channel.id == state.voice_channel_id;
-                    (format!("(voice) {}", channel.name), if joined { ACCENT } else { TEXT })
-                } else if guild.id == "@me" {
-                    (channel.name.clone(), if selected { WHITE } else { TEXT })
-                } else {
-                    (format!("# {}", channel.name), if selected { WHITE } else { TEXT })
-                };
-                self.canvas.text(GUILDS_W + 12, y + 17, &label, FONT, color, GUILDS_W + CHANNELS_W - 8);
-                if !channel.is_category {
-                    self.channel_rows.push((y, channel.id.clone(), channel.is_voice, channel.name.clone()));
-                }
-            }
-        }
-
-        // Voice bar at the bottom of the channel column while in a voice channel.
-        self.voice_bar = None;
-        if !state.voice_channel_id.is_empty() {
-            let people = state.voice_users.len().min(6) as i32;
-            let bar_h = 58 + people * LINE_H;
-            let top = h - bar_h;
-            let right = GUILDS_W + CHANNELS_W - 8;
-            self.canvas.rect(GUILDS_W, top, CHANNELS_W, bar_h, SIDEBAR);
-            let state_text = if state.voice_connected { "Voice connected" } else { "Connecting voice..." };
-            self.canvas.text(GUILDS_W + 12, top + 18, state_text, FONT, if state.voice_connected { ACCENT } else { MUTED }, right);
-            self.canvas.text(GUILDS_W + 12, top + 36, &state.voice_channel_name, FONT, TEXT, right);
-            for (i, name) in state.voice_users.iter().take(6).enumerate() {
-                self.canvas.text(GUILDS_W + 20, top + 54 + i as i32 * LINE_H, name, FONT, MUTED, right);
-            }
-            let y = h - 8;
-            let mute_label = if state.muted { "Unmute" } else { "Mute" };
-            let mute_from = GUILDS_W + 12;
-            let mute_to = self.canvas.text(mute_from, y, mute_label, FONT, if state.muted { ACCENT } else { TEXT }, right);
-            let leave_from = mute_to + 24;
-            let leave_to = self.canvas.text(leave_from, y, "Leave", FONT, TEXT, right);
-            self.voice_bar = Some((top, (mute_from, mute_to), (leave_from, leave_to)));
-        }
-
-        // Messages, newest at the bottom. One line above the input is kept for the action
-        // bar of a selected message, the reply/edit notice, or who is typing.
         let mx = GUILDS_W + CHANNELS_W;
-        let pane_w = w - mx - 24;
-        let info_y = h - INPUT_H - 12;
-        let bottom = h - INPUT_H - 8 - INFO_H;
-        // (text, colour, index of its message)
-        let mut lines: Vec<(String, [u8; 3], usize)> = Vec::new();
-        for (index, message) in state.messages.iter().enumerate() {
-            if !message.reply_to.is_empty() {
-                lines.push((format!("> {}", message.reply_to), MUTED, index));
-            }
-            lines.push((format!("{}   {}", message.author, message.time), ACCENT, index));
-            for line in self.canvas.wrap(&message.text, FONT, pane_w.max(40)) {
-                lines.push((line, TEXT, index));
-            }
-            if !message.reactions.is_empty() {
-                let chips: Vec<String> = message
-                    .reactions
-                    .iter()
-                    .map(|r| format!("[{} {}{}]", emoji_label(&r.label), r.count, if r.me { "*" } else { "" }))
-                    .collect();
-                lines.push((chips.join(" "), MUTED, index));
-            }
-            lines.push((String::new(), TEXT, usize::MAX));
+
+        // ---- Chat: messages first; the bars around them are drawn over what sticks out.
+        let text_x = mx + 16 + AVATAR + 16;
+        let pane_w = (w - text_x - 24).max(60);
+        let info_y = h - INPUT_H - 6;
+        let top = TOP_H;
+        let bottom = h - INPUT_H - INFO_H;
+
+        /// What one message takes on screen.
+        struct Block {
+            index: usize,
+            /// Starts with the author's picture, name and time.
+            header: bool,
+            lines: Vec<(Vec<Span>, [u8; 3])>,
+            height: i32,
         }
-        let visible = ((bottom - TOP_H) / LINE_H).max(1);
-        let max_scroll = (lines.len() as i32 - visible).max(0);
+        let mut blocks: Vec<Block> = Vec::new();
+        for (index, message) in state.messages.iter().enumerate() {
+            // Messages of the same author in a row share one author line, as on Discord.
+            let header = match index.checked_sub(1).map(|p| &state.messages[p]) {
+                Some(previous) => previous.author != message.author || !message.reply_to.is_empty(),
+                None => true,
+            };
+            let mut lines = Vec::new();
+            for line in &message.lines {
+                for wrapped in self.wrap_spans(line, FONT, pane_w) {
+                    lines.push((wrapped, TEXT));
+                }
+            }
+            for line in &message.embed_lines {
+                for wrapped in self.wrap_spans(line, FONT, pane_w - 12) {
+                    lines.push((wrapped, MUTED));
+                }
+            }
+            let mut height = lines.len() as i32 * LINE_H + if message.reactions.is_empty() { 0 } else { 28 };
+            if header {
+                height = (height + 22).max(AVATAR + 2) + 16 + if message.reply_to.is_empty() { 0 } else { 18 };
+            } else {
+                height += 2;
+            }
+            blocks.push(Block { index, header, lines, height });
+        }
+        let total: i32 = blocks.iter().map(|b| b.height).sum();
+        let max_scroll = (total - (bottom - top) + 8).max(0);
         self.message_scroll = self.message_scroll.clamp(0, max_scroll);
-        let end = lines.len() as i32 - self.message_scroll;
-        let start = (end - visible).max(0);
         let selected_index = self.selected.as_ref().and_then(|id| state.messages.iter().position(|m| m.id == *id));
         if self.selected.is_some() && selected_index.is_none() {
             self.selected = None; // the message is gone
         }
         self.message_rows.clear();
-        for (row, (line, color, index)) in lines[start as usize..end as usize].iter().enumerate() {
-            let top = bottom - (end - start - row as i32) * LINE_H;
-            if *index != usize::MAX {
-                if Some(*index) == selected_index {
-                    self.canvas.rect(mx + 4, top, w - mx - 8, LINE_H, PANEL);
-                }
-                self.message_rows.push((top, state.messages[*index].id.clone()));
+        let mut y = bottom - total + self.message_scroll - 6;
+        for block in &blocks {
+            let message = &state.messages[block.index];
+            let (block_top, block_bottom) = (y, y + block.height);
+            y = block_bottom;
+            if block_bottom < top || block_top > bottom {
+                continue;
             }
-            self.canvas.text(mx + 12, top + 15, line, FONT, *color, w - 8);
+            let mut line_y = block_top;
+            if block.header {
+                line_y += 16;
+            }
+            if Some(block.index) == selected_index {
+                self.canvas.rect(mx, line_y - 2, w - mx, block_bottom - line_y + 2, HOVER);
+            }
+            self.message_rows.push((line_y, block_bottom, message.id.clone()));
+            if block.header {
+                if !message.reply_to.is_empty() {
+                    let reply = spans_from_text(&format!("re: {}", message.reply_to));
+                    self.spans(images, text_x, line_y + 12, &reply, SMALL + 1.0, MUTED, w - 16);
+                    line_y += 18;
+                }
+                self.avatar(images, &message.avatar_url, &message.author, mx + 16, line_y + 2, AVATAR, AVATAR / 2);
+                let name = spans_from_text(&message.author);
+                // Twice, one pixel apart, for a bolder name.
+                self.spans(images, text_x + 1, line_y + 16, &name, FONT, WHITE, w - 16);
+                let name_end = self.spans(images, text_x, line_y + 16, &name, FONT, WHITE, w - 16);
+                self.canvas.text(name_end + 9, line_y + 16, &message.time, SMALL, MUTED, w - 16);
+                line_y += 22;
+            }
+            for (spans, colour) in &block.lines {
+                if *colour == MUTED {
+                    // An embed: a bar on the left, as on Discord.
+                    self.canvas.rect(text_x, line_y + 2, 3, LINE_H - 2, PANEL);
+                    self.spans(images, text_x + 12, line_y + 16, spans, FONT, MUTED, w - 16);
+                } else {
+                    self.spans(images, text_x, line_y + 16, spans, FONT, *colour, w - 16);
+                }
+                line_y += LINE_H;
+            }
+            // Reaction chips: the emoji picture and the count; yours has an accent border.
+            let mut chip_x = text_x;
+            for reaction in &message.reactions {
+                let spans = spans_from_text(&format!("{} {}", reaction.label, reaction.count));
+                let mut chip_w = 16;
+                for span in &spans {
+                    chip_w += self.span_width(span, SMALL + 1.0);
+                }
+                if reaction.me {
+                    self.canvas.round_rect(chip_x - 1, line_y + 3, chip_w + 2, 24, 9, ACCENT);
+                }
+                self.canvas.round_rect(chip_x, line_y + 4, chip_w, 22, 8, if reaction.me { [0x3A, 0x3F, 0x66] } else { PANEL });
+                self.spans(images, chip_x + 8, line_y + 20, &spans, SMALL + 1.0, TEXT, w - 16);
+                chip_x += chip_w + 6;
+            }
         }
         if state.channel_id.is_empty() {
-            self.canvas.text(mx + 12, TOP_H + 40, "Choose a server, then a channel.", FONT, MUTED, w - 8);
+            self.canvas.text(mx + 24, top + 48, "Choose a server on the left, then a channel.", FONT, MUTED, w - 8);
         }
 
-        // The line above the input.
+        // ---- Chat header: the channel's name, and what the app has to say.
+        self.canvas.rect(mx, 0, w - mx, TOP_H, BG);
+        self.canvas.rect(mx, TOP_H - 1, w - mx, 1, RAIL);
+        let open_channel = if state.channel_id.is_empty() {
+            None
+        } else {
+            state.guilds.iter().flat_map(|g| g.channels.iter().map(move |c| (g, c))).find(|(_, c)| c.id == state.channel_id)
+        };
+        let mut header_x = mx + 20;
+        if let Some((guild, channel)) = open_channel {
+            if guild.id != "@me" {
+                header_x = self.canvas.text(header_x, 31, "#", 22.0, MUTED, w) + 8;
+            }
+            let name = spans_from_text(&channel.name);
+            self.spans(images, header_x + 1, 30, &name, 16.0, WHITE, w - 16);
+            header_x = self.spans(images, header_x, 30, &name, 16.0, WHITE, w - 16) + 16;
+        }
+        self.canvas.text(header_x, 30, &state.status, SMALL + 1.0, MUTED, w - 12);
+
+        // ---- The line above the input, and the input.
+        self.canvas.rect(mx, bottom, w - mx, h - bottom, BG);
         self.action_buttons.clear();
         if let Some(index) = selected_index {
             let mine = state.messages[index].mine;
-            let mut x = mx + 12;
+            let mut x = mx + 20;
             let mut labels: Vec<&'static str> = vec!["Reply"];
             labels.extend(QUICK_REACTIONS.iter().map(|(label, _)| *label));
             if mine {
@@ -649,9 +901,19 @@ impl Stage {
             }
             labels.push("Close");
             for label in labels {
-                let x1 = self.canvas.text(x, info_y, label, FONT, if label == "Delete" { [0xED, 0x42, 0x45] } else { ACCENT }, w - 8);
-                self.action_buttons.push((label, x, x1, info_y));
-                x = x1 + 18;
+                // The reaction buttons show their emoji picture.
+                let spans = match QUICK_REACTIONS.iter().find(|(l, _)| *l == label) {
+                    Some((_, emoji)) => spans_from_text(emoji),
+                    None => vec![Span::Text(label.to_string())],
+                };
+                let mut width = 16;
+                for span in &spans {
+                    width += self.span_width(span, SMALL + 1.0);
+                }
+                self.canvas.round_rect(x, info_y - 16, width, 22, 6, PANEL);
+                self.spans(images, x + 8, info_y, &spans, SMALL + 1.0, if label == "Delete" { DANGER } else { TEXT }, w - 8);
+                self.action_buttons.push((label, x, x + width, info_y));
+                x += width + 8;
             }
         } else {
             let notice = match &self.compose {
@@ -667,32 +929,145 @@ impl Stage {
                     }
                 }
             };
-            self.canvas.text(mx + 12, info_y, &notice, FONT, MUTED, w - 8);
+            let notice = spans_from_text(&notice);
+            self.spans(images, mx + 20, info_y, &notice, SMALL + 1.0, MUTED, w - 8);
         }
-
-        // Text input.
-        self.canvas.rect(mx + 8, h - INPUT_H, w - mx - 16, INPUT_H - 8, INPUT);
-        let shown = if self.input.is_empty() && !state.channel_id.is_empty() {
-            ("Type a message and press Return   (/upload /path/to/file sends a file; click a message for more)".to_string(), MUTED)
+        self.canvas.round_rect(mx + 16, h - INPUT_H + 4, w - mx - 32, 44, 8, INPUT);
+        let channel_label = open_channel.map(|(g, c)| if g.id == "@me" { format!("@{}", c.name) } else { format!("#{}", c.name) });
+        let (mut shown, colour) = if self.input.is_empty() {
+            match channel_label {
+                Some(label) => (format!("Message {label}      (/upload /path/to/file sends a file; click a message for more)"), MUTED),
+                None => (String::new(), MUTED),
+            }
         } else {
             (format!("{}|", self.input), TEXT)
         };
         // Keep the end of a long line in view.
-        let mut text = shown.0;
-        if shown.1 == TEXT {
-            while self.canvas.text_width(&text, FONT) > w - mx - 40 && text.chars().count() > 1 {
-                text.remove(0);
+        if colour == TEXT {
+            while self.canvas.text_width(&shown, FONT) > w - mx - 64 && shown.chars().count() > 1 {
+                shown.remove(0);
             }
         }
-        self.canvas.text(mx + 16, h - INPUT_H + 21, &text, FONT, shown.1, w - 12);
+        let shown = spans_from_text(&shown);
+        self.spans(images, mx + 32, h - INPUT_H + 31, &shown, FONT, colour, w - 32);
 
-        // Top bar: account, status, log out.
-        self.canvas.rect(0, 0, w, TOP_H, SIDEBAR);
-        let x = self.canvas.text(12, 20, &state.user, FONT, WHITE, w);
-        let logout = "Log out";
-        self.logout_x = w - self.canvas.text_width(logout, FONT) - 12;
-        self.canvas.text(x + 16, 20, &state.status, FONT, MUTED, self.logout_x - 12);
-        self.canvas.text(self.logout_x, 20, logout, FONT, MUTED, w);
+        // ---- Channel column: channels, then the server name over them, voice bar, user panel.
+        self.canvas.rect(GUILDS_W, 0, CHANNELS_W, h, PANEL);
+        let right = mx - 8;
+        self.channel_rows.clear();
+        if let Some(guild) = state.guilds.get(self.guild) {
+            let mut channels: Vec<_> = guild.channels.iter().collect();
+            if guild.id != "@me" {
+                channels.sort_by_key(|c| c.position);
+            }
+            for (i, channel) in channels.iter().enumerate() {
+                let y = TOP_H + 10 + i as i32 * ROW_H - self.channel_scroll;
+                if y < TOP_H - ROW_H || y > h {
+                    continue;
+                }
+                if channel.is_category {
+                    let upper = spans_from_text(&channel.name.to_uppercase());
+                    self.spans(images, GUILDS_W + 16, y + 21, &upper, SMALL, MUTED, right);
+                    continue;
+                }
+                let selected = channel.id == state.channel_id;
+                if selected {
+                    self.canvas.round_rect(GUILDS_W + 8, y, CHANNELS_W - 16, ROW_H - 2, 4, [0x40, 0x42, 0x49]);
+                }
+                let joined = channel.id == state.voice_channel_id;
+                let colour = if selected || joined { WHITE } else { MUTED };
+                let mut x = GUILDS_W + 16;
+                if guild.id == "@me" {
+                    self.avatar(images, "", &channel.name, x, y + 3, 24, 12);
+                    x += 32;
+                } else if channel.is_voice {
+                    // A small speaker: a box and a cone.
+                    let tint = if joined { ACCENT } else { MUTED };
+                    self.canvas.rect(x + 2, y + 12, 4, 7, tint);
+                    for k in 0..6 {
+                        self.canvas.rect(x + 6 + k, y + 12 - k, 1, 7 + 2 * k, tint);
+                    }
+                    x += 22;
+                } else {
+                    x = self.canvas.text(x + 2, y + 21, "#", 18.0, MUTED, right) + 8;
+                }
+                let name = spans_from_text(&channel.name);
+                self.spans(images, x, y + 20, &name, FONT, colour, right);
+                self.channel_rows.push((y, channel.id.clone(), channel.is_voice, channel.name.clone()));
+            }
+            // Server name above the list.
+            self.canvas.rect(GUILDS_W, 0, CHANNELS_W, TOP_H, PANEL);
+            self.canvas.rect(GUILDS_W, TOP_H - 1, CHANNELS_W, 1, RAIL);
+            let name = spans_from_text(&guild.name);
+            self.spans(images, GUILDS_W + 17, 30, &name, 16.0, WHITE, right);
+            self.spans(images, GUILDS_W + 16, 30, &name, 16.0, WHITE, right);
+        }
+
+        // Voice bar above the user panel while in a voice channel.
+        self.voice_bar = None;
+        let panel_top = h - USER_H;
+        if !state.voice_channel_id.is_empty() {
+            let people = state.voice_users.len().min(6) as i32;
+            let bar_h = 74 + people * LINE_H;
+            let bar_top = panel_top - bar_h;
+            self.canvas.rect(GUILDS_W, bar_top, CHANNELS_W, bar_h, USER_PANEL);
+            self.canvas.rect(GUILDS_W, bar_top, CHANNELS_W, 1, RAIL);
+            let state_text = if state.voice_connected { "Voice Connected" } else { "Connecting..." };
+            self.canvas.bold(GUILDS_W + 16, bar_top + 20, state_text, SMALL + 1.0, if state.voice_connected { [0x23, 0xA5, 0x5A] } else { MUTED }, right);
+            let channel = spans_from_text(&state.voice_channel_name);
+            self.spans(images, GUILDS_W + 16, bar_top + 37, &channel, SMALL, MUTED, right);
+            for (i, name) in state.voice_users.iter().take(6).enumerate() {
+                let who = spans_from_text(name);
+                self.spans(images, GUILDS_W + 24, bar_top + 56 + i as i32 * LINE_H, &who, SMALL + 1.0, TEXT, right);
+            }
+            let y = bar_top + bar_h - 12;
+            let mute_label = if state.muted { "Unmute" } else { "Mute" };
+            let mute_from = GUILDS_W + 16;
+            let mute_w = self.canvas.text_width(mute_label, SMALL + 1.0) + 16;
+            self.canvas.round_rect(mute_from, y - 16, mute_w, 22, 6, if state.muted { DANGER } else { INPUT });
+            self.canvas.text(mute_from + 8, y, mute_label, SMALL + 1.0, WHITE, right);
+            let leave_from = mute_from + mute_w + 8;
+            let leave_w = self.canvas.text_width("Leave", SMALL + 1.0) + 16;
+            self.canvas.round_rect(leave_from, y - 16, leave_w, 22, 6, INPUT);
+            self.canvas.text(leave_from + 8, y, "Leave", SMALL + 1.0, WHITE, right);
+            self.voice_bar = Some((bar_top, (mute_from, mute_from + mute_w), (leave_from, leave_from + leave_w)));
+        }
+
+        // User panel: own picture and name, and the way out.
+        self.canvas.rect(GUILDS_W, panel_top, CHANNELS_W, USER_H, USER_PANEL);
+        self.avatar(images, &state.my_avatar, &state.user, GUILDS_W + 10, panel_top + 10, 32, 16);
+        let logout_w = self.canvas.text_width("Log out", SMALL);
+        let logout_x = mx - logout_w - 12;
+        let me = spans_from_text(&state.user);
+        self.spans(images, GUILDS_W + 51, panel_top + 31, &me, SMALL + 2.0, WHITE, logout_x - 8);
+        self.spans(images, GUILDS_W + 50, panel_top + 31, &me, SMALL + 2.0, WHITE, logout_x - 8);
+        self.canvas.text(logout_x, panel_top + 31, "Log out", SMALL, MUTED, mx);
+        self.logout = (logout_x, mx, panel_top);
+
+        // ---- Server rail: round icons, a white pill beside the open one.
+        self.canvas.rect(0, 0, GUILDS_W, h, RAIL);
+        self.guild_rows.clear();
+        for (i, guild) in state.guilds.iter().enumerate() {
+            let y = 12 + i as i32 * (ICON + 8) - self.guild_scroll;
+            if y < -ICON || y > h {
+                continue;
+            }
+            let open = i == self.guild;
+            // The open server's icon is a rounded square, the others are circles.
+            let radius = if open { 16 } else { ICON / 2 };
+            if guild.id == "@me" {
+                self.canvas.round_rect(12, y, ICON, ICON, radius, if open { ACCENT } else { BG });
+                let tw = self.canvas.text_width("DM", 16.0);
+                self.canvas.bold(12 + (ICON - tw) / 2, y + 30, "DM", 16.0, WHITE, GUILDS_W);
+            } else {
+                let url = state.guild_icons.get(&guild.id).cloned().unwrap_or_default();
+                self.avatar(images, &url, &guild.name, 12, y, ICON, radius);
+            }
+            if open {
+                self.canvas.round_rect(-4, y + 4, 8, ICON - 8, 4, WHITE);
+            }
+            self.guild_rows.push((y, i));
+        }
     }
 
     fn click(&mut self, x: i32, y: i32) {
@@ -700,23 +1075,23 @@ impl Stage {
             self.click_login(x, y);
             return;
         }
-        if y < TOP_H {
-            if x >= self.logout_x {
-                let _ = self.actions.send(Action::LogOut);
-            }
-            return;
-        }
         if x < GUILDS_W {
-            if let Some((_, i)) = self.guild_rows.iter().find(|(ry, _)| y >= *ry && y < *ry + ROW_H) {
+            if let Some((_, i)) = self.guild_rows.iter().find(|(ry, _)| y >= *ry && y < *ry + ICON) {
                 self.guild = *i;
                 self.channel_scroll = 0;
                 self.dirty = true;
             }
         } else if x < GUILDS_W + CHANNELS_W {
+            if y >= self.logout.2 {
+                if x >= self.logout.0 - 6 && x <= self.logout.1 {
+                    let _ = self.actions.send(Action::LogOut);
+                }
+                return;
+            }
             if let Some((top, mute, leave)) = self.voice_bar {
                 if y >= top {
-                    // The two words on the last line of the bar are its buttons.
-                    if y >= self.canvas.h - 28 {
+                    // The two buttons on the last line of the bar.
+                    if y >= self.logout.2 - 34 {
                         if x >= mute.0 && x <= mute.1 {
                             let _ = self.actions.send(Action::ToggleMute);
                         } else if x >= leave.0 && x <= leave.1 {
@@ -725,6 +1100,9 @@ impl Stage {
                     }
                     return;
                 }
+            }
+            if y < TOP_H {
+                return;
             }
             let hit = self
                 .channel_rows
@@ -763,24 +1141,29 @@ impl EventHandler for Stage {
     }
 
     fn draw(&mut self) {
-        if self.dirty {
+        let repaint = self.dirty;
+        if repaint {
             self.dirty = false;
             self.paint();
-            self.ctx.texture_update(self.bindings.images[0], &self.canvas.px);
         }
-        self.ctx.begin_default_pass(PassAction::clear_color(0.0, 0.0, 0.0, 1.0));
-        self.ctx.apply_pipeline(&self.pipeline);
-        self.ctx.apply_bindings(&self.bindings);
-        self.ctx.draw(0, 6, 1);
-        self.ctx.end_render_pass();
-        self.ctx.commit_frame();
+        let Some((ctx, pipeline, bindings)) = self.gl.as_mut() else { return };
+        if repaint {
+            ctx.texture_update(bindings.images[0], &self.canvas.px);
+        }
+        ctx.begin_default_pass(PassAction::clear_color(0.0, 0.0, 0.0, 1.0));
+        ctx.apply_pipeline(pipeline);
+        ctx.apply_bindings(bindings);
+        ctx.draw(0, 6, 1);
+        ctx.end_render_pass();
+        ctx.commit_frame();
     }
 
     fn resize_event(&mut self, width: f32, height: f32) {
         self.canvas.resize(width as i32, height as i32);
-        self.ctx.delete_texture(self.bindings.images[0]);
-        self.bindings.images[0] =
-            self.ctx.new_texture_from_rgba8(self.canvas.w as u16, self.canvas.h as u16, &self.canvas.px);
+        if let Some((ctx, _, bindings)) = self.gl.as_mut() {
+            ctx.delete_texture(bindings.images[0]);
+            bindings.images[0] = ctx.new_texture_from_rgba8(self.canvas.w as u16, self.canvas.h as u16, &self.canvas.px);
+        }
         self.dirty = true;
     }
 
@@ -797,12 +1180,12 @@ impl EventHandler for Stage {
     fn mouse_wheel_event(&mut self, _x: f32, y: f32) {
         let step = if y > 0.0 { -1 } else if y < 0.0 { 1 } else { 0 };
         if self.mouse.0 < GUILDS_W {
-            self.guild_scroll = (self.guild_scroll + step * ROW_H * 2).max(0);
+            self.guild_scroll = (self.guild_scroll + step * (ICON + 8)).max(0);
         } else if self.mouse.0 < GUILDS_W + CHANNELS_W {
             self.channel_scroll = (self.channel_scroll + step * ROW_H * 2).max(0);
         } else {
-            // Wheel up shows older messages.
-            self.message_scroll = (self.message_scroll - step * 3).max(0);
+            // Wheel up shows older messages (the scroll is in pixels from the newest).
+            self.message_scroll = (self.message_scroll - step * 60).max(0);
         }
         self.dirty = true;
     }
@@ -978,10 +1361,42 @@ fn self_test() -> bool {
     ok
 }
 
+/// `--render-demo FILE.png`: draws the interface with made-up servers and messages into a
+/// picture file, without a window, a login or the network. For looking at the layout (the
+/// CI check keeps the picture) on machines where the app itself cannot be shown.
+fn render_demo(path: &str) -> Result<(), String> {
+    let shared: SharedRef = Arc::new(Mutex::new(backend::demo_state()));
+    let (action_tx, _action_rx) = tokio::sync::mpsc::unbounded_channel();
+    let mut stage = Stage::with(Canvas::new(1100, 700), None, shared, action_tx);
+    stage.paint();
+    // A second pass with one message picked, to show its action buttons.
+    stage.selected = Some("3".to_string());
+    stage.paint();
+    let file = std::fs::File::create(path).map_err(|e| format!("{path}: {e}"))?;
+    let mut encoder = png::Encoder::new(std::io::BufWriter::new(file), stage.canvas.w as u32, stage.canvas.h as u32);
+    encoder.set_color(png::ColorType::Rgba);
+    encoder.set_depth(png::BitDepth::Eight);
+    let mut writer = encoder.write_header().map_err(|e| e.to_string())?;
+    writer.write_image_data(&stage.canvas.px).map_err(|e| e.to_string())?;
+    Ok(())
+}
+
 fn main() {
     litecord_legacy_compat::init();
-    if std::env::args().any(|a| a == "--self-test") {
+    let arguments: Vec<String> = std::env::args().collect();
+    if arguments.iter().any(|a| a == "--self-test") {
         std::process::exit(if self_test() { 0 } else { 1 });
+    }
+    if let Some(i) = arguments.iter().position(|a| a == "--render-demo") {
+        let path = arguments.get(i + 1).cloned().unwrap_or_else(|| "litecord-legacy-demo.png".to_string());
+        match render_demo(&path) {
+            Ok(()) => println!("wrote {path}"),
+            Err(e) => {
+                eprintln!("render-demo failed: {e}");
+                std::process::exit(1);
+            }
+        }
+        return;
     }
     let dir = backend::data_dir();
     let _ = std::env::set_current_dir(&dir);
@@ -1002,8 +1417,8 @@ fn main() {
     miniquad::start(
         conf::Conf {
             window_title: "Litecord (legacy)".to_string(),
-            window_width: 1000,
-            window_height: 640,
+            window_width: 1100,
+            window_height: 700,
             window_resizable: true,
             ..Default::default()
         },
