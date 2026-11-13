@@ -869,6 +869,7 @@ pub fn map_message_lines(lines: &[gateway::MessageLineData], channel_id: &str, a
                 emoji_img,
                 url: b.url.clone().into(),
                 command_name: b.command_name.clone().into(),
+                is_spoiler: b.is_spoiler,
             }
         }).collect();
         MessageLine {

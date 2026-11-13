@@ -22,6 +22,7 @@ pub struct MessageBlockData {
     pub emoji_id: String,
     pub url: String,
     pub command_name: String,
+    pub is_spoiler: bool,
 }
 
 #[derive(Clone, Default, Debug)]

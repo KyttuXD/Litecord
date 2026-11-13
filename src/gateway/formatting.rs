@@ -538,6 +538,7 @@ fn push_text_before_cmd(before: &str, line_blocks: &mut Vec<MessageBlockData>, l
                     emoji_id: String::new(),
                     url: String::new(),
                     command_name: String::new(),
+                    is_spoiler: false,
                 });
                 lines.push(MessageLineData { blocks: std::mem::take(line_blocks) });
             }
@@ -551,6 +552,7 @@ fn push_text_before_cmd(before: &str, line_blocks: &mut Vec<MessageBlockData>, l
                     emoji_id: String::new(),
                     url: String::new(),
                     command_name: String::new(),
+                    is_spoiler: false,
                 });
             }
             return;
@@ -565,6 +567,7 @@ fn push_text_before_cmd(before: &str, line_blocks: &mut Vec<MessageBlockData>, l
         emoji_id: String::new(),
         url: String::new(),
         command_name: String::new(),
+        is_spoiler: false,
     });
 }
 
@@ -624,6 +627,7 @@ pub fn parse_text_into_lines(input: &str, links: &mut Vec<LinkData>) -> Vec<Mess
                 (None, None) => None,
             };
             let next_unicode = find_next_unicode_emoji(rem);
+            let next_spoiler = find_spoiler(rem);
 
             let mut candidates: Vec<(usize, &str)> = Vec::new();
             if let Some(idx) = next_bracket { candidates.push((idx, "bracket")); }
@@ -631,6 +635,7 @@ pub fn parse_text_into_lines(input: &str, links: &mut Vec<LinkData>) -> Vec<Mess
             if let Some((idx, _)) = next_emoji { candidates.push((idx, "emoji")); }
             if let Some(idx) = next_raw_url { candidates.push((idx, "raw_url")); }
             if let Some((idx, _, _, _)) = next_unicode { candidates.push((idx, "unicode_emoji")); }
+            if let Some((idx, _)) = next_spoiler { candidates.push((idx, "spoiler")); }
 
             if candidates.is_empty() {
                 let parsed = parse_discord_markdown(rem);
@@ -648,6 +653,7 @@ pub fn parse_text_into_lines(input: &str, links: &mut Vec<LinkData>) -> Vec<Mess
                         emoji_id: String::new(),
                         url: String::new(),
                         command_name: String::new(),
+                        is_spoiler: false,
                     });
                 }
                 break;
@@ -690,6 +696,7 @@ pub fn parse_text_into_lines(input: &str, links: &mut Vec<LinkData>) -> Vec<Mess
                                             emoji_id: String::new(),
                                             url: String::new(),
                                             command_name: String::new(),
+                                            is_spoiler: false,
                                         });
                                         is_first_block = false;
                                     }
@@ -712,6 +719,7 @@ pub fn parse_text_into_lines(input: &str, links: &mut Vec<LinkData>) -> Vec<Mess
                                         emoji_id: String::new(),
                                         url: url.to_string(),
                                         command_name: String::new(),
+                                        is_spoiler: false,
                                     });
                                     if !links.iter().any(|l| l.url == url) {
                                         links.push(LinkData {
@@ -741,6 +749,7 @@ pub fn parse_text_into_lines(input: &str, links: &mut Vec<LinkData>) -> Vec<Mess
                         emoji_id: String::new(),
                         url: String::new(),
                         command_name: String::new(),
+                        is_spoiler: false,
                     });
                     rem = &rem[slice_len..];
                 }
@@ -767,6 +776,7 @@ pub fn parse_text_into_lines(input: &str, links: &mut Vec<LinkData>) -> Vec<Mess
                                 emoji_id: String::new(),
                                 url: String::new(),
                                 command_name: format!("/{}", clean_cmd),
+                                is_spoiler: false,
                             });
                             rem = &after_tag[gt_idx + 1..];
                             continue;
@@ -781,6 +791,7 @@ pub fn parse_text_into_lines(input: &str, links: &mut Vec<LinkData>) -> Vec<Mess
                         emoji_id: String::new(),
                         url: String::new(),
                         command_name: String::new(),
+                        is_spoiler: false,
                     });
                     rem = &rem[slice_len..];
                 }
@@ -803,6 +814,7 @@ pub fn parse_text_into_lines(input: &str, links: &mut Vec<LinkData>) -> Vec<Mess
                                         emoji_id: String::new(),
                                         url: String::new(),
                                         command_name: String::new(),
+                                        is_spoiler: false,
                                     });
                                 }
                                 line_blocks.push(MessageBlockData {
@@ -813,6 +825,7 @@ pub fn parse_text_into_lines(input: &str, links: &mut Vec<LinkData>) -> Vec<Mess
                                     emoji_id: emoji_id.to_string(),
                                     url: String::new(),
                                     command_name: String::new(),
+                                    is_spoiler: false,
                                 });
                                 rem = &after_tag[gt_idx + 1..];
                                 continue;
@@ -828,6 +841,7 @@ pub fn parse_text_into_lines(input: &str, links: &mut Vec<LinkData>) -> Vec<Mess
                         emoji_id: String::new(),
                         url: String::new(),
                         command_name: String::new(),
+                        is_spoiler: false,
                     });
                     rem = &rem[slice_len..];
                 }
@@ -864,6 +878,7 @@ pub fn parse_text_into_lines(input: &str, links: &mut Vec<LinkData>) -> Vec<Mess
                                 emoji_id: String::new(),
                                 url: String::new(),
                                 command_name: String::new(),
+                                is_spoiler: false,
                             });
                         }
                         line_blocks.push(MessageBlockData {
@@ -874,6 +889,7 @@ pub fn parse_text_into_lines(input: &str, links: &mut Vec<LinkData>) -> Vec<Mess
                             emoji_id: String::new(),
                             url: raw_url.to_string(),
                             command_name: String::new(),
+                            is_spoiler: false,
                         });
                         if !links.iter().any(|l| l.url == raw_url) {
                             links.push(LinkData {
@@ -892,6 +908,7 @@ pub fn parse_text_into_lines(input: &str, links: &mut Vec<LinkData>) -> Vec<Mess
                             emoji_id: String::new(),
                             url: String::new(),
                             command_name: String::new(),
+                            is_spoiler: false,
                         });
                         rem = &rem[slice_len..];
                     }
@@ -908,6 +925,7 @@ pub fn parse_text_into_lines(input: &str, links: &mut Vec<LinkData>) -> Vec<Mess
                                 emoji_id: String::new(),
                                 url: String::new(),
                                 command_name: String::new(),
+                                is_spoiler: false,
                             });
                         }
                         line_blocks.push(MessageBlockData {
@@ -918,11 +936,57 @@ pub fn parse_text_into_lines(input: &str, links: &mut Vec<LinkData>) -> Vec<Mess
                             emoji_id: u_id,
                             url: String::new(),
                             command_name: String::new(),
+                            is_spoiler: false,
                         });
                         rem = &rem[u_idx + u_len..];
                     } else {
                         let slice_len = first_idx + 1;
                         rem = &rem[slice_len..];
+                    }
+                }
+                "spoiler" => {
+                    if let Some((s_start, s_end)) = find_spoiler(rem) {
+                        let before = &rem[..s_start];
+                        let inner = &rem[s_start + 2..s_end - 2];
+                        if !before.is_empty() {
+                            let parsed_before = parse_discord_markdown(before);
+                            let text = if is_first_block && !prefix.is_empty() {
+                                format!("{}{}", prefix, parsed_before)
+                            } else {
+                                parsed_before
+                            };
+                            line_blocks.push(MessageBlockData {
+                                text,
+                                is_link: false,
+                                is_command: false,
+                                is_emoji: false,
+                                emoji_id: String::new(),
+                                url: String::new(),
+                                command_name: String::new(),
+                                is_spoiler: false,
+                            });
+                            is_first_block = false;
+                        }
+                        let parsed_inner = parse_discord_markdown(inner);
+                        let text = if is_first_block && !prefix.is_empty() {
+                            format!("{}{}", prefix, parsed_inner)
+                        } else {
+                            parsed_inner
+                        };
+                        is_first_block = false;
+                        line_blocks.push(MessageBlockData {
+                            text,
+                            is_link: false,
+                            is_command: false,
+                            is_emoji: false,
+                            emoji_id: String::new(),
+                            url: String::new(),
+                            command_name: String::new(),
+                            is_spoiler: true,
+                        });
+                        rem = &rem[s_end..];
+                    } else {
+                        break;
                     }
                 }
                 _ => break,
@@ -935,6 +999,40 @@ pub fn parse_text_into_lines(input: &str, links: &mut Vec<LinkData>) -> Vec<Mess
     }
 
     lines
+}
+
+/// Finds the first `||spoiler||` in `s`. Returns the byte range `(start, end)` of the whole
+/// span, delimiters included, so the inner text is `s[start + 2..end - 2]`. Empty spoilers,
+/// backslash-escaped openers and delimiters inside an unclosed inline-code span are skipped.
+pub fn find_spoiler(s: &str) -> Option<(usize, usize)> {
+    let bytes = s.as_bytes();
+    let mut from = 0;
+    while let Some(rel) = s[from..].find("||") {
+        let start = from + rel;
+        // A run of pipes: the opener is the last two pipes of the run, so `|||x||` hides `|x`.
+        let mut run_end = start + 2;
+        while run_end < bytes.len() && bytes[run_end] == b'|' {
+            run_end += 1;
+        }
+        let start = run_end - 2;
+        let escaped = start > 0 && bytes[start - 1] == b'\\';
+        let in_code = s[..start].matches('`').count() % 2 == 1;
+        if !escaped && !in_code {
+            let inner_start = start + 2;
+            if let Some(close_rel) = s[inner_start..].find("||") {
+                if close_rel > 0 {
+                    // Include extra pipes of a closing run in the content: `||x|||` -> `x|`.
+                    let mut close = inner_start + close_rel;
+                    while close + 2 < bytes.len() && bytes[close + 2] == b'|' {
+                        close += 1;
+                    }
+                    return Some((start, close + 2));
+                }
+            }
+        }
+        from = run_end;
+    }
+    None
 }
 
 /// Slint has no inline text flow: a mixed line is a HorizontalLayout, and a long
@@ -951,7 +1049,7 @@ fn push_line_split_long_text(blocks: Vec<MessageBlockData>, lines: &mut Vec<Mess
 
     let mut row: Vec<MessageBlockData> = Vec::new();
     for block in blocks {
-        let is_plain_text = !block.is_link && !block.is_command && !block.is_emoji;
+        let is_plain_text = !block.is_link && !block.is_command && !block.is_emoji && !block.is_spoiler;
         if is_plain_text && block.text.chars().count() > INLINE_TEXT_MAX_CHARS {
             if !row.is_empty() {
                 lines.push(MessageLineData { blocks: std::mem::take(&mut row) });
@@ -1345,6 +1443,7 @@ pub fn format_discord_message_parts(m: &Value) -> (String, Vec<String>, Vec<Mess
                                     emoji_id: String::new(),
                                     url: url.to_string(),
                                     command_name: String::new(),
+                                    is_spoiler: false,
                                 }],
                             });
                             if !links.iter().any(|l| l.url == url) {
@@ -1747,6 +1846,38 @@ mod tests {
         assert!(is_edited(&m));
         assert!(!is_edited(&serde_json::json!({"edited_timestamp":null})));
         assert!(!is_edited(&serde_json::json!({})));
+    }
+
+    #[test]
+    fn find_spoiler_basic() {
+        assert_eq!(find_spoiler("a ||b|| c"), Some((2, 7)));
+        assert_eq!(find_spoiler("no spoiler"), None);
+        assert_eq!(find_spoiler("||unclosed"), None);
+        assert_eq!(find_spoiler("||||"), None);
+        assert_eq!(find_spoiler("\\||x||"), None);
+        assert_eq!(find_spoiler("`a||b` ||c||"), Some((7, 12)));
+    }
+
+    #[test]
+    fn spoiler_becomes_its_own_block() {
+        let mut links = Vec::new();
+        let lines = parse_text_into_lines("the end is ||dead|| sadly", &mut links);
+        assert_eq!(lines.len(), 1);
+        let blocks = &lines[0].blocks;
+        assert_eq!(blocks.len(), 3);
+        assert!(!blocks[0].is_spoiler);
+        assert!(blocks[1].is_spoiler);
+        assert_eq!(blocks[1].text, "dead");
+        assert!(!blocks[2].is_spoiler);
+    }
+
+    #[test]
+    fn whole_line_spoiler_is_single_block() {
+        let mut links = Vec::new();
+        let lines = parse_text_into_lines("||secret||", &mut links);
+        assert_eq!(lines[0].blocks.len(), 1);
+        assert!(lines[0].blocks[0].is_spoiler);
+        assert_eq!(lines[0].blocks[0].text, "secret");
     }
 
     #[test]

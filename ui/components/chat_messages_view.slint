@@ -33,6 +33,7 @@ export struct MessageBlock {
     emoji_img: image,
     url: string,
     command_name: string,
+    is_spoiler: bool,
 }
 
 export struct MessageLine {
@@ -243,6 +244,8 @@ export component ChatMessagesView inherits Rectangle {
                 background: row_hover.has-hover ? AppTheme.interactive-hover : (msg.mentions_me ? #f0b23222 : transparent);
                 border-radius: 4px;
                 property <bool> is-collapsed: true;
+                // Spoilers of a message are revealed together, per message row.
+                property <bool> spoilers-revealed: false;
 
                 // Hover metadata lives behind the message controls so links and
                 // attachment actions keep their own pointer behavior.
@@ -442,12 +445,38 @@ export component ChatMessagesView inherits Rectangle {
                             }
 
                             // Case 1: Pure single text line -> Native responsive word-wrap!
-                            if line.blocks.length == 1 && !line.blocks[0].is_link && !line.blocks[0].is_command: Text {
+                            if line.blocks.length == 1 && !line.blocks[0].is_link && !line.blocks[0].is_command && !line.blocks[0].is_spoiler: Text {
                                 text: line.blocks[0].text;
                                 color: AppTheme.text-primary;
                                 font-family: ChatTypography.family;
                                 font-size: ChatTypography.body-size;
                                 wrap: word-wrap;
+                            }
+
+                            // Spoiler-only line: hidden until the message's spoilers are clicked
+                            if line.blocks.length == 1 && line.blocks[0].is_spoiler: HorizontalLayout {
+                                alignment: start;
+                                Rectangle {
+                                    background: spoilers-revealed ? AppTheme.surface-input : AppTheme.text-muted;
+                                    border-radius: 3px;
+                                    HorizontalLayout {
+                                        padding-left: 3px;
+                                        padding-right: 3px;
+                                        Text {
+                                            text: line.blocks[0].text;
+                                            color: spoilers-revealed ? AppTheme.text-primary : transparent;
+                                            font-family: ChatTypography.family;
+                                            font-size: ChatTypography.body-size;
+                                            vertical-alignment: center;
+                                            wrap: word-wrap;
+                                            max-width: 480px;
+                                        }
+                                    }
+                                    TouchArea {
+                                        mouse-cursor: pointer;
+                                        clicked => { spoilers-revealed = !spoilers-revealed; }
+                                    }
+                                }
                             }
 
                             // Case 2: Standalone Link Line (e.g. [Song Title](url)) -> Blue link with icon & click
@@ -615,7 +644,32 @@ export component ChatMessagesView inherits Rectangle {
                                         }
                                     }
 
-                                    if !block.is_link && !block.is_command && !block.is_emoji: Text {
+                                    if block.is_spoiler: HorizontalLayout {
+                                        alignment: start;
+                                        Rectangle {
+                                            background: spoilers-revealed ? AppTheme.surface-input : AppTheme.text-muted;
+                                            border-radius: 3px;
+                                            HorizontalLayout {
+                                                padding-left: 3px;
+                                                padding-right: 3px;
+                                                Text {
+                                                    text: block.text;
+                                                    color: spoilers-revealed ? AppTheme.text-primary : transparent;
+                                                    font-family: ChatTypography.family;
+                                                    font-size: ChatTypography.body-size;
+                                                    vertical-alignment: center;
+                                                    wrap: word-wrap;
+                                                    max-width: 480px;
+                                                }
+                                            }
+                                            TouchArea {
+                                                mouse-cursor: pointer;
+                                                clicked => { spoilers-revealed = !spoilers-revealed; }
+                                            }
+                                        }
+                                    }
+
+                                    if !block.is_link && !block.is_command && !block.is_emoji && !block.is_spoiler: Text {
                                         text: block.text;
                                         color: AppTheme.text-primary;
                                         font-family: ChatTypography.family;
@@ -696,12 +750,37 @@ export component ChatMessagesView inherits Rectangle {
                                             height: 4px;
                                         }
 
-                                        if line.blocks.length == 1 && !line.blocks[0].is_link && !line.blocks[0].is_command: Text {
+                                        if line.blocks.length == 1 && !line.blocks[0].is_link && !line.blocks[0].is_command && !line.blocks[0].is_spoiler: Text {
                                             text: line.blocks[0].text;
                                             color: AppTheme.text-embed;
                                             font-family: ChatTypography.family;
                                             font-size: ChatTypography.embed-size;
                                             wrap: word-wrap;
+                                        }
+
+                                        if line.blocks.length == 1 && line.blocks[0].is_spoiler: HorizontalLayout {
+                                            alignment: start;
+                                            Rectangle {
+                                                background: spoilers-revealed ? AppTheme.surface-input : AppTheme.text-muted;
+                                                border-radius: 3px;
+                                                HorizontalLayout {
+                                                    padding-left: 3px;
+                                                    padding-right: 3px;
+                                                    Text {
+                                                        text: line.blocks[0].text;
+                                                        color: spoilers-revealed ? AppTheme.text-embed : transparent;
+                                                        font-family: ChatTypography.family;
+                                                        font-size: ChatTypography.embed-size;
+                                                        vertical-alignment: center;
+                                                        wrap: word-wrap;
+                                                        max-width: 420px;
+                                                    }
+                                                }
+                                                TouchArea {
+                                                    mouse-cursor: pointer;
+                                                    clicked => { spoilers-revealed = !spoilers-revealed; }
+                                                }
+                                            }
                                         }
 
                                         if line.blocks.length == 1 && line.blocks[0].is_link: HorizontalLayout {
@@ -852,7 +931,32 @@ export component ChatMessagesView inherits Rectangle {
                                                     }
                                                 }
 
-                                                if !block.is_link && !block.is_command && !block.is_emoji: Text {
+                                                if block.is_spoiler: HorizontalLayout {
+                                                    alignment: start;
+                                                    Rectangle {
+                                                        background: spoilers-revealed ? AppTheme.surface-input : AppTheme.text-muted;
+                                                        border-radius: 3px;
+                                                        HorizontalLayout {
+                                                            padding-left: 3px;
+                                                            padding-right: 3px;
+                                                            Text {
+                                                                text: block.text;
+                                                                color: spoilers-revealed ? AppTheme.text-embed : transparent;
+                                                                font-family: ChatTypography.family;
+                                                                font-size: ChatTypography.embed-size;
+                                                                vertical-alignment: center;
+                                                                wrap: word-wrap;
+                                                                max-width: 420px;
+                                                            }
+                                                        }
+                                                        TouchArea {
+                                                            mouse-cursor: pointer;
+                                                            clicked => { spoilers-revealed = !spoilers-revealed; }
+                                                        }
+                                                    }
+                                                }
+
+                                                if !block.is_link && !block.is_command && !block.is_emoji && !block.is_spoiler: Text {
                                                     text: block.text;
                                                     color: AppTheme.text-embed;
                                                     font-family: ChatTypography.family;
