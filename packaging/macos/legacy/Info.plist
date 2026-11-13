@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>CFBundleName</key>
+    <string>Litecord Legacy</string>
+    <key>CFBundleDisplayName</key>
+    <string>Litecord Legacy</string>
+    <key>CFBundleIdentifier</key>
+    <string>io.github.kyttuxd.litecord.legacy</string>
+    <key>CFBundleExecutable</key>
+    <string>litecord-legacy</string>
+    <key>CFBundlePackageType</key>
+    <string>APPL</string>
+    <key>CFBundleInfoDictionaryVersion</key>
+    <string>6.0</string>
+    <key>CFBundleShortVersionString</key>
+    <string>@VERSION@</string>
+    <key>CFBundleVersion</key>
+    <string>@VERSION@</string>
+    <key>LSMinimumSystemVersion</key>
+    <string>10.5</string>
+    <key>NSMicrophoneUsageDescription</key>
+    <string>Litecord uses the microphone for voice calls.</string>
+</dict>
+</plist>

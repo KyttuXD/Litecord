@@ -43,4 +43,5 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: litecord-legacy-probes
-          path: dist/*.zip
+          path: |
+            dist/*.zip

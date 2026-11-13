@@ -276,9 +276,40 @@ jobs:
           name: nightly-macos
           path: dist/Litecord-macos-x64.zip
 
+  # Legacy edition for OS X 10.5 - 10.11 (text chat only, see docs/MACOS_LEGACY.md), built
+  # with the MacPorts Rust 1.77 compiler. Experimental: a failure here does not hold back
+  # the other files.
+  build-macos-legacy:
+    name: macOS legacy edition (OS X 10.5+)
+    needs: prepare
+    if: needs.prepare.outputs.build == 'true'
+    continue-on-error: true
+    runs-on: macos-15-intel
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.prepare.outputs.sha }}
+
+      - name: Cargo 1.77 (drives the old compiler)
+        run: rustup toolchain install 1.77.0 --profile minimal --no-self-update
+
+      - name: Fetch the old-Mac compiler and compatibility library (sha256 checked)
+        run: |
+          sh packaging/macos/legacy/bootstrap-runtime.sh "$RUNNER_TEMP/legacy-rust"
+          sh packaging/macos/legacy/bootstrap-leopard.sh "$RUNNER_TEMP/legacy-rust"
+
+      - name: Build the legacy edition
+        run: bash packaging/macos/legacy/build-probe.sh "$RUNNER_TEMP/legacy-rust" app
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: nightly-macos-legacy
+          path: dist/Litecord-Legacy-macos-10.5.zip
+
   publish:
     name: Publish the nightly pre-release
-    needs: [prepare, build-windows, build-linux, build-appimage, build-macos]
+    needs: [prepare, build-windows, build-linux, build-appimage, build-macos, build-macos-legacy]
+    if: ${{ !cancelled() && needs.build-windows.result == 'success' && needs.build-linux.result == 'success' && needs.build-appimage.result == 'success' && needs.build-macos.result == 'success' }}
     runs-on: ubuntu-latest
     env:
       GH_TOKEN: ${{ github.token }}
@@ -309,6 +340,7 @@ jobs:
           | \`Litecord-x86_64.AppImage\` | Linux, any distribution |
           | \`litecord-linux-x64.tar.gz\` | Linux binary |
           | \`Litecord-macos-x64.zip\` | macOS Intel, 10.12 or later (see docs/MACOS.md) |
+          | \`Litecord-Legacy-macos-10.5.zip\` | Old Intel Macs, OS X 10.5 - 10.11: legacy edition, text chat only (see docs/MACOS_LEGACY.md) |
           NOTES
           gh release delete nightly --cleanup-tag --yes 2>/dev/null || true
           gh release create nightly \

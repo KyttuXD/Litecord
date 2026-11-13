@@ -2,7 +2,27 @@
 
 Target machine: a Mac Pro 3,1 (2008, two Xeon E5462, 64-bit, SSE4.1) on **OS X 10.6.8**.
 The normal macOS build ([MACOS.md](MACOS.md)) needs 10.12 and cannot start there.
-**There is no Litecord for these systems yet.** This page records what has been proven and what is left.
+A separate **legacy edition** (`legacy/app`) exists for these systems. It starts on the Mac Pro under
+10.6.8, opens its window and gets a QR login code from Discord; logging in and chatting have not been
+tried by a person yet. It has text chat only: no voice, pictures, settings or notifications.
+This page records what has been proven and what is left.
+
+## The legacy edition
+
+- Download `Litecord-Legacy-macos-10.5.zip` from the [nightly release](https://github.com/KyttuXD/Litecord/releases/tag/nightly),
+  unzip it and open `Litecord Legacy.app` (or run `Contents/MacOS/litecord-legacy` from Terminal to see its log).
+- Scan the QR code with the Discord app on a phone (Settings > Scan QR Code). The login is kept in
+  `~/Library/Application Support/Litecord Legacy/session`, readable by your user only, **not encrypted**.
+- Pick a server on the left, then a channel; type and press Return to send. The mouse wheel scrolls each list.
+- It is Litecord's own gateway, HTTP and QR-login code, compiled unchanged from `src/` (see
+  `legacy/app/src/lib.rs`), with a small CPU-drawn interface in `legacy/app/src/main.rs`.
+
+Two things OS X 10.6 does differently had to be worked around (both found on the Mac Pro):
+
+- `fcntl(F_DUPFD_CLOEXEC)` does not exist before 10.7 and the Rust standard library needs it for every
+  `try_clone`: `legacy/compat` answers it with `F_DUPFD` + `FD_CLOEXEC`.
+- kqueue's `EVFILT_USER` wake-ups never arrive, so tokio hung: the build sets
+  `--cfg mio_unsupported_force_waker_pipe`, which makes mio wake through a pipe.
 
 ## What works on the real machine (2026-11-12)
 
@@ -60,4 +80,5 @@ Measured by resolving Litecord's dependencies for Rust 1.77:
 | Crypto versions | `sha2` 0.11 and `x25519-dalek` 3 need Rust 1.85 – 1.88 | Their previous major versions |
 | Litecord's own code | Uses language features newer than 1.77 in places | Rewritten where the legacy edition uses that code |
 
-A legacy edition is therefore text chat and voice first, with its own window layer.
+The legacy edition therefore has its own window layer and starts with text chat; voice is the next step
+(audio in and out already work in the probe).

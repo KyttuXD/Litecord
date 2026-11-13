@@ -49,3 +49,14 @@ print("program format:", "LC_UNIXTHREAD (runs on 10.5+)" if 5 in c else "LC_MAIN
 sys.exit(0 if 5 in c else 1)' "$OUT/$NAME"
 (cd "$ROOT/dist" && rm -f "$NAME.zip" && zip -qry "$NAME.zip" "$NAME")
 echo "Built dist/$NAME.zip"
+# The legacy edition also as a double-clickable app, with the compatibility library inside.
+if [ "$CRATE" = app ]; then
+    VERSION=$(sed -n 's/^version = "\(.*\)"$/\1/p' "$ROOT/legacy/app/Cargo.toml" | head -n 1)
+    APP="$ROOT/dist/Litecord Legacy.app"
+    rm -rf "$APP"
+    mkdir -p "$APP/Contents/MacOS"
+    cp "$OUT/$NAME" "$OUT/libMacportsLegacySystem.B.dylib" "$APP/Contents/MacOS/"
+    sed "s/@VERSION@/$VERSION/" "$ROOT/packaging/macos/legacy/Info.plist" > "$APP/Contents/Info.plist"
+    (cd "$ROOT/dist" && rm -f Litecord-Legacy-macos-10.5.zip && zip -qry Litecord-Legacy-macos-10.5.zip "Litecord Legacy.app")
+    echo "Built dist/Litecord-Legacy-macos-10.5.zip"
+fi
