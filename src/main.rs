@@ -346,6 +346,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }
                 winit_win.focus_window();
                 winit_win.request_redraw();
+                info!(
+                    "🖥️ [WINDOW] position={:?} size={:?} scale={} visible={:?} minimized={:?} decorations={} monitors={}",
+                    winit_win.outer_position().ok(),
+                    winit_win.outer_size(),
+                    winit_win.scale_factor(),
+                    winit_win.is_visible(),
+                    winit_win.is_minimized(),
+                    winit_win.is_decorated(),
+                    winit_win.available_monitors().count()
+                );
                 if let Some(pop_win) = popout_weak_init.upgrade() {
                     pop_win.window().with_winit_window(|winit_pop| {
                         winit_pop.set_decorations(false);
