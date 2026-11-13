@@ -6,7 +6,7 @@ use tokio::sync::mpsc;
 use log::{info, error};
 
 use crate::{
-    AppWindow, GuildItem, ChatMessage, LinkItem, ChannelItem,
+    AppWindow, GuildItem, ChatMessage, LinkItem, ChannelItem, SearchResultItem,
 };
 use crate::gateway::{self, GatewayClient, GatewayEvent, GatewayCommand, GuildData, ChannelData, format_discord_author, format_discord_message_parts};
 use crate::http::DiscordHttpClient;
@@ -1275,4 +1275,150 @@ fn load_rounded_guild_icon(path: &str, scale_factor: f32) -> Option<Image> {
     crate::utils::image_shape::round_corners(&mut rgba, w, h, w.min(h) as f32 / 3.0);
     let buffer = slint::SharedPixelBuffer::<slint::Rgba8Pixel>::clone_from_slice(rgba.as_raw(), w, h);
     Some(Image::from_rgba8(buffer))
+}
+
+/// Converts raw API messages (newest first) into chat rows (oldest first).
+fn build_chat_rows(msgs_val: &[serde_json::Value], channel_id: &str, app_weak: &slint::Weak<AppWindow>) -> Vec<ChatMessage> {
+    msgs_val.iter().rev().map(|m| {
+        let msg_id = m["id"].as_str().unwrap_or("");
+        let author = format_discord_author(m);
+        let (content, commands, content_lines, embed_content, embed_lines, embed_color, embed_footer, code_block, reply_author, reply_content, reply_command, links, buttons, attachments) = format_discord_message_parts(m);
+
+        let slint_cmds: Vec<slint::SharedString> = commands.into_iter().map(|c| c.into()).collect();
+        let commands_model = std::rc::Rc::new(slint::VecModel::from(slint_cmds));
+
+        let slint_links: Vec<LinkItem> = links.iter().map(|l| LinkItem {
+            label: l.label.clone().into(),
+            url: l.url.clone().into(),
+        }).collect();
+        let links_model = std::rc::Rc::new(slint::VecModel::from(slint_links));
+
+        let mut message = ChatMessage {
+            id: msg_id.into(),
+            author: author.into(),
+            content: content.into(),
+            commands: slint::ModelRc::from(commands_model),
+            content_lines: map_message_lines(&content_lines, channel_id, app_weak),
+            embed_content: embed_content.into(),
+            embed_lines: map_message_lines(&embed_lines, channel_id, app_weak),
+            embed_color: parse_hex_color(&embed_color),
+            embed_footer: embed_footer.into(),
+            code_block: code_block.into(),
+            reply_author: reply_author.into(),
+            reply_content: reply_content.into(),
+            reply_command: reply_command.into(),
+            links: slint::ModelRc::from(links_model),
+            buttons: map_message_buttons(&buttons, channel_id, app_weak),
+            attachments: map_message_attachments(&attachments, app_weak),
+            timestamp: crate::utils::i18n_ui::ui_text().now_label.into(),
+            ..Default::default()
+        };
+        apply_message_metadata(&mut message, m);
+        message
+    }).collect()
+}
+
+/// Asks the chat view to scroll to `target_id`. Delayed slightly so freshly
+/// created rows exist before the target property changes.
+fn schedule_jump_target(app_weak: slint::Weak<AppWindow>, target_id: String) {
+    slint::Timer::single_shot(std::time::Duration::from_millis(80), move || {
+        if let Some(ui) = app_weak.upgrade() {
+            ui.set_jump_target_id(target_id.clone().into());
+        }
+    });
+}
+
+/// Scrolls to `target_id` in the active channel, loading a window of messages
+/// around it first when it is not part of the loaded history.
+pub async fn jump_to_message_in_channel(
+    http: &DiscordHttpClient,
+    app_weak: slint::Weak<AppWindow>,
+    channel_id: &str,
+    target_id: &str,
+) {
+    let target = target_id.to_string();
+    let (tx, rx) = tokio::sync::oneshot::channel::<bool>();
+    let app_check = app_weak.clone();
+    let target_check = target.clone();
+    let _ = slint::invoke_from_event_loop(move || {
+        let mut found = false;
+        if let Some(ui) = app_check.upgrade() {
+            let ids: Vec<String> = ui.get_messages().iter().map(|m| m.id.to_string()).collect();
+            found = crate::ui::message_jump::find_message_index(&ids, &target_check).is_some();
+            if found {
+                // Reset first so repeated clicks on the same target still fire a change.
+                ui.set_jump_target_id("".into());
+                schedule_jump_target(app_check.clone(), target_check.clone());
+            }
+        }
+        let _ = tx.send(found);
+    });
+    if rx.await.unwrap_or(false) {
+        return;
+    }
+
+    match http.get_channel_messages_around(channel_id, &target).await {
+        Ok(msgs_val) => {
+            if msgs_val.is_empty() || !msgs_val.iter().any(|m| m["id"].as_str() == Some(target.as_str())) {
+                return;
+            }
+            if let Some(oldest) = msgs_val.last() {
+                if let Some(id_str) = oldest["id"].as_str() {
+                    get_oldest_message_map().lock().unwrap().insert(channel_id.to_string(), id_str.to_string());
+                }
+            }
+            let ch_id = channel_id.to_string();
+            let _ = slint::invoke_from_event_loop(move || {
+                if let Some(ui) = app_weak.upgrade() {
+                    // The user may have opened another channel while the window loaded.
+                    if ui.get_active_channel_id().as_str() != ch_id {
+                        return;
+                    }
+                    let mut ui_msgs = build_chat_rows(&msgs_val, &ch_id, &app_weak);
+                    regroup_messages(&mut ui_msgs);
+                    avatar_cache::get_avatar_cache().hydrate(&mut ui_msgs, &app_weak);
+                    crate::ui::invite_cards::hydrate(&mut ui_msgs, &app_weak);
+                    ui.set_has_more_older_messages(true);
+                    ui.set_is_loading_older_messages(false);
+                    ui.set_messages(std::rc::Rc::new(slint::VecModel::from(ui_msgs)).into());
+                    ui.set_jump_target_id("".into());
+                    schedule_jump_target(app_weak.clone(), target);
+                }
+            });
+        }
+        Err(err) => {
+            error!("Failed to load messages around {}: {}", target, err);
+        }
+    }
+}
+
+/// Runs a message search and fills the results popup.
+pub async fn search_messages_and_show(
+    http: &DiscordHttpClient,
+    app_weak: slint::Weak<AppWindow>,
+    scope: crate::ui::message_jump::SearchScope,
+    query: &str,
+) {
+    let result = http.search_messages(&scope, query).await;
+    let _ = slint::invoke_from_event_loop(move || {
+        if let Some(ui) = app_weak.upgrade() {
+            ui.set_is_searching(false);
+            match result {
+                Ok(hits) => {
+                    ui.set_search_status(format!("{} result(s)", hits.len()).into());
+                    let rows: Vec<SearchResultItem> = hits.into_iter().map(|h| SearchResultItem {
+                        id: h.id.into(),
+                        channel_id: h.channel_id.into(),
+                        author: h.author.into(),
+                        content: h.content.into(),
+                    }).collect();
+                    ui.set_search_results(std::rc::Rc::new(slint::VecModel::from(rows)).into());
+                }
+                Err(err) => {
+                    ui.set_search_status(format!("Search failed ({})", err).into());
+                    ui.set_search_results(std::rc::Rc::new(slint::VecModel::<SearchResultItem>::default()).into());
+                }
+            }
+        }
+    });
 }

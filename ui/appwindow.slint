@@ -22,6 +22,13 @@ struct CommandSuggestion {
     is_required: bool,
 }
 
+struct SearchResultItem {
+    id: string,
+    channel_id: string,
+    author: string,
+    content: string,
+}
+
 struct GuildItem {
     id: string,
     name: string,
@@ -180,6 +187,14 @@ export component AppWindow inherits Window {
     in-out property <int> dragging_guild_idx: -1;
     in-out property <int> drop_target_guild_idx: -1;
     callback load_older_messages();
+    callback jump_to_message(string /* id of the message whose reply preview was clicked */);
+    callback jump_to_search_result(string /* message id */, string /* channel id */);
+    callback search_messages(string /* query */);
+    in-out property <string> jump_target_id: "";
+    in-out property <bool> show_search_popup: false;
+    in-out property <bool> is_searching: false;
+    in-out property <string> search_status: "";
+    in-out property <[SearchResultItem]> search_results: [];
     callback toggle_screen_share();
     callback toggle_web_share();
     callback copy_web_share_link();
@@ -2850,6 +2865,28 @@ export component AppWindow inherits Window {
                                 }
                             }
 
+                            // Message search button
+                            VerticalLayout {
+                                alignment: center;
+                                Rectangle {
+                                    height: 32px;
+                                    width: 32px;
+                                    border-radius: 6px;
+                                    background: header_search_ta.has-hover ? AppTheme.interactive-hover : transparent;
+                                    Image {
+                                        source: @image-url("../assets/search.svg");
+                                        width: 16px;
+                                        height: 16px;
+                                        colorize: AppTheme.text-muted;
+                                        image-fit: contain;
+                                    }
+                                    header_search_ta := TouchArea {
+                                        mouse-cursor: pointer;
+                                        clicked => { root.show_search_popup = !root.show_search_popup; }
+                                    }
+                                }
+                            }
+
                             // DM Voice Call Button — visible only in Direct Messages
                             if root.active_guild_id == "@me": VerticalLayout {
                                 alignment: center;
@@ -2964,6 +3001,8 @@ export component AppWindow inherits Window {
                         }
                         message_action(action, id) => { root.message_action(action, id); }
                         toggle_reaction(id, key) => { root.toggle_reaction(id, key); }
+                        jump_to_message(id) => { root.jump_to_message(id); }
+                        jump_target_id <=> root.jump_target_id;
                     }
 
                     // Pinned messages popup (simple list)
@@ -3042,6 +3081,118 @@ export component AppWindow inherits Window {
                                 mouse-cursor: pointer;
                                 clicked => {
                                     root.cancel_compose();
+                                }
+                            }
+                        }
+                    }
+
+                    // Message search results popup
+                    if root.show_search_popup : Rectangle {
+                        height: 260px;
+                        background: AppTheme.surface-sidebar;
+                        border-top-left-radius: 8px;
+                        border-top-right-radius: 8px;
+                        border-width: 1px;
+                        border-color: AppTheme.border-subtle;
+
+                        VerticalLayout {
+                            padding: 8px;
+                            spacing: 6px;
+
+                            HorizontalLayout {
+                                spacing: 8px;
+                                Rectangle {
+                                    height: 30px;
+                                    horizontal-stretch: 1;
+                                    background: AppTheme.surface-input;
+                                    border-radius: 6px;
+                                    search_input := TextInput {
+                                        x: 10px;
+                                        width: parent.width - 20px;
+                                        height: 100%;
+                                        color: AppTheme.text-primary;
+                                        font-size: TypeScale.body;
+                                        vertical-alignment: center;
+                                        single-line: true;
+                                        accepted => { root.search_messages(self.text); }
+                                    }
+                                }
+                                Rectangle {
+                                    width: 60px;
+                                    height: 30px;
+                                    border-radius: 6px;
+                                    background: search_go_ta.has-hover ? AppTheme.accent-hover : AppTheme.accent;
+                                    Text {
+                                        text: "Search";
+                                        color: AppTheme.text-on-accent;
+                                        font-size: TypeScale.caption;
+                                        font-weight: 700;
+                                        horizontal-alignment: center;
+                                        vertical-alignment: center;
+                                    }
+                                    search_go_ta := TouchArea {
+                                        mouse-cursor: pointer;
+                                        clicked => { root.search_messages(search_input.text); }
+                                    }
+                                }
+                                Rectangle {
+                                    width: 30px;
+                                    height: 30px;
+                                    border-radius: 6px;
+                                    background: search_close_ta.has-hover ? AppTheme.interactive-hover : transparent;
+                                    Text {
+                                        text: "x";
+                                        color: AppTheme.text-muted;
+                                        font-size: TypeScale.body;
+                                        font-weight: 700;
+                                        horizontal-alignment: center;
+                                        vertical-alignment: center;
+                                    }
+                                    search_close_ta := TouchArea {
+                                        mouse-cursor: pointer;
+                                        clicked => { root.show_search_popup = false; }
+                                    }
+                                }
+                            }
+
+                            Text {
+                                text: root.is_searching ? "Searching..." : root.search_status;
+                                color: AppTheme.text-muted;
+                                font-size: TypeScale.micro;
+                            }
+
+                            ScrollView {
+                                vertical-stretch: 1;
+                                VerticalLayout {
+                                    spacing: 3px;
+                                    for hit in root.search_results: Rectangle {
+                                        height: 38px;
+                                        background: hit_ta.has-hover ? AppTheme.interactive-hover : AppTheme.surface-input;
+                                        border-radius: 6px;
+                                        VerticalLayout {
+                                            padding-left: 8px;
+                                            padding-right: 8px;
+                                            padding-top: 3px;
+                                            padding-bottom: 3px;
+                                            Text {
+                                                text: hit.author;
+                                                color: AppTheme.text-secondary;
+                                                font-size: TypeScale.caption;
+                                                font-weight: 700;
+                                                overflow: elide;
+                                            }
+                                            Text {
+                                                text: hit.content;
+                                                color: AppTheme.text-muted;
+                                                font-size: TypeScale.caption;
+                                                overflow: elide;
+                                            }
+                                        }
+                                        hit_ta := TouchArea {
+                                            mouse-cursor: pointer;
+                                            clicked => { root.jump_to_search_result(hit.id, hit.channel_id); }
+                                        }
+                                    }
                                 }
                             }
                         }

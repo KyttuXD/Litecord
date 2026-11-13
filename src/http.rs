@@ -198,6 +198,44 @@ impl DiscordHttpClient {
         }
     }
 
+    /// Loads a window of messages centred on `around_id` (used to jump to a reply target).
+    pub async fn get_channel_messages_around(&self, channel_id: &str, around_id: &str) -> Result<Vec<serde_json::Value>, String> {
+        let url = crate::ui::message_jump::messages_around_url(channel_id, around_id, 50);
+        match self.client.get(&url).send().await {
+            Ok(resp) => {
+                let status = resp.status();
+                if status.is_success() {
+                    if let Ok(msgs) = resp.json::<Vec<serde_json::Value>>().await {
+                        return Ok(msgs);
+                    }
+                }
+                Err(format!("Status HTTP {}", status))
+            }
+            Err(e) => Err(format!("HTTP error: {:?}", e)),
+        }
+    }
+
+    /// Searches messages in a guild or channel.
+    pub async fn search_messages(&self, scope: &crate::ui::message_jump::SearchScope, content: &str) -> Result<Vec<crate::ui::message_jump::SearchHit>, String> {
+        let url = crate::ui::message_jump::search_url(scope, content);
+        match self.client.get(&url).send().await {
+            Ok(resp) => {
+                let status = resp.status();
+                // Discord answers 202 while it is still indexing the server's messages.
+                if status.as_u16() == 202 {
+                    return Err("The search index is not ready yet, try again shortly".to_string());
+                }
+                if status.is_success() {
+                    if let Ok(body) = resp.json::<serde_json::Value>().await {
+                        return Ok(crate::ui::message_jump::parse_search_results(&body));
+                    }
+                }
+                Err(format!("Status HTTP {}", status))
+            }
+            Err(e) => Err(format!("HTTP error: {:?}", e)),
+        }
+    }
+
     pub async fn download_image(&self, url: &str) -> Result<Vec<u8>, String> {
         match self.client.get(url).send().await {
             Ok(resp) => {
@@ -286,7 +324,7 @@ impl DiscordHttpClient {
                     Err(format!("Status HTTP {}", resp.status()))
                 }
             }
-            Err(e) => Err(format!("Erro HTTP: {:?}", e)),
+            Err(e) => Err(format!("HTTP error: {:?}", e)),
         }
     }
 

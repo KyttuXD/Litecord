@@ -4,6 +4,7 @@ pub mod helpers;
 pub mod data_loader;
 pub mod invite_cards;
 pub mod message_grouping;
+pub mod message_jump;
 pub mod gpu_video;
 pub mod window_place;
 

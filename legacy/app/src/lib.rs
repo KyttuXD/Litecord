@@ -15,6 +15,8 @@ pub mod file_picker;
 pub mod http_messaging;
 #[path = "../../../src/channel_permissions.rs"]
 pub mod channel_permissions;
+#[path = "../../../src/relationships.rs"]
+pub mod relationships;
 
 pub mod screen_capture;
 pub mod ui;

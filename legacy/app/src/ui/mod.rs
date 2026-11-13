@@ -7,3 +7,5 @@ pub mod helpers {
     pub static APP_IS_VISIBLE: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(true);
 }
 pub mod message_grouping;
+#[path = "../../../../src/ui/message_jump.rs"]
+pub mod message_jump;

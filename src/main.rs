@@ -4495,6 +4495,86 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     });
 
+    // Jump to Reply Target Callback (click on a reply preview)
+    let app_weak_jump = app_weak.clone();
+    let http_client_jump = Arc::clone(&http_client);
+    let active_ch_jump = Arc::clone(&active_channel_id);
+    app.on_jump_to_message(move |msg_id: SharedString| {
+        let target = match crate::ui::message_jump::lookup_reply_ref(msg_id.as_str()) {
+            Some(t) => t,
+            None => return,
+        };
+        let ch_id = active_ch_jump.lock().unwrap().clone();
+        let http_opt = http_client_jump.lock().unwrap().clone();
+        if ch_id.is_empty() {
+            return;
+        }
+        if let Some(http) = http_opt {
+            let app_w = app_weak_jump.clone();
+            tokio::spawn(async move {
+                crate::ui::data_loader::jump_to_message_in_channel(&http, app_w, &ch_id, &target).await;
+            });
+        }
+    });
+
+    // Message Search Callback
+    let app_weak_search = app_weak.clone();
+    let http_client_search = Arc::clone(&http_client);
+    let active_ch_search = Arc::clone(&active_channel_id);
+    let active_guild_search = Arc::clone(&active_guild_id);
+    app.on_search_messages(move |query: SharedString| {
+        let query_str = query.to_string();
+        if query_str.trim().is_empty() {
+            return;
+        }
+        let ch_id = active_ch_search.lock().unwrap().clone();
+        let guild_id = active_guild_search.lock().unwrap().clone();
+        let http_opt = http_client_search.lock().unwrap().clone();
+        let scope = if !guild_id.is_empty() && guild_id != "@me" {
+            crate::ui::message_jump::SearchScope::Guild(guild_id)
+        } else if !ch_id.is_empty() {
+            crate::ui::message_jump::SearchScope::Channel(ch_id)
+        } else {
+            return;
+        };
+        if let Some(http) = http_opt {
+            if let Some(ui) = app_weak_search.upgrade() {
+                ui.set_is_searching(true);
+            }
+            let app_w = app_weak_search.clone();
+            tokio::spawn(async move {
+                crate::ui::data_loader::search_messages_and_show(&http, app_w, scope, &query_str).await;
+            });
+        }
+    });
+
+    // Search Result Click Callback (jumps within the open channel, or opens the other channel)
+    let app_weak_hit = app_weak.clone();
+    let http_client_hit = Arc::clone(&http_client);
+    let active_ch_hit = Arc::clone(&active_channel_id);
+    app.on_jump_to_search_result(move |msg_id: SharedString, channel_id: SharedString| {
+        let ch_id = active_ch_hit.lock().unwrap().clone();
+        let hit_channel = channel_id.to_string();
+        if !hit_channel.is_empty() && hit_channel != ch_id {
+            if let Some(ui) = app_weak_hit.upgrade() {
+                ui.set_show_search_popup(false);
+                ui.invoke_select_channel(channel_id.clone());
+            }
+            return;
+        }
+        let http_opt = http_client_hit.lock().unwrap().clone();
+        if ch_id.is_empty() {
+            return;
+        }
+        let target = msg_id.to_string();
+        if let Some(http) = http_opt {
+            let app_w = app_weak_hit.clone();
+            tokio::spawn(async move {
+                crate::ui::data_loader::jump_to_message_in_channel(&http, app_w, &ch_id, &target).await;
+            });
+        }
+    });
+
     let (app_w, compose, http_c, channel_c) = (app_weak.clone(), Arc::clone(&compose_state), Arc::clone(&http_client), Arc::clone(&active_channel_id));
     app.on_message_action(move |action: SharedString, message_id: SharedString| {
         let Some(ui) = app_w.upgrade() else { return };

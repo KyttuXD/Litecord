@@ -144,6 +144,9 @@ export component ChatMessagesView inherits Rectangle {
     callback open_link(string);
     callback download_attachment(string, string, string);
     callback click_command(string);
+    callback jump_to_message(string);
+    // Id of a message to scroll to; reset to "" once the scroll was applied.
+    in-out property <string> jump_target_id: "";
     // A click on a message picks it and shows its actions under it; a second click hides them.
     in-out property <string> selected_message_id: "";
     // "reply", "edit", "delete", or a reaction key; then the message id.
@@ -244,6 +247,17 @@ export component ChatMessagesView inherits Rectangle {
                 background: row_hover.has-hover ? AppTheme.interactive-hover : (msg.mentions_me ? #f0b23222 : transparent);
                 border-radius: 4px;
                 property <bool> is-collapsed: true;
+                property <bool> is-jump-target: root.jump_target_id != "" && msg.id == root.jump_target_id;
+
+                changed is-jump-target => {
+                    if (self.is-jump-target) {
+                        root.scroll_y = Math.max(
+                            Math.min(root.scroll_y - (self.absolute-position.y - msg_scroll.absolute-position.y) + 8px, 0px),
+                            Math.min(0px, msg_scroll.visible-height - msg_scroll.viewport-height)
+                        );
+                        root.jump_target_id = "";
+                    }
+                }
                 // Spoilers of a message are revealed together, per message row.
                 property <bool> spoilers-revealed: false;
 
@@ -375,6 +389,14 @@ export component ChatMessagesView inherits Rectangle {
                                 font-size: ChatTypography.preview-size;
                                 overflow: elide;
                             }
+                        }
+
+                        // Clicking a reply preview jumps to the referenced message.
+                        if msg.reply-command == "": TouchArea {
+                            width: 100%;
+                            height: 100%;
+                            mouse-cursor: pointer;
+                            clicked => { root.jump_to_message(msg.id); }
                         }
                     }
 

@@ -1280,6 +1280,9 @@ pub fn format_discord_message_parts(m: &Value) -> (String, Vec<String>, Vec<Mess
     let mut reply_content = String::new();
     let mut reply_command = String::new();
     let msg_type = m["type"].as_u64().unwrap_or(0);
+    if msg_type == 19 {
+        crate::ui::message_jump::remember_reply_ref(m);
+    }
 
     // Extract embed color (first embed's color if present)
     let embed_color = m["embeds"].as_array()
