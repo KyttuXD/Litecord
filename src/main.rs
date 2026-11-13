@@ -4198,6 +4198,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 ui.set_active_channel_name(clean_name.as_ref().into());
                 ui.set_active_channel_topic(target_channel.as_ref().and_then(|c| c.topic.clone()).unwrap_or_default().into());
                 ui.set_active_channel_id(ch_id.clone().into());
+                ui.set_show_pins_popup(false);
+                ui.set_pinned_messages(Default::default());
                 ui.set_is_voice_focused(false);
                 request_chat_scroll_to_bottom(app_weak_chan_select.clone());
 
@@ -4449,7 +4451,66 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     });
                 }
             }
+            "pin" | "unpin" => {
+                let (http_opt, channel_id, app_weak) = (http_c.lock().unwrap().as_ref().cloned(), channel_c.lock().unwrap().clone(), app_w.clone());
+                if let Some(http) = http_opt {
+                    if channel_id.is_empty() {
+                        return;
+                    }
+                    let (message_id, pin) = (message_id.to_string(), action.as_str() == "pin");
+                    tokio::spawn(async move {
+                        let result = http.set_message_pinned(&channel_id, &message_id, pin).await;
+                        let ok = result.is_ok();
+                        report_message_error(&app_weak, result);
+                        if ok {
+                            let _ = slint::invoke_from_event_loop(move || {
+                                if let Some(ui) = app_weak.upgrade() {
+                                    if ui.get_show_pins_popup() {
+                                        ui.invoke_open_pins();
+                                    }
+                                }
+                            });
+                        }
+                    });
+                }
+            }
             _ => {}
+        }
+    });
+
+    // Pinned messages: the list popup fetches the pins of the open channel.
+    let (app_weak_pins, http_client_pins, active_ch_pins) = (app_weak.clone(), Arc::clone(&http_client), Arc::clone(&active_channel_id));
+    app.on_open_pins(move || {
+        let ch_id = active_ch_pins.lock().unwrap().clone();
+        let http_opt = http_client_pins.lock().unwrap().clone();
+        if ch_id.is_empty() {
+            return;
+        }
+        if let Some(http) = http_opt {
+            let app_w = app_weak_pins.clone();
+            tokio::spawn(async move {
+                let pins = match http.get_pinned_messages(&ch_id).await {
+                    Ok(pins) => pins,
+                    Err(e) => {
+                        warn!("Could not load the pinned messages: {}", e);
+                        return;
+                    }
+                };
+                let _ = slint::invoke_from_event_loop(move || {
+                    if let Some(ui) = app_w.upgrade() {
+                        // The user may have opened another channel meanwhile.
+                        if ui.get_active_channel_id().as_str() != ch_id {
+                            return;
+                        }
+                        let items: Vec<PinnedItem> = pins.iter().map(|m| PinnedItem {
+                            id: m["id"].as_str().unwrap_or("").into(),
+                            author: format_discord_author(m).into(),
+                            content: crate::http::pin_preview(m).into(),
+                        }).collect();
+                        ui.set_pinned_messages(std::rc::Rc::new(slint::VecModel::from(items)).into());
+                    }
+                });
+            });
         }
     });
 

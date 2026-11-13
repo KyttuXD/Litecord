@@ -448,4 +448,132 @@ impl DiscordHttpClient {
             }
         }
     }
+
+    /// Fetches the pinned messages of a channel (newest pin first).
+    pub async fn get_pinned_messages(&self, channel_id: &str) -> Result<Vec<serde_json::Value>, String> {
+        let path = pins_path(channel_id).ok_or_else(|| "Invalid channel id".to_string())?;
+        let url = format!("https://discord.com/api/v10{}", path);
+        match self.client.get(&url).send().await {
+            Ok(resp) => {
+                let status = resp.status();
+                if status.is_success() {
+                    if let Ok(body) = resp.json::<serde_json::Value>().await {
+                        return Ok(parse_pins(&body));
+                    }
+                }
+                Err(format!("Status HTTP {}", status))
+            }
+            Err(e) => Err(format!("HTTP error: {:?}", e)),
+        }
+    }
+
+    /// Pins (`pin == true`) or unpins a message.
+    pub async fn set_message_pinned(&self, channel_id: &str, message_id: &str, pin: bool) -> Result<(), String> {
+        let path = pin_path(channel_id, message_id).ok_or_else(|| "Invalid id".to_string())?;
+        let url = format!("https://discord.com/api/v10{}", path);
+        let request = if pin { self.client.put(&url) } else { self.client.delete(&url) };
+        match request.send().await {
+            Ok(resp) => {
+                if resp.status().is_success() {
+                    Ok(())
+                } else {
+                    let err = format!("HTTP status error while changing a pin: {}", resp.status());
+                    warn!("{}", err);
+                    Err(err)
+                }
+            }
+            Err(e) => {
+                let err = format!("Network failure while changing a pin: {:?}", e);
+                warn!("{}", err);
+                Err(err)
+            }
+        }
+    }
+}
+
+fn is_snowflake(id: &str) -> bool {
+    !id.is_empty() && id.len() <= 20 && id.bytes().all(|b| b.is_ascii_digit())
+}
+
+/// Request path listing the pins of a channel, or `None` for a malformed id.
+pub fn pins_path(channel_id: &str) -> Option<String> {
+    if is_snowflake(channel_id) {
+        Some(format!("/channels/{}/pins", channel_id))
+    } else {
+        None
+    }
+}
+
+/// Request path to pin (PUT) or unpin (DELETE) one message.
+pub fn pin_path(channel_id: &str, message_id: &str) -> Option<String> {
+    if is_snowflake(channel_id) && is_snowflake(message_id) {
+        Some(format!("/channels/{}/pins/{}", channel_id, message_id))
+    } else {
+        None
+    }
+}
+
+/// Accepts both the plain array of messages and the newer
+/// `{ "items": [ { "message": {...} } ] }` shape.
+pub fn parse_pins(body: &serde_json::Value) -> Vec<serde_json::Value> {
+    if let Some(arr) = body.as_array() {
+        return arr.clone();
+    }
+    if let Some(items) = body["items"].as_array() {
+        return items
+            .iter()
+            .filter_map(|it| if it["message"].is_object() { Some(it["message"].clone()) } else { None })
+            .collect();
+    }
+    Vec::new()
+}
+
+/// One-line preview of a pinned message for the pins popup.
+pub fn pin_preview(msg: &serde_json::Value) -> String {
+    let content = msg["content"].as_str().unwrap_or("").trim();
+    if content.is_empty() {
+        let has_attachment = msg["attachments"].as_array().map_or(false, |a| !a.is_empty());
+        return if has_attachment { "[Attachment]".to_string() } else { "[Embed]".to_string() };
+    }
+    let single: String = content.split_whitespace().collect::<Vec<_>>().join(" ");
+    if single.chars().count() > 140 {
+        let cut: String = single.chars().take(140).collect();
+        format!("{}...", cut)
+    } else {
+        single
+    }
+}
+
+#[cfg(test)]
+mod pin_tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn paths_validate_ids() {
+        assert_eq!(pins_path("123").as_deref(), Some("/channels/123/pins"));
+        assert_eq!(pins_path("12/3"), None);
+        assert_eq!(pins_path(""), None);
+        assert_eq!(pin_path("1", "2").as_deref(), Some("/channels/1/pins/2"));
+        assert_eq!(pin_path("1", "../x"), None);
+    }
+
+    #[test]
+    fn parses_both_shapes() {
+        assert_eq!(parse_pins(&json!([{"id": "1"}])).len(), 1);
+        let v = json!({"items": [{"message": {"id": "2"}}, {"pinned_at": "x"}]});
+        let out = parse_pins(&v);
+        assert_eq!(out.len(), 1);
+        assert_eq!(out[0]["id"], "2");
+        assert!(parse_pins(&json!({})).is_empty());
+    }
+
+    #[test]
+    fn preview_truncates_and_falls_back() {
+        assert_eq!(pin_preview(&json!({"content": "a\n b"})), "a b");
+        assert_eq!(pin_preview(&json!({"content": "", "attachments": [{}]})), "[Attachment]");
+        assert_eq!(pin_preview(&json!({"content": ""})), "[Embed]");
+        let long = "x".repeat(200);
+        assert_eq!(pin_preview(&json!({"content": long})).chars().count(), 143);
+    }
 }

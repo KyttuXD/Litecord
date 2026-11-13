@@ -46,6 +46,12 @@ struct VoiceParticipant {
     is_stream_hidden: bool,
 }
 
+export struct PinnedItem {
+    id: string,
+    author: string,
+    content: string,
+}
+
 export struct ScreenSourceItem {
     id: int,
     name: string,
@@ -102,6 +108,9 @@ export component AppWindow inherits Window {
     // Message actions (see ChatMessagesView): "reply" / "edit" / "delete" with the message id.
     callback message_action(string, string);
     callback toggle_reaction(string /* message id */, string /* reaction key */);
+    callback open_pins();
+    in-out property <bool> show_pins_popup: false;
+    in-out property <[PinnedItem]> pinned_messages: [];
     // Leaves the reply or edit that the next sent text would have been.
     callback cancel_compose();
     // "Replying to ..." / "Editing your message", and who is typing in the open channel.
@@ -2748,6 +2757,18 @@ export component AppWindow inherits Window {
 
                             Rectangle { horizontal-stretch: (root.active_channel_topic != "" && root.active_guild_id != "@me") ? 0 : 1; }
 
+                            // Pinned messages button
+                            VerticalLayout {
+                                alignment: center;
+                                IconButton {
+                                    icon: @image-url("../assets/pin.svg");
+                                    clicked => {
+                                        root.show_pins_popup = !root.show_pins_popup;
+                                        if root.show_pins_popup { root.open_pins(); }
+                                    }
+                                }
+                            }
+
                             // DM Voice Call Button — visible only in Direct Messages
                             if root.active_guild_id == "@me": VerticalLayout {
                                 alignment: center;
@@ -2862,6 +2883,54 @@ export component AppWindow inherits Window {
                         }
                         message_action(action, id) => { root.message_action(action, id); }
                         toggle_reaction(id, key) => { root.toggle_reaction(id, key); }
+                    }
+
+                    // Pinned messages popup (simple list)
+                    if root.show_pins_popup : Rectangle {
+                        height: Math.min(300px, (root.pinned_messages.length * 52 + 40) * 1px);
+                        background: AppTheme.surface-sidebar;
+                        border-width: 1px;
+                        border-color: AppTheme.border-subtle;
+                        border-radius: 8px;
+                        clip: true;
+
+                        Flickable {
+                            VerticalLayout {
+                                padding: 8px;
+                                spacing: 4px;
+
+                                Text {
+                                    text: root.pinned_messages.length == 0 ? "No pinned messages" : "Pinned messages";
+                                    color: AppTheme.text-strong;
+                                    font-size: TypeScale.body;
+                                    font-weight: 700;
+                                }
+
+                                for pin in root.pinned_messages: Rectangle {
+                                    height: 48px;
+                                    background: AppTheme.surface-elevated;
+                                    border-radius: 4px;
+
+                                    VerticalLayout {
+                                        padding: 6px;
+                                        spacing: 2px;
+                                        Text {
+                                            text: pin.author;
+                                            color: AppTheme.text-strong;
+                                            font-size: TypeScale.caption;
+                                            font-weight: 700;
+                                            overflow: elide;
+                                        }
+                                        Text {
+                                            text: pin.content;
+                                            color: AppTheme.text-primary;
+                                            font-size: TypeScale.caption;
+                                            overflow: elide;
+                                        }
+                                    }
+                                }
+                            }
+                        }
                     }
 
                     // Reply / edit notice, or who is typing.

@@ -1453,6 +1453,14 @@ export component ChatMessagesView inherits Rectangle {
                             label: "🎉";
                             activated => { root.toggle_reaction(msg.id, "🎉"); root.selected_message_id = ""; }
                         }
+                        MessageAction {
+                            label: "Pin";
+                            activated => { root.message_action("pin", msg.id); root.selected_message_id = ""; }
+                        }
+                        MessageAction {
+                            label: "Unpin";
+                            activated => { root.message_action("unpin", msg.id); root.selected_message_id = ""; }
+                        }
                         if msg.is_self: MessageAction {
                             label: "Edit";
                             activated => { root.message_action("edit", msg.id); root.selected_message_id = ""; }
