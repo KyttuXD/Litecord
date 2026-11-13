@@ -4215,11 +4215,25 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 let remaining_dm_unreads = crate::ui::helpers::clear_dm_unread(&ch_id);
                 ui.set_total_dm_unread_count(remaining_dm_unreads);
 
+                // Clears the channel in the unread state (guild icon badge, mention count)
+                // and tells Discord it was read.
+                let ack_message_id = crate::gateway::unread::mark_read(ch_id.as_str());
+                crate::ui::helpers::refresh_unread_badges(&ui);
+
                 let http_opt = http_client_chan_select.lock().unwrap().as_ref().cloned();
                 let app_w = app_weak_chan_select.clone();
                 let ch_id_clone = ch_id.clone();
 
                 if let Some(http) = http_opt {
+                    if let Some(message_id) = ack_message_id {
+                        let http_ack = http.clone();
+                        let ack_channel_id = ch_id.to_string();
+                        tokio::spawn(async move {
+                            if let Err(e) = http_ack.ack_message(&ack_channel_id, &message_id).await {
+                                warn!("Could not mark channel {} as read: {}", ack_channel_id, e);
+                            }
+                        });
+                    }
                     tokio::spawn(async move {
                         load_messages_for_channel(&http, app_w, &ch_id_clone).await;
                     });
@@ -5069,7 +5083,21 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         }
                     };
 
+                    // Server icon badges and channel mention counts follow the unread state,
+                    // which the gateway already updated for this message.
+                    let refresh_badges = || {
+                        if visible {
+                            let app_w = app_weak_inner.clone();
+                            let _ = slint::invoke_from_event_loop(move || {
+                                if let Some(ui) = app_w.upgrade() {
+                                    crate::ui::helpers::refresh_unread_badges(&ui);
+                                }
+                            });
+                        }
+                    };
+
                     if channel_id != current_active_ch {
+                        refresh_badges();
                         // If the message was sent by the user themselves (e.g. from their phone), do not increment the unread badge
                         if is_self {
                             if showing_dms && in_shown_list {
@@ -5091,6 +5119,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     // Message for the current active channel: clear this channel's counter and, if it is a DM, move it to the top of the list
                     show_dm_total(crate::ui::helpers::clear_dm_unread(&channel_id));
                     sidebar(0);
+                    // The open channel is being read: clear it in the unread state and ack it.
+                    if let Some(message_id) = crate::gateway::unread::mark_read(&channel_id) {
+                        let http_opt = http_client_gw_events.lock().unwrap().as_ref().cloned();
+                        if let Some(http) = http_opt {
+                            let ack_channel_id = channel_id.clone();
+                            tokio::spawn(async move {
+                                if let Err(e) = http.ack_message(&ack_channel_id, &message_id).await {
+                                    warn!("Could not mark channel {} as read: {}", ack_channel_id, e);
+                                }
+                            });
+                        }
+                    }
+                    refresh_badges();
 
                     if !APP_IS_VISIBLE.load(Ordering::Relaxed) {
                         // Window is hidden — count message but don't touch Slint.

@@ -28,6 +28,9 @@ struct GuildItem {
     icon: string,
     has_image: bool,
     icon_image: image,
+    has_unread: bool,     // unread messages in a channel that is not muted
+    mention_count: int,   // messages that mention the user (0 = no badge)
+    is_muted: bool,
 }
 
 struct VoiceParticipant {
@@ -1330,7 +1333,7 @@ export component AppWindow inherits Window {
                                                 x: 0;
                                                 y: (parent.height - self.height) / 2;
                                                 width: 4px;
-                                                height: (guild.id == root.active_guild_id) ? 36px : (guild_ta.has-hover ? 16px : 0px);
+                                                height: (guild.id == root.active_guild_id) ? 36px : (guild_ta.has-hover ? 16px : (guild.has_unread ? 8px : 0px));
                                                 background: AppTheme.text-strong;
                                                 border-top-right-radius: 4px;
                                                 border-bottom-right-radius: 4px;
@@ -1344,7 +1347,7 @@ export component AppWindow inherits Window {
                                             background: (guild.id == root.active_guild_id) ? AppTheme.accent : (guild_ta.has-hover ? AppTheme.accent : AppTheme.surface-chat);
                                             border-radius: (guild.id == root.active_guild_id || guild_ta.has-hover) ? 14px : 16px;
                                             clip: true;
-                                            opacity: (root.dragging_guild_idx == idx) ? 0.4 : 1.0;
+                                            opacity: (root.dragging_guild_idx == idx) ? 0.4 : (guild.is_muted ? 0.5 : 1.0);
                                             animate border-radius, background, opacity { duration: 150ms; easing: ease-out; }
 
                                             if guild.has_image: Image {
@@ -1397,8 +1400,30 @@ export component AppWindow inherits Window {
                                             }
                                         }
 
-                                        // Spacer to balance the 8px on the left
-                                        Rectangle { width: 8px; }
+                                        // Spacer to balance the 8px on the left; it is drawn last, so the
+                                        // mention badge placed over the icon's corner stays on top.
+                                        Rectangle {
+                                            width: 8px;
+                                            if guild.mention_count > 0 : Rectangle {
+                                                x: guild.mention_count > 99 ? -26px : (guild.mention_count > 9 ? -22px : -18px);
+                                                y: 30px;
+                                                width: guild.mention_count > 99 ? 28px : (guild.mention_count > 9 ? 24px : 18px);
+                                                height: 18px;
+                                                border-radius: 9px;
+                                                background: #ed4245;
+
+                                                Text {
+                                                    width: parent.width;
+                                                    height: parent.height;
+                                                    text: guild.mention_count > 99 ? "99+" : "\{guild.mention_count}";
+                                                    color: #ffffff;
+                                                    font-size: TypeScale.caption;
+                                                    font-weight: 700;
+                                                    horizontal-alignment: center;
+                                                    vertical-alignment: center;
+                                                }
+                                            }
+                                        }
                                     }
                                 }
                             }

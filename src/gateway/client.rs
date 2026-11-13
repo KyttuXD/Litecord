@@ -64,6 +64,8 @@ const HANDLED_EVENTS: &[&str] = &[
     "MESSAGE_REACTION_REMOVE",
     "MESSAGE_REACTION_REMOVE_ALL",
     "TYPING_START",
+    "MESSAGE_ACK",
+    "USER_GUILD_SETTINGS_UPDATE",
     "CALL_CREATE",
     "CALL_UPDATE",
     "CALL_DELETE",
@@ -534,6 +536,7 @@ impl GatewayClient {
                     let uid = v["d"]["user"]["id"].as_str().unwrap_or("").to_string();
                     *self.user_id.lock().unwrap() = Some(uid.clone());
                     let uid_num = uid.parse::<u64>().unwrap_or(0);
+                    super::unread::apply_ready(&v["d"]);
 
                     let username = v["d"]["user"]["username"].as_str().unwrap_or("User");
                     let global_name = v["d"]["user"]["global_name"].as_str().unwrap_or(username);
@@ -847,6 +850,7 @@ impl GatewayClient {
                     let my_uid = self.user_id.lock().unwrap().clone().unwrap_or_default();
                     let author_id = v["d"]["author"]["id"].as_str().unwrap_or("");
                     let is_self = !my_uid.is_empty() && author_id == my_uid;
+                    super::unread::record_message_event(&v["d"], &my_uid);
 
                     let author = format_discord_author(&v["d"]);
                     let (content, commands, content_lines, embed_content, embed_lines, embed_color, embed_footer, code_block, reply_author, reply_content, reply_command, links, buttons, attachments) = format_discord_message_parts(&v["d"]);
@@ -1111,6 +1115,10 @@ impl GatewayClient {
 
                     info!("Server loaded: '{}' ({} channels)", name, channels.len());
 
+                    {
+                        let channel_ids: Vec<&str> = channels.iter().map(|c| c.id.as_str()).collect();
+                        super::unread::register_channels(&id, &channel_ids);
+                    }
                     let guild = GuildData { id, name, channels };
                     let _ = self.event_tx.send(GatewayEvent::GuildLoaded { guild }).await;
                 }
@@ -1139,6 +1147,12 @@ impl GatewayClient {
                     if !guild_id.is_empty() && !channel_id.is_empty() {
                         let _ = self.event_tx.send(GatewayEvent::ChannelDeleted { guild_id, channel_id }).await;
                     }
+                }
+                "MESSAGE_ACK" => {
+                    super::unread::record_remote_ack(&v["d"]);
+                }
+                "USER_GUILD_SETTINGS_UPDATE" => {
+                    super::unread::apply_settings_entry(&v["d"]);
                 }
                 _ => {}
             }

@@ -9,6 +9,8 @@ pub mod channel_names;
 pub mod presence;
 #[path = "../../../src/gateway/channel_events.rs"]
 pub mod channel_events;
+#[path = "../../../src/gateway/unread.rs"]
+pub mod unread;
 #[path = "../../../src/gateway/client.rs"]
 pub mod client;
 

@@ -17,6 +17,8 @@ export struct ChannelItem {
     is_collapsed: bool,
     has_separator: bool,
     unread_count: int,  // Unread messages badge (0 = no badge)
+    mention_count: int, // messages that mention the user (shown as a red number, even when muted)
+    is_muted: bool,     // muted channel: dimmed, no unread badge
     // Voice members only: muted (self or server) and deafened (self or server).
     voice_muted: bool,
     voice_deafened: bool,
@@ -256,9 +258,10 @@ export component ChannelSidebar inherits Rectangle {
                             }
                             Text {
                                 text: channel.emoji_id != "" ? channel.label : channel.name;
-                                color: touch_area.has_hover ? AppTheme.text-strong : (channel.id == root.active_channel_id ? AppTheme.text-strong : (channel.unread_count > 0 ? AppTheme.text-strong : AppTheme.text-primary));
+                                color: touch_area.has_hover ? AppTheme.text-strong : (channel.id == root.active_channel_id ? AppTheme.text-strong : ((channel.unread_count > 0 && !channel.is_muted) || channel.mention_count > 0 ? AppTheme.text-strong : AppTheme.text-primary));
+                                opacity: channel.is_muted && channel.mention_count == 0 && channel.id != root.active_channel_id && !touch_area.has_hover ? 0.45 : 1.0;
                                 font-size: TypeScale.body;
-                                font-weight: channel.unread_count > 0 ? 700 : 600;
+                                font-weight: (channel.unread_count > 0 && !channel.is_muted) || channel.mention_count > 0 ? 700 : 600;
                                 horizontal-alignment: left;
                                 vertical-alignment: center;
                                 horizontal-stretch: 1;
@@ -267,10 +270,11 @@ export component ChannelSidebar inherits Rectangle {
                             }
 
                             // Unread message count badge (red pill for DMs)
-                            if channel.unread_count > 0 && channel.id != root.active_channel_id : VerticalLayout {
+                            // A mention shows its own count; plain unread messages are hidden when muted.
+                            if (channel.mention_count > 0 || (channel.unread_count > 0 && !channel.is_muted)) && channel.id != root.active_channel_id : VerticalLayout {
                                 alignment: center;
                                 Rectangle {
-                                    width: channel.unread_count > 99 ? 28px : (channel.unread_count > 9 ? 24px : 20px);
+                                    width: (channel.mention_count > 0 ? channel.mention_count : channel.unread_count) > 99 ? 28px : ((channel.mention_count > 0 ? channel.mention_count : channel.unread_count) > 9 ? 24px : 20px);
                                     height: 20px;
                                     border-radius: 10px;
                                     background: #ed4245;
@@ -279,7 +283,7 @@ export component ChannelSidebar inherits Rectangle {
                                         x: -1px;
                                         width: parent.width;
                                         height: parent.height;
-                                        text: channel.unread_count > 99 ? "99+" : "\{channel.unread_count}";
+                                        text: (channel.mention_count > 0 ? channel.mention_count : channel.unread_count) > 99 ? "99+" : "\{channel.mention_count > 0 ? channel.mention_count : channel.unread_count}";
                                         color: #ffffff;
                                         font-size: TypeScale.caption;
                                         font-weight: 700;

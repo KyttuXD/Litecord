@@ -66,6 +66,7 @@ pub fn mark_msg_seen(id: &str) -> bool {
 
 pub fn reset_unread_and_dedup_state() {
     DM_UNREAD_MAP.lock().unwrap().clear();
+    gateway::unread::reset();
     let mut guard = PROCESSED_MSG_IDS.lock().unwrap();
     guard.0.clear();
     guard.1.clear();
@@ -171,6 +172,38 @@ pub fn apply_channel_activity(ui: &AppWindow, activity: &[(String, i32)], active
     }
     if changed {
         ui.set_channels(std::rc::Rc::new(slint::VecModel::from(channels)).into());
+    }
+    refresh_unread_badges(ui);
+}
+
+/// Updates the mention counts and mute flags of the channel rows, and the unread dot,
+/// mention count and mute flag of the server icons, from the unread state.
+/// Only rows whose values changed are written.
+pub fn refresh_unread_badges(ui: &AppWindow) {
+    let guilds = ui.get_guilds();
+    for i in 0..guilds.row_count() {
+        let Some(mut g) = guilds.row_data(i) else { continue };
+        let b = gateway::unread::guild_badge(g.id.as_str());
+        let has_unread = b.unread > 0;
+        if g.has_unread != has_unread || g.mention_count != b.mentions || g.is_muted != b.muted {
+            g.has_unread = has_unread;
+            g.mention_count = b.mentions;
+            g.is_muted = b.muted;
+            guilds.set_row_data(i, g);
+        }
+    }
+    let channels = ui.get_channels();
+    for i in 0..channels.row_count() {
+        let Some(mut c) = channels.row_data(i) else { continue };
+        if c.is_category || c.is_voice_member {
+            continue;
+        }
+        let b = gateway::unread::channel_badge(c.id.as_str());
+        if c.mention_count != b.mentions || c.is_muted != b.muted {
+            c.mention_count = b.mentions;
+            c.is_muted = b.muted;
+            channels.set_row_data(i, c);
+        }
     }
 }
 
@@ -1068,6 +1101,7 @@ pub fn build_ui_channels(
                 Vec::new()
             };
             let vcount = voice_participants.len() as i32;
+            let badge = if ch.is_voice { gateway::unread::Badge::default() } else { gateway::unread::channel_badge(&ch.id) };
             ui_channels.push(ChannelItem {
                 id: ch.id.clone().into(),
                 name: crate::utils::styled_text::plain_display_name(&ch.name).as_ref().into(),
@@ -1082,7 +1116,9 @@ pub fn build_ui_channels(
                 has_parent: ch.parent_id.is_some(),
                 is_collapsed: false,
                 has_separator: false,
-                unread_count: 0,
+                unread_count: badge.unread,
+                mention_count: badge.mentions,
+                is_muted: badge.muted,
                 ..crate::ui::helpers::channel_emoji_fields(&crate::utils::styled_text::plain_display_name(&ch.name))
             });
 

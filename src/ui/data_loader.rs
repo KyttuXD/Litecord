@@ -131,12 +131,16 @@ pub async fn fetch_and_populate_guilds(
                                 icon_image = img;
                             }
                         }
+                        let badge = crate::gateway::unread::guild_badge(&raw.id);
                         GuildItem {
                             id: raw.id.into(),
                             name: raw.name.into(),
                             icon: raw.icon.into(),
                             has_image,
                             icon_image,
+                            has_unread: badge.unread > 0,
+                            mention_count: badge.mentions,
+                            is_muted: badge.muted,
                         }
                     }).collect();
 

@@ -236,6 +236,19 @@ impl DiscordHttpClient {
         }
     }
 
+    /// Tells Discord the channel was read up to `message_id`, so the unread marker clears
+    /// on the user's other devices too.
+    pub async fn ack_message(&self, channel_id: &str, message_id: &str) -> Result<(), String> {
+        let url = format!("https://discord.com/api/v10/channels/{}/messages/{}/ack", channel_id, message_id);
+        let payload = json!({ "token": null });
+
+        match self.client.post(&url).json(&payload).send().await {
+            Ok(resp) if resp.status().is_success() => Ok(()),
+            Ok(resp) => Err(format!("Status de erro HTTP: {}", resp.status())),
+            Err(e) => Err(format!("Falha ao confirmar leitura via HTTP: {:?}", e)),
+        }
+    }
+
     #[allow(dead_code)]
     pub async fn update_my_voice_state(&self, guild_id: &str, channel_id: &str) -> Result<(), String> {
         let url = format!("https://discord.com/api/v10/guilds/{}/voice-states/@me", guild_id);
