@@ -394,7 +394,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         }
                     }
                 }
-                #[cfg(not(target_os = "windows"))]
+                // Linux only. On macOS this turned the borderless window (`no-frame` in the UI)
+                // into a titled one, and the window stayed on screen but drew nothing: a
+                // purple, empty window on a MacBook Air with macOS 12.
+                #[cfg(target_os = "linux")]
                 {
                     winit_win.set_decorations(true);
                 }
