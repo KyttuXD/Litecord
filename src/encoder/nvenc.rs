@@ -215,17 +215,8 @@ impl FfmpegNvencEncoder {
                 let mut avcodec_dll: *mut c_void = std::ptr::null_mut();
                 let mut avutil_dll: *mut c_void = std::ptr::null_mut();
 
-                for codec_name in [
-                    #[cfg(target_os = "macos")]
-                    b"libavcodec.dylib\0".as_ptr(),
-                    b"libavcodec.so.62\0".as_ptr(),
-                    b"libavcodec.so.61\0".as_ptr(),
-                    b"libavcodec.so.60\0".as_ptr(),
-                    b"libavcodec.so.59\0".as_ptr(),
-                    b"libavcodec.so.58\0".as_ptr(),
-                    b"libavcodec.so\0".as_ptr(),
-                ] {
-                    let h = libc::dlopen(codec_name as *const libc::c_char, libc::RTLD_NOW | libc::RTLD_GLOBAL);
+                for codec_name in ffmpeg_lib_candidates("libavcodec", AVCODEC_VERSIONS, cfg!(target_os = "macos")) {
+                    let h = libc::dlopen(codec_name.as_ptr() as *const libc::c_char, libc::RTLD_NOW | libc::RTLD_GLOBAL);
                     if !h.is_null() {
                         avcodec_dll = h;
                         info!("✅ [NVENC FFMPEG] libavcodec loaded via dlopen");
@@ -233,17 +224,8 @@ impl FfmpegNvencEncoder {
                     }
                 }
 
-                for util_name in [
-                    #[cfg(target_os = "macos")]
-                    b"libavutil.dylib\0".as_ptr(),
-                    b"libavutil.so.60\0".as_ptr(),
-                    b"libavutil.so.59\0".as_ptr(),
-                    b"libavutil.so.58\0".as_ptr(),
-                    b"libavutil.so.57\0".as_ptr(),
-                    b"libavutil.so.56\0".as_ptr(),
-                    b"libavutil.so\0".as_ptr(),
-                ] {
-                    let h = libc::dlopen(util_name as *const libc::c_char, libc::RTLD_NOW | libc::RTLD_GLOBAL);
+                for util_name in ffmpeg_lib_candidates("libavutil", AVUTIL_VERSIONS, cfg!(target_os = "macos")) {
+                    let h = libc::dlopen(util_name.as_ptr() as *const libc::c_char, libc::RTLD_NOW | libc::RTLD_GLOBAL);
                     if !h.is_null() {
                         avutil_dll = h;
                         info!("✅ [NVENC FFMPEG] libavutil loaded via dlopen");
@@ -626,11 +608,66 @@ impl Drop for FfmpegNvencEncoder {
     }
 }
 
+// Struct offsets in this encoder are hardcoded, so only verified major versions are tried.
+#[cfg(not(target_os = "windows"))]
+const AVCODEC_VERSIONS: &[u32] = &[62, 61, 60, 59, 58];
+#[cfg(not(target_os = "windows"))]
+const AVUTIL_VERSIONS: &[u32] = &[60, 59, 58, 57, 56];
+
+/// Builds the NUL-terminated dlopen names to try for an FFmpeg library, newest first.
+/// On macOS versioned dylibs are followed by the unversioned one and full-path
+/// fallbacks (Homebrew / MacPorts-style prefixes); elsewhere `.so.N` then `.so`.
+#[cfg(not(target_os = "windows"))]
+fn ffmpeg_lib_candidates(base: &str, versions: &[u32], macos: bool) -> Vec<String> {
+    let mut names: Vec<String> = Vec::new();
+    if macos {
+        for v in versions {
+            names.push(format!("{}.{}.dylib", base, v));
+        }
+        names.push(format!("{}.dylib", base));
+        for dir in ["/usr/local/lib", "/usr/local/opt/ffmpeg/lib", "/opt/homebrew/lib"] {
+            for v in versions {
+                names.push(format!("{}/{}.{}.dylib", dir, base, v));
+            }
+            names.push(format!("{}/{}.dylib", dir, base));
+        }
+    } else {
+        for v in versions {
+            names.push(format!("{}.so.{}", base, v));
+        }
+        names.push(format!("{}.so", base));
+    }
+    for n in names.iter_mut() {
+        n.push('\0');
+    }
+    names
+}
+
 unsafe impl Send for FfmpegNvencEncoder {}
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(not(target_os = "windows"))]
+    #[test]
+    fn ffmpeg_candidates_linux_order() {
+        let c = ffmpeg_lib_candidates("libavutil", &[61, 60, 59], false);
+        assert_eq!(c, vec!["libavutil.so.61\0", "libavutil.so.60\0", "libavutil.so.59\0", "libavutil.so\0"]);
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    #[test]
+    fn ffmpeg_candidates_macos_order() {
+        let c = ffmpeg_lib_candidates("libavcodec", &[62, 61], true);
+        assert_eq!(c[0], "libavcodec.62.dylib\0");
+        assert_eq!(c[1], "libavcodec.61.dylib\0");
+        assert_eq!(c[2], "libavcodec.dylib\0");
+        assert_eq!(c[3], "/usr/local/lib/libavcodec.62.dylib\0");
+        assert!(c.contains(&"/usr/local/opt/ffmpeg/lib/libavcodec.dylib\0".to_string()));
+        assert_eq!(c.last().unwrap(), "/opt/homebrew/lib/libavcodec.dylib\0");
+        assert!(c.iter().all(|n| n.ends_with('\0')));
+    }
 
     #[test]
     fn test_embedded_nvenc_encoder() {
