@@ -153,6 +153,7 @@ export component ChatMessagesView inherits Rectangle {
     callback message_action(string, string);
     // Message id, reaction key: adds the reaction, or takes it back if it is the user's.
     callback toggle_reaction(string, string);
+    callback open_profile(string /* user_id */);
 
     changed scroll_trigger => {
         root.scroll_to_bottom();
@@ -305,6 +306,10 @@ export component ChatMessagesView inherits Rectangle {
                         height: 36px;
                         image-fit: cover;
                     }
+                    TouchArea {
+                        mouse-cursor: pointer;
+                        clicked => { root.open_profile(msg.author_id); }
+                    }
                 }
 
                 VerticalBox {
@@ -403,13 +408,22 @@ export component ChatMessagesView inherits Rectangle {
                     if msg.show_header: HorizontalBox {
                         padding: 0px;
                         spacing: 8px;
-                        Text {
-                            text: msg.author;
-                            color: AppTheme.accent;
-                            font-family: ChatTypography.family;
-                            font-size: ChatTypography.author-size;
-                            font-weight: 700;
-                            vertical-alignment: center;
+                        Rectangle {
+                            width: author_text.preferred-width;
+                            author_text := Text {
+                                width: parent.width;
+                                text: msg.author;
+                                color: author_touch.has-hover ? AppTheme.accent-hover : AppTheme.accent;
+                                font-family: ChatTypography.family;
+                                font-size: ChatTypography.author-size;
+                                font-weight: 700;
+                                vertical-alignment: center;
+                            }
+                            author_touch := TouchArea {
+                                mouse-cursor: pointer;
+                                enabled: msg.author_id != "";
+                                clicked => { root.open_profile(msg.author_id); }
+                            }
                         }
                         if msg.is_bot: Rectangle {
                             background: AppTheme.accent;

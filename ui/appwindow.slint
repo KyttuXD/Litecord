@@ -63,6 +63,11 @@ export struct PinnedItem {
     content: string,
 }
 
+export struct ProfileRole {
+    name: string,
+    color: color,
+}
+
 export struct ScreenSourceItem {
     id: int,
     name: string,
@@ -211,6 +216,12 @@ export component AppWindow inherits Window {
     callback unhide_stream(string /* user_id */);
     callback launch_stream_browser();
     callback click_command(string /* command_name */);
+    // User profile popout (opened from a message author's avatar or name)
+    callback open_user_profile(string /* user_id */);
+    callback close_user_profile();
+    callback profile_message();
+    callback profile_copy_id();
+    callback profile_block();
     callback handle_input_change(string /* text */);
     callback execute_active_command(string /* cmd_name */, string /* arg_value */, string /* app_id */, string /* cmd_id */, string /* version */, string /* param_name */);
 
@@ -490,6 +501,24 @@ export component AppWindow inherits Window {
     in-out property <bool> web_share_pending: false;
     in-out property <bool> web_share_copied: false;
     in-out property <bool> show_web_share_modal: false;
+
+    // User profile popout state
+    in-out property <bool> show_profile_popout: false;
+    in-out property <bool> profile_loading: false;
+    in-out property <bool> profile_is_self: false;
+    in-out property <bool> profile_is_bot: false;
+    in-out property <string> profile_user_id: "";
+    in-out property <string> profile_name: "";
+    in-out property <string> profile_username: "";
+    in-out property <string> profile_bio: "";
+    in-out property <string> profile_created: "";
+    in-out property <string> profile_mutual: "";
+    in-out property <string> profile_status: "";
+    in-out property <string> profile_avatar_initial: "";
+    in-out property <bool> profile_has_avatar: false;
+    in-out property <image> profile_avatar_img;
+    in-out property <color> profile_banner: #5865f2;
+    in-out property <[ProfileRole]> profile_roles: [];
     in-out property <string> web_share_url: "";
     in-out property <string> web_share_error: "";
     in-out property <int> web_share_viewers: 0;
@@ -3036,6 +3065,7 @@ export component AppWindow inherits Window {
                         toggle_reaction(id, key) => { root.toggle_reaction(id, key); }
                         jump_to_message(id) => { root.jump_to_message(id); }
                         jump_target_id <=> root.jump_target_id;
+                        open_profile(uid) => { root.open_user_profile(uid); }
                     }
 
                     // Pinned messages popup (simple list)
@@ -4479,6 +4509,261 @@ export component AppWindow inherits Window {
                                     clicked => { root.copy_web_share_link(); }
                                 }
                             }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // User profile popout: card with banner, avatar, names, bio, roles and actions.
+    if root.show_profile_popout: Rectangle {
+        background: AppTheme.backdrop;
+        width: 100%;
+        height: 100%;
+        z: 9999;
+
+        TouchArea {
+            clicked => { root.close_user_profile(); }
+        }
+
+        VerticalLayout {
+            alignment: center;
+            HorizontalLayout {
+                alignment: center;
+
+                Rectangle {
+                    width: 340px;
+                    height: profile_card_layout.preferred-height;
+                    background: AppTheme.surface-sidebar;
+                    border-radius: 12px;
+                    border-width: 1px;
+                    border-color: AppTheme.border-subtle;
+                    clip: true;
+                    drop-shadow-blur: 24px;
+                    drop-shadow-color: AppTheme.backdrop;
+
+                    // Clicks inside the card do not close it.
+                    TouchArea { }
+
+                    profile_card_layout := VerticalLayout {
+                        Rectangle {
+                            height: 72px;
+                            background: root.profile_banner;
+                        }
+
+                        VerticalLayout {
+                            padding-left: 16px;
+                            padding-right: 16px;
+                            padding-top: 48px;
+                            padding-bottom: 16px;
+                            spacing: 10px;
+
+                            VerticalLayout {
+                                spacing: 2px;
+                                HorizontalLayout {
+                                    spacing: 6px;
+                                    alignment: start;
+                                    Text {
+                                        text: root.profile_name;
+                                        color: AppTheme.text-strong;
+                                        font-size: TypeScale.heading;
+                                        font-weight: 700;
+                                        overflow: elide;
+                                    }
+                                    if root.profile_is_bot: Rectangle {
+                                        height: 16px;
+                                        width: 36px;
+                                        background: AppTheme.accent;
+                                        border-radius: 3px;
+                                        Text {
+                                            text: "APP";
+                                            color: AppTheme.text-on-accent;
+                                            font-size: TypeScale.micro;
+                                            font-weight: 700;
+                                            horizontal-alignment: center;
+                                            vertical-alignment: center;
+                                        }
+                                    }
+                                }
+                                Text {
+                                    text: root.profile_username;
+                                    color: AppTheme.text-muted;
+                                    font-size: TypeScale.small;
+                                    overflow: elide;
+                                }
+                            }
+
+                            Rectangle { height: 1px; background: AppTheme.separator; }
+
+                            if root.profile_loading: Text {
+                                text: "Loading profile…";
+                                color: AppTheme.text-muted;
+                                font-size: TypeScale.small;
+                            }
+
+                            if root.profile_bio != "": VerticalLayout {
+                                spacing: 4px;
+                                Text {
+                                    text: "ABOUT ME";
+                                    color: AppTheme.text-secondary;
+                                    font-size: TypeScale.micro;
+                                    font-weight: 700;
+                                }
+                                Text {
+                                    text: root.profile_bio;
+                                    color: AppTheme.text-primary;
+                                    font-size: TypeScale.small;
+                                    wrap: word-wrap;
+                                }
+                            }
+
+                            if root.profile_roles.length > 0: VerticalLayout {
+                                spacing: 4px;
+                                Text {
+                                    text: "ROLES";
+                                    color: AppTheme.text-secondary;
+                                    font-size: TypeScale.micro;
+                                    font-weight: 700;
+                                }
+                                for prole in root.profile_roles: HorizontalLayout {
+                                    spacing: 6px;
+                                    alignment: start;
+                                    VerticalLayout {
+                                        alignment: center;
+                                        Rectangle {
+                                            width: 10px;
+                                            height: 10px;
+                                            border-radius: 5px;
+                                            background: prole.color;
+                                        }
+                                    }
+                                    Text {
+                                        text: prole.name;
+                                        color: AppTheme.text-primary;
+                                        font-size: TypeScale.small;
+                                        overflow: elide;
+                                        vertical-alignment: center;
+                                    }
+                                }
+                            }
+
+                            VerticalLayout {
+                                spacing: 4px;
+                                Text {
+                                    text: "ACCOUNT CREATED";
+                                    color: AppTheme.text-secondary;
+                                    font-size: TypeScale.micro;
+                                    font-weight: 700;
+                                }
+                                Text {
+                                    text: root.profile_created != "" ? root.profile_created : "Unknown";
+                                    color: AppTheme.text-primary;
+                                    font-size: TypeScale.small;
+                                }
+                                if root.profile_mutual != "": Text {
+                                    text: root.profile_mutual;
+                                    color: AppTheme.text-muted;
+                                    font-size: TypeScale.caption;
+                                }
+                            }
+
+                            if root.profile_status != "": Text {
+                                text: root.profile_status;
+                                color: AppTheme.text-muted;
+                                font-size: TypeScale.caption;
+                                wrap: word-wrap;
+                            }
+
+                            HorizontalLayout {
+                                spacing: 8px;
+
+                                if !root.profile_is_self: Rectangle {
+                                    height: 34px;
+                                    horizontal-stretch: 1;
+                                    background: profile_msg_touch.has-hover ? AppTheme.accent-hover : AppTheme.accent;
+                                    border-radius: 6px;
+                                    Text {
+                                        text: "Message";
+                                        color: AppTheme.text-on-accent;
+                                        font-size: TypeScale.small;
+                                        font-weight: 700;
+                                        horizontal-alignment: center;
+                                        vertical-alignment: center;
+                                    }
+                                    profile_msg_touch := TouchArea {
+                                        mouse-cursor: pointer;
+                                        clicked => { root.profile_message(); }
+                                    }
+                                }
+
+                                Rectangle {
+                                    height: 34px;
+                                    horizontal-stretch: 1;
+                                    background: profile_copy_touch.has-hover ? AppTheme.surface-control-hover : AppTheme.interactive-hover;
+                                    border-radius: 6px;
+                                    Text {
+                                        text: "Copy ID";
+                                        color: AppTheme.text-primary;
+                                        font-size: TypeScale.small;
+                                        font-weight: 600;
+                                        horizontal-alignment: center;
+                                        vertical-alignment: center;
+                                    }
+                                    profile_copy_touch := TouchArea {
+                                        mouse-cursor: pointer;
+                                        clicked => { root.profile_copy_id(); }
+                                    }
+                                }
+
+                                if !root.profile_is_self: Rectangle {
+                                    height: 34px;
+                                    horizontal-stretch: 1;
+                                    background: profile_block_touch.has-hover ? AppTheme.danger-action-subtle : AppTheme.surface-sidebar;
+                                    border-radius: 6px;
+                                    border-width: 1px;
+                                    border-color: AppTheme.separator;
+                                    Text {
+                                        text: "Block";
+                                        color: AppTheme.danger;
+                                        font-size: TypeScale.small;
+                                        font-weight: 600;
+                                        horizontal-alignment: center;
+                                        vertical-alignment: center;
+                                    }
+                                    profile_block_touch := TouchArea {
+                                        mouse-cursor: pointer;
+                                        clicked => { root.profile_block(); }
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    // Avatar overlaps the banner.
+                    Rectangle {
+                        x: 16px;
+                        y: 36px;
+                        width: 72px;
+                        height: 72px;
+                        border-radius: 36px;
+                        background: AppTheme.surface-elevated;
+                        border-width: 4px;
+                        border-color: AppTheme.surface-sidebar;
+                        clip: true;
+                        Text {
+                            text: root.profile_avatar_initial;
+                            color: AppTheme.text-secondary;
+                            font-size: TypeScale.heading;
+                            font-weight: 700;
+                            horizontal-alignment: center;
+                            vertical-alignment: center;
+                        }
+                        if root.profile_has_avatar: Image {
+                            source: root.profile_avatar_img;
+                            width: 100%;
+                            height: 100%;
+                            image-fit: cover;
                         }
                     }
                 }

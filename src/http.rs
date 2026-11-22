@@ -344,6 +344,21 @@ impl DiscordHttpClient {
         }
     }
 
+    /// Full profile card data: bio, banner colour, mutual servers and, when
+    /// `guild_id` is set, the member's roles in that server.
+    pub async fn get_user_full_profile(&self, user_id: &str, guild_id: Option<&str>) -> Result<serde_json::Value, String> {
+        let mut url = format!("https://discord.com/api/v10/users/{}/profile?with_mutual_guilds=true", user_id);
+        if let Some(gid) = guild_id {
+            url.push_str(&format!("&guild_id={}", gid));
+        }
+        let resp = self.client.get(&url).send().await.map_err(|e| format!("HTTP error: {:?}", e))?;
+        let status = resp.status();
+        if !status.is_success() {
+            return Err(format!("Status HTTP {}", status));
+        }
+        resp.json::<serde_json::Value>().await.map_err(|e| format!("JSON: {:?}", e))
+    }
+
     pub async fn get_guild_member(&self, guild_id: &str, user_id: &str) -> Result<serde_json::Value, String> {
         let url = format!("https://discord.com/api/v10/guilds/{}/members/{}", guild_id, user_id);
         match self.client.get(&url).send().await {

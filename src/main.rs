@@ -4360,6 +4360,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     });
 
+    // User profile popout (click a message author's avatar or name)
+    crate::ui::profile_popout::install(
+        &app,
+        Arc::clone(&http_client),
+        Arc::clone(&guilds_map),
+        Arc::clone(&active_guild_id),
+        Arc::clone(&active_channel_id),
+    );
+
     // Mute Button Toggle Callback
     let cmd_tx_mute = Arc::clone(&cmd_tx_store);
     let active_guild_mute = Arc::clone(&active_guild_id);
