@@ -2854,10 +2854,15 @@ export component AppWindow inherits Window {
                     }
                 }
 
-                if (!root.is_voice_focused || !root.is_in_voice) && !root.show_friends: HorizontalLayout {
-                  spacing: 0px;
+                if (!root.is_voice_focused || !root.is_in_voice) && !root.show_friends: chat_area := Rectangle {
+                  // Chat column on the left, member list docked on the right (plain positions:
+                  // a layout here let the panel float into the middle of the chat).
+                  property <bool> members_visible: root.show_member_list && root.active_guild_id != "@me" && root.active_guild_id != "";
                   VerticalBox {
-                    horizontal-stretch: 1;
+                    x: 0px;
+                    y: 0px;
+                    width: chat_area.width - (chat_area.members_visible ? 240px : 0px);
+                    height: chat_area.height;
                     padding: 0px;
                     spacing: 0px;
 
@@ -3704,7 +3709,10 @@ export component AppWindow inherits Window {
                   }
 
                   // Member list of the open server (collapsible from the channel header)
-                  if root.show_member_list && root.active_guild_id != "@me" && root.active_guild_id != "": MemberListPanel {
+                  if chat_area.members_visible: MemberListPanel {
+                      x: chat_area.width - 240px;
+                      y: 0px;
+                      height: chat_area.height;
                       rows: root.member_rows;
                       avatar_pool: root.avatar_pool;
                       avatar_pool_urls: root.avatar_pool_urls;
