@@ -7,6 +7,7 @@ import "../assets/fonts/Inter-Variable.ttf";
 import { IconButton } from "components/icon_button.slint";
 import { ChannelSidebar, ChannelItem } from "components/channel_sidebar.slint";
 import { MemberListPanel, MemberRowItem } from "components/member_list_panel.slint";
+import { FriendsView, FriendItem } from "components/friends_view.slint";
 import { SettingsView, LanguageItem, SettingOptionItem, AudioDeviceItem } from "components/settings_view.slint";
 import { ChatMessagesView, LinkItem, MessageBlock, MessageLine, MessageAttachment, MessageButton, ChatMessage } from "components/chat_messages_view.slint";
 
@@ -157,6 +158,9 @@ export component AppWindow inherits Window {
     callback hangup_dm();  // Ends a DM voice call (stop-ringing + OP4 null)
     callback accept_call();  // Accepts an incoming DM call
     callback reject_call();  // Declines an incoming DM call
+    callback friends_changed();  // Friends tab switched or view opened: refill `friends_items`
+    callback friend_action(string /* user id */, string /* accept, ignore, remove, cancel, unblock */);
+    callback add_friend(string /* username */);
     callback minimize_to_tray();
     callback open_settings();
     callback close_settings();
@@ -287,7 +291,16 @@ export component AppWindow inherits Window {
     }
 
     changed active_channel_id => {
+        if (root.active_channel_id != "") {
+            root.show_friends = false;
+        }
         root.scroll_chat_to_bottom();
+    }
+
+    changed active_guild_id => {
+        if (root.active_guild_id != "@me") {
+            root.show_friends = false;
+        }
     }
 
     public function move_suggestion_up() {
@@ -477,6 +490,13 @@ export component AppWindow inherits Window {
     in-out property <bool> show_user_menu: false;
     in-out property <string> user_status: "online";
     callback set_user_status(string /* online | idle | dnd | invisible */);
+    in-out property <bool> show_friends: false;
+    in-out property <int> friends_tab: 1;
+    in-out property <[FriendItem]> friends_items: [];
+    in-out property <int> friends_pending_count: 0;
+    in-out property <string> friends_status: "";
+    in-out property <bool> friends_status_is_error: false;
+    in-out property <string> friends_add_text: "";
     in-out property <[AccountItem]> saved_accounts: [];
     in-out property <string> login_alert_message: "";
     in-out property <bool> login_alert_is_error: true;
@@ -1319,6 +1339,7 @@ export component AppWindow inherits Window {
                             dm_btn_ta := TouchArea {
                                 mouse-cursor: pointer;
                                 clicked => {
+                                    root.show_friends = false;
                                     root.active_guild_id = "@me";
                                     root.select_guild("@me");
                                 }
@@ -1444,6 +1465,7 @@ export component AppWindow inherits Window {
                                                 clicked => {
                                                     if (root.dragging_guild_idx < 0) {
                                                         root.active_guild_id = guild.id;
+                                                        root.show_friends = false;
                                                         root.select_guild(guild.id);
                                                     }
                                                 }
@@ -1509,7 +1531,15 @@ export component AppWindow inherits Window {
                 user_status: root.user_status;
                 set_status(status) => { root.set_user_status(status); }
                 active_channel_id <=> root.active_channel_id;
-                select_channel(id) => { root.select_channel(id); }
+                show_friends_entry: root.active_guild_id == "@me";
+                friends_active: root.show_friends;
+                friends_badge: root.friends_pending_count;
+                open_friends => {
+                    root.show_friends = true;
+                    root.friends_status = "";
+                    root.friends_changed();
+                }
+                select_channel(id) => { root.show_friends = false; root.select_channel(id); }
                 toggle_category(id) => { root.toggle_category(id); }
                 reorder_channel(from, to) => { root.reorder_channel(from, to); }
                 channel_drop_row(from, dy) => { return root.channel_drop_row(from, dy); }
@@ -1525,7 +1555,19 @@ export component AppWindow inherits Window {
                 background: AppTheme.surface-sidebar;
                 horizontal-stretch: 1;
 
-                if root.is_voice_focused && root.is_in_voice: VerticalBox {
+                if root.show_friends: FriendsView {
+                    items: root.friends_items;
+                    tab <=> root.friends_tab;
+                    pending_count: root.friends_pending_count;
+                    status: root.friends_status;
+                    status_is_error: root.friends_status_is_error;
+                    add_text <=> root.friends_add_text;
+                    tab_changed(t) => { root.friends_status = ""; root.friends_changed(); }
+                    action(id, act) => { root.friend_action(id, act); }
+                    add_friend(name) => { root.add_friend(name); }
+                }
+
+                if root.is_voice_focused && root.is_in_voice && !root.show_friends: VerticalBox {
                     padding: 0px;
                     spacing: 0px;
 
@@ -2779,7 +2821,7 @@ export component AppWindow inherits Window {
                     }
                 }
 
-                if (!root.is_voice_focused || !root.is_in_voice): HorizontalLayout {
+                if (!root.is_voice_focused || !root.is_in_voice) && !root.show_friends: HorizontalLayout {
                   spacing: 0px;
                   VerticalBox {
                     horizontal-stretch: 1;

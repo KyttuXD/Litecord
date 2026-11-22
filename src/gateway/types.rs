@@ -186,6 +186,8 @@ pub enum GatewayEvent {
     MemberListUpdated {
         guild_id: String,
     },
+    /// The friends list changed (READY, RELATIONSHIP_ADD / RELATIONSHIP_REMOVE).
+    RelationshipsChanged,
 }
 
 #[derive(Debug, Clone)]

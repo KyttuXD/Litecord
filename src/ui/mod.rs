@@ -10,6 +10,8 @@ pub mod window_place;
 pub mod member_panel;
 pub mod profile;
 pub mod profile_popout;
+pub mod relationships;
+pub mod friends;
 
 pub use helpers::*;
 pub use data_loader::*;

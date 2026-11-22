@@ -70,6 +70,8 @@ const HANDLED_EVENTS: &[&str] = &[
     "CALL_CREATE",
     "CALL_UPDATE",
     "CALL_DELETE",
+    "RELATIONSHIP_ADD",
+    "RELATIONSHIP_REMOVE",
 ];
 
 /// Events that change what the user may see in a server. They only drop the server's
@@ -582,6 +584,25 @@ impl GatewayClient {
                         }
                     }
 
+                    // Friends list (relationships and who of them is present)
+                    {
+                        use crate::ui::relationships as rel;
+                        let lookup = |id: u64| -> Option<String> {
+                            get_user_names_store().lock().ok().and_then(|m| m.get(&id).cloned())
+                        };
+                        let rels: Vec<rel::Relationship> = v["d"]["relationships"]
+                            .as_array()
+                            .map(|a| a.iter().filter_map(|r| rel::parse_relationship(r, &lookup)).collect())
+                            .unwrap_or_default();
+                        let presences = if v["d"]["merged_presences"]["friends"].is_array() {
+                            &v["d"]["merged_presences"]["friends"]
+                        } else {
+                            &v["d"]["presences"]
+                        };
+                        rel::replace_all(rels, rel::parse_online_ids(presences));
+                        let _ = self.event_tx.send(GatewayEvent::RelationshipsChanged).await;
+                    }
+
                     // Parse initial voice states in READY payload
                     if let Some(guilds_arr) = v["d"]["guilds"].as_array() {
                         for g in guilds_arr {
@@ -621,6 +642,10 @@ impl GatewayClient {
                     let _ = self.event_tx.send(GatewayEvent::Connected { user_tag }).await;
                 }
                 "READY_SUPPLEMENTAL" => {
+                    if v["d"]["merged_presences"]["friends"].is_array() {
+                        crate::ui::relationships::set_online(crate::ui::relationships::parse_online_ids(&v["d"]["merged_presences"]["friends"]));
+                        let _ = self.event_tx.send(GatewayEvent::RelationshipsChanged).await;
+                    }
                     info!("📌 READY_SUPPLEMENTAL event received from the Gateway! Keys: {:?}", v["d"].as_object().map(|m| m.keys().collect::<Vec<_>>()));
                     if let Some(vs_arr) = v["d"]["voice_states"].as_array() {
                         info!("📌 [READY_SUPPLEMENTAL] Found {} voice_states at the root!", vs_arr.len());
@@ -1016,6 +1041,23 @@ impl GatewayClient {
                         }).await;
                     } else {
                         info!("📞 {} ignored (I'm already in this channel's call). Channel: {}", t, channel_id);
+                    }
+                }
+                "RELATIONSHIP_ADD" => {
+                    use crate::ui::relationships as rel;
+                    let lookup = |id: u64| -> Option<String> {
+                        get_user_names_store().lock().ok().and_then(|m| m.get(&id).cloned())
+                    };
+                    if let Some(r) = rel::parse_relationship(&v["d"], &lookup) {
+                        rel::upsert(r);
+                        let _ = self.event_tx.send(GatewayEvent::RelationshipsChanged).await;
+                    }
+                }
+                "RELATIONSHIP_REMOVE" => {
+                    let id = v["d"]["id"].as_str().and_then(|s| s.parse::<u64>().ok()).or_else(|| v["d"]["id"].as_u64());
+                    if let Some(id) = id {
+                        crate::ui::relationships::remove(id);
+                        let _ = self.event_tx.send(GatewayEvent::RelationshipsChanged).await;
                     }
                 }
                 "CALL_DELETE" => {

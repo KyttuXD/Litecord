@@ -2825,6 +2825,28 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     });
 
+    // Friends view: refill on open / tab switch, request actions, add by username
+    let app_weak_friends = app_weak.clone();
+    app.on_friends_changed(move || {
+        if let Some(ui) = app_weak_friends.upgrade() {
+            crate::ui::friends::refresh_friends_ui(&ui);
+        }
+    });
+
+    let http_friend_action = Arc::clone(&http_client);
+    let app_weak_friend_action = app_weak.clone();
+    app.on_friend_action(move |user_id: SharedString, action: SharedString| {
+        let http_opt = http_friend_action.lock().unwrap().as_ref().cloned();
+        let app_w = app_weak_friend_action.clone();
+        let user_id = user_id.to_string();
+        let action = action.to_string();
+        if let Some(http) = http_opt {
+            tokio::spawn(async move {
+                crate::ui::friends::run_friend_action(&http, app_w, &user_id, &action).await;
+            });
+        }
+    });
+
     let http_close_dm = Arc::clone(&http_client);
     let active_ch_close = Arc::clone(&active_channel_id);
     let active_g_close = Arc::clone(&active_guild_id);
@@ -2850,6 +2872,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     }
                     Err(e) => warn!("Could not close DM {}: {}", channel_id, e),
                 }
+            });
+        }
+    });
+
+    let http_add_friend = Arc::clone(&http_client);
+    let app_weak_add_friend = app_weak.clone();
+    app.on_add_friend(move |username: SharedString| {
+        let http_opt = http_add_friend.lock().unwrap().as_ref().cloned();
+        let app_w = app_weak_add_friend.clone();
+        let username = username.to_string();
+        if let Some(http) = http_opt {
+            tokio::spawn(async move {
+                crate::ui::friends::run_add_friend(&http, app_w, &username).await;
             });
         }
     });
@@ -5684,6 +5719,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         }
                     });
                     sound_effects::play_ui_sound(sound_effects::UiSound::JoinChannel);
+                }
+                GatewayEvent::RelationshipsChanged => {
+                    let app_w = app_weak_inner.clone();
+                    let _ = slint::invoke_from_event_loop(move || {
+                        if let Some(ui) = app_w.upgrade() {
+                            crate::ui::friends::refresh_friends_ui(&ui);
+                        }
+                    });
                 }
                 GatewayEvent::CallEnded { channel_id } => {
                     // Call ended or cancelled — close the incoming call modal

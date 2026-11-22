@@ -64,6 +64,11 @@ export component ChannelSidebar inherits Rectangle {
     callback toggle_mute();
     callback toggle_deafen();
     callback open_settings();
+    // Friends entry shown at the top of the direct messages list.
+    in property <bool> show_friends_entry: false;
+    in property <bool> friends_active: false;
+    in property <int> friends_badge: 0;
+    callback open_friends();
     callback reorder_channel(int, int);
     pure callback channel_drop_row(int, length) -> int;
     in-out property <int> dragging_channel_idx: -1;
@@ -95,6 +100,55 @@ export component ChannelSidebar inherits Rectangle {
                 font-weight: 700;
                 overflow: elide;
                 vertical-alignment: center;
+            }
+        }
+
+        if root.show_friends_entry: Rectangle {
+            height: 34px;
+            border-radius: 4px;
+            background: root.friends_active
+                ? AppTheme.interactive-selected
+                : (friends_entry_ta.has-hover ? AppTheme.interactive-hover : transparent);
+            animate background { duration: 120ms; }
+
+            HorizontalLayout {
+                padding-left: 10px;
+                padding-right: 10px;
+                spacing: 8px;
+
+                Text {
+                    text: "Friends";
+                    color: root.friends_active ? AppTheme.text-strong : AppTheme.text-secondary;
+                    font-size: TypeScale.body;
+                    font-weight: 600;
+                    vertical-alignment: center;
+                }
+
+                Rectangle { horizontal-stretch: 1; }
+
+                if root.friends_badge > 0: VerticalLayout {
+                    alignment: center;
+                    Rectangle {
+                        height: 16px;
+                        width: root.friends_badge > 9 ? 22px : 16px;
+                        border-radius: 8px;
+                        background: AppTheme.danger-action;
+
+                        Text {
+                            text: root.friends_badge > 99 ? "99+" : "\{root.friends_badge}";
+                            color: AppTheme.text-on-accent;
+                            font-size: TypeScale.micro;
+                            font-weight: 700;
+                            horizontal-alignment: center;
+                            vertical-alignment: center;
+                        }
+                    }
+                }
+            }
+
+            friends_entry_ta := TouchArea {
+                mouse-cursor: pointer;
+                clicked => { root.open_friends(); }
             }
         }
 

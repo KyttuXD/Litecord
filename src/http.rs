@@ -634,6 +634,50 @@ impl DiscordHttpClient {
             }
         }
     }
+
+    /// Accepts a friend request, or sends one to a known user id. PUT with an empty body.
+    pub async fn put_relationship(&self, user_id: &str) -> Result<(), String> {
+        let url = format!("https://discord.com/api/v9/users/@me/relationships/{}", user_id);
+        self.relationship_result(self.client.put(&url).json(&json!({})).send().await).await
+    }
+
+    /// Ignores or cancels a request, removes a friend, or unblocks a user.
+    pub async fn delete_relationship(&self, user_id: &str) -> Result<(), String> {
+        let url = format!("https://discord.com/api/v9/users/@me/relationships/{}", user_id);
+        self.relationship_result(self.client.delete(&url).send().await).await
+    }
+
+    /// Sends a friend request by username.
+    pub async fn add_friend(&self, username: &str, discriminator: Option<&str>) -> Result<(), String> {
+        let url = "https://discord.com/api/v9/users/@me/relationships";
+        let payload = json!({ "username": username, "discriminator": discriminator });
+        self.relationship_result(self.client.post(url).json(&payload).send().await).await
+    }
+
+    async fn relationship_result(&self, sent: Result<reqwest::Response, reqwest::Error>) -> Result<(), String> {
+        match sent {
+            Ok(resp) => {
+                let status = resp.status();
+                if status.is_success() {
+                    return Ok(());
+                }
+                // Discord explains a refusal in `message` (unknown user, request blocked...).
+                let body = resp.json::<serde_json::Value>().await.unwrap_or_default();
+                let reason = body["message"].as_str().unwrap_or("").to_string();
+                let err = if reason.is_empty() {
+                    format!("Request failed (HTTP {})", status.as_u16())
+                } else {
+                    reason
+                };
+                warn!("Relationship request refused: {}", err);
+                Err(err)
+            }
+            Err(e) => {
+                warn!("Relationship request network error: {:?}", e);
+                Err("Network error, try again".to_string())
+            }
+        }
+    }
 }
 
 fn is_snowflake(id: &str) -> bool {
