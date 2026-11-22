@@ -438,6 +438,13 @@ impl Shots {
         self.shot("chat-threads-sidebar", "Chat: threads listed under their channel and a forum channel")?;
         ui.set_channels(model(sample_channels()));
 
+        // A forum channel has no composer, only a hint.
+        ui.set_active_channel_name("ideas".into());
+        ui.set_active_channel_is_forum(true);
+        self.shot("chat-forum-channel", "Chat: forum channel with the composer hidden and a thread hint")?;
+        ui.set_active_channel_is_forum(false);
+        ui.set_active_channel_name("general".into());
+
         // Profile card opened from a message author.
         ui.set_profile_user_id("u-mira".into());
         ui.set_profile_loading(true);

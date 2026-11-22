@@ -23,7 +23,7 @@ pub fn parse_channel(v: &Value) -> Option<ChannelData> {
         position: v["position"].as_i64().unwrap_or(0),
         topic,
         is_thread: false,
-        is_forum: ch_type == super::threads::FORUM_CHANNEL_TYPE,
+        is_forum: ch_type == super::threads::FORUM_CHANNEL_TYPE || ch_type == 16,
     })
 }
 
