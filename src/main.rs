@@ -669,7 +669,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         // of the browser (channel mentions are shown as such links).
         if let Some((_, channel_id)) = gateway::channel_names::channel_link_target(&url) {
             if let Some(ui) = app_weak_open_link.upgrade() {
-                let on_screen = ui.get_channels().iter().any(|c| c.id.as_str() == channel_id);
+                let on_screen = ui.get_channels().iter().any(|c| c.id.as_str() == channel_id)
+                    || gateway::threads::find(&channel_id).is_some();
                 if on_screen {
                     ui.invoke_select_channel(channel_id.into());
                     return;
@@ -4240,6 +4241,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let Some(ui) = app_weak_reorder_c.upgrade() else { return };
         let rows = ui.get_channels();
         let (Some(from_row), Some(to_row)) = (rows.row_data(from), rows.row_data(to)) else { return };
+        // Threads follow their channel; they have no place of their own to move to.
+        if from_row.is_thread || to_row.is_thread { return; }
 
         if let Ok(mut map) = guilds_map_reorder_c.lock() {
             if let Some(g_data) = map.get_mut(&gid) {
@@ -4281,7 +4284,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             .and_then(|g| g.channels.iter().find(|c| c.id == ch_id).cloned());
 
         let is_voice = target_channel.as_ref().map(|c| c.is_voice).unwrap_or(false);
-        let ch_name = target_channel.as_ref().map(|c| c.name.clone()).unwrap_or_else(|| "channel".to_string());
+        let is_forum = target_channel.as_ref().map(|c| c.is_forum).unwrap_or(false);
+        // A thread that is not in the list (an archived forum post) is still opened by its id.
+        let ch_name = target_channel.as_ref().map(|c| c.name.clone())
+            .or_else(|| gateway::threads::find(&ch_id).map(|t| t.name))
+            .unwrap_or_else(|| "channel".to_string());
 
         if let Some(ui) = app_weak_chan_select.upgrade() {
             if is_voice {
@@ -4387,9 +4394,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         });
                     }
                     crate::ui::member_panel::request(&cmd_tx_chan_select, &app_weak_chan_select, &http, &gid, &ch_id);
-                    tokio::spawn(async move {
-                        load_messages_for_channel(&http, app_w, &ch_id_clone).await;
-                    });
+                    if is_forum {
+                        // A forum has posts, not messages: list them.
+                        ui.set_messages(std::rc::Rc::new(slint::VecModel::from(Vec::<ChatMessage>::new())).into());
+                        let active_channel = Arc::clone(&active_channel_chan_select);
+                        tokio::spawn(async move {
+                            crate::ui::data_loader::load_forum_posts(&http, app_w, active_channel, &gid, &ch_id_clone).await;
+                        });
+                    } else {
+                        tokio::spawn(async move {
+                            load_messages_for_channel(&http, app_w, &ch_id_clone).await;
+                        });
+                    }
                 }
             }
         }
@@ -4403,6 +4419,55 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         Arc::clone(&active_guild_id),
         Arc::clone(&active_channel_id),
     );
+    // Message action: start a thread from a message, named after its text, and open it.
+    let guilds_map_thread = Arc::clone(&guilds_map);
+    let active_guild_thread = Arc::clone(&active_guild_id);
+    let active_channel_thread = Arc::clone(&active_channel_id);
+    let http_client_thread = Arc::clone(&http_client);
+    let app_weak_thread = app_weak.clone();
+    app.on_create_thread(move |message_id: SharedString| {
+        let msg_id = message_id.to_string();
+        let gid = active_guild_thread.lock().unwrap().clone();
+        let cid = active_channel_thread.lock().unwrap().clone();
+        if msg_id.is_empty() || cid.is_empty() || gid.is_empty() || gid == "@me" {
+            return;
+        }
+        let Some(ui) = app_weak_thread.upgrade() else { return };
+        if gateway::threads::find(&cid).is_some() {
+            // A thread cannot hold another thread.
+            ui.set_titlebar_error(crate::utils::i18n_ui::ui_text().thread_in_thread.into());
+            return;
+        }
+        let content = ui.get_messages().iter().find(|m| m.id.as_str() == msg_id).map(|m| m.content.to_string()).unwrap_or_default();
+        let name = gateway::threads::default_thread_name(&content, crate::utils::i18n_ui::ui_text().thread_default_name);
+        let Some(http) = http_client_thread.lock().unwrap().as_ref().cloned() else { return };
+        let app_w = app_weak_thread.clone();
+        let guilds_map = Arc::clone(&guilds_map_thread);
+        let active_guild = Arc::clone(&active_guild_thread);
+        tokio::spawn(async move {
+            match http.create_thread_from_message(&cid, &msg_id, &name).await {
+                Ok(created) => {
+                    let Some(thread) = gateway::threads::parse_thread(&created, &gid) else { return };
+                    let thread_id = thread.id.clone();
+                    gateway::threads::apply_to_guild(&gid, gateway::threads::ThreadChange::Upsert(thread));
+                    crate::ui::data_loader::refresh_guild_threads(&app_w, &guilds_map, &active_guild, &gid);
+                    let _ = slint::invoke_from_event_loop(move || {
+                        if let Some(ui) = app_w.upgrade() {
+                            ui.invoke_select_channel(thread_id.into());
+                        }
+                    });
+                }
+                Err(e) => {
+                    error!("Could not create the thread: {}", e);
+                    let _ = slint::invoke_from_event_loop(move || {
+                        if let Some(ui) = app_w.upgrade() {
+                            ui.set_titlebar_error(crate::utils::i18n_ui::ui_text().thread_create_failed.into());
+                        }
+                    });
+                }
+            }
+        });
+    });
 
     // Mute Button Toggle Callback
     let cmd_tx_mute = Arc::clone(&cmd_tx_store);
@@ -5669,6 +5734,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     if *active_guild_inner.lock().unwrap() == guild_id {
                         crate::ui::member_panel::refresh(app_weak_inner, &guild_id);
                     }
+                }
+                GatewayEvent::ThreadsChanged { guild_id } => {
+                    crate::ui::data_loader::refresh_guild_threads(&app_weak_inner, &guilds_map_inner, &active_guild_inner, &guild_id);
                 }
                 GatewayEvent::IncomingCall { channel_id, caller_name } => {
                     // Incoming DM call — show notification panel with the friend's name

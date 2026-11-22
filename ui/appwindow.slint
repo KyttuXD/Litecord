@@ -226,6 +226,7 @@ export component AppWindow inherits Window {
     callback profile_message();
     callback profile_copy_id();
     callback profile_block();
+    callback create_thread(string /* message_id */);
     callback handle_input_change(string /* text */);
     callback execute_active_command(string /* cmd_name */, string /* arg_value */, string /* app_id */, string /* cmd_id */, string /* version */, string /* param_name */);
 
@@ -3108,6 +3109,8 @@ export component AppWindow inherits Window {
                         jump_to_message(id) => { root.jump_to_message(id); }
                         jump_target_id <=> root.jump_target_id;
                         open_profile(uid) => { root.open_user_profile(uid); }
+                        can_create_thread: root.active_guild_id != "@me" && root.active_guild_id != "";
+                        create_thread(message_id) => { root.create_thread(message_id); }
                     }
 
                     // Pinned messages popup (simple list)

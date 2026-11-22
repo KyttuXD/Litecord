@@ -65,6 +65,10 @@ pub struct ChannelData {
     pub parent_id: Option<String>,
     pub position: i64,
     pub topic: Option<String>,
+    /// A thread under `parent_id` (a text channel); opens like a channel.
+    pub is_thread: bool,
+    /// A forum: it has posts (threads) instead of messages.
+    pub is_forum: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -173,6 +177,10 @@ pub enum GatewayEvent {
     },
     /// The account left, was removed from or lost a server (not an outage).
     GuildDeleted {
+        guild_id: String,
+    },
+    /// The active threads of a server changed (see `gateway::threads`).
+    ThreadsChanged {
         guild_id: String,
     },
     IncomingCall {

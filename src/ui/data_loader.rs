@@ -416,6 +416,8 @@ pub async fn fetch_and_populate_channels(
             parent_id: None,
             position: ch.position,
             topic: ch.topic,
+            is_thread: false,
+            is_forum: ch.ch_type == gateway::threads::FORUM_CHANNEL_TYPE,
         });
     }
 
@@ -432,6 +434,8 @@ pub async fn fetch_and_populate_channels(
             parent_id: None,
             position: cat.position,
             topic: None,
+            is_thread: false,
+            is_forum: false,
         });
 
         for ch in children {
@@ -444,9 +448,14 @@ pub async fn fetch_and_populate_channels(
                 parent_id: Some(cat_id.clone()),
                 position: ch.position,
                 topic: ch.topic,
+                is_thread: false,
+                is_forum: ch.ch_type == gateway::threads::FORUM_CHANNEL_TYPE,
             });
         }
     }
+
+    // Active threads (from the gateway) go under their channel.
+    let channels_data = gateway::threads::with_threads(channels_data, &gateway::threads::guild_threads(guild_id));
 
     // Subscribe via Gateway Opcode 14 for all voice channels in this guild to get live voice_states
     let voice_cids: Vec<String> = channels_data.iter().filter(|c| c.is_voice).map(|c| c.id.clone()).collect();
@@ -595,6 +604,8 @@ pub async fn apply_live_channel_change(
         if !changed {
             return;
         }
+        // Channel events rebuild the list; the active threads go back under their channels.
+        guild.channels = gateway::threads::with_threads(std::mem::take(&mut guild.channels), &gateway::threads::guild_threads(&guild_id));
         (guild.channels.clone(), id)
     };
     gateway::channel_names::remember(&guild_id, channels.iter().map(|c| (c.id.as_str(), c.name.as_str())));
@@ -690,7 +701,7 @@ async fn open_first_readable_channel(
     guild_id: &str,
     channels: &[ChannelData],
 ) -> Option<String> {
-    for text_ch in channels.iter().filter(|c| !c.is_voice && !c.is_category) {
+    for text_ch in channels.iter().filter(|c| !c.is_voice && !c.is_category && !c.is_thread && !c.is_forum) {
         if *active_guild_id.lock().unwrap() != guild_id {
             return None;
         }
@@ -859,6 +870,8 @@ pub async fn fetch_and_populate_dms(
                     parent_id: None,
                     position: 0,
                     topic: None,
+                    is_thread: false,
+                    is_forum: false,
                 });
 
                 let unread_dm_count = crate::ui::helpers::get_dm_unread(&ch_id);
@@ -960,6 +973,8 @@ pub async fn prefetch_dms_cache(
                 parent_id: None,
                 position: 0,
                 topic: None,
+                is_thread: false,
+                is_forum: false,
             });
         }
         if let Ok(mut gmap) = guilds_map.lock() {
@@ -970,6 +985,94 @@ pub async fn prefetch_dms_cache(
             });
         }
     }
+}
+
+/// Puts the active threads of `guild_id` (see `gateway::threads`) under their channels
+/// in the cached channel list and, when the server is on screen, in the sidebar.
+pub fn refresh_guild_threads(
+    app_weak: &slint::Weak<AppWindow>,
+    guilds_map: &Arc<Mutex<HashMap<String, GuildData>>>,
+    active_guild_id: &Arc<Mutex<String>>,
+    guild_id: &str,
+) {
+    if guild_id.is_empty() || guild_id == "@me" {
+        return;
+    }
+    let threads = gateway::threads::guild_threads(guild_id);
+    let channels = {
+        let mut map = guilds_map.lock().unwrap();
+        let Some(guild) = map.get_mut(guild_id) else { return };
+        if guild.channels.is_empty() {
+            // Not loaded yet: the REST channel list adds the threads when it arrives.
+            return;
+        }
+        guild.channels = gateway::threads::with_threads(std::mem::take(&mut guild.channels), &threads);
+        guild.channels.clone()
+    };
+    gateway::channel_names::remember(guild_id, channels.iter().map(|c| (c.id.as_str(), c.name.as_str())));
+    show_guild_channels(app_weak, active_guild_id, guild_id, &channels);
+}
+
+/// Shows the posts of a forum, newest first, as rows with a link that opens each post
+/// like a channel. The posts come from the forum's thread search, completed with the
+/// threads the gateway announced.
+pub async fn load_forum_posts(
+    http: &DiscordHttpClient,
+    app_weak: slint::Weak<AppWindow>,
+    active_channel_id: Arc<Mutex<String>>,
+    guild_id: &str,
+    forum_id: &str,
+) {
+    match http.get_forum_posts(forum_id).await {
+        Ok(found) => {
+            for post in gateway::threads::parse_search_result(&found, guild_id) {
+                gateway::threads::apply_to_guild(guild_id, gateway::threads::ThreadChange::Upsert(post));
+            }
+        }
+        Err(e) => error!("Could not list the posts of forum {}: {}", forum_id, e),
+    }
+    let posts = gateway::threads::forum_posts(&gateway::threads::guild_threads(guild_id), forum_id);
+    if *active_channel_id.lock().unwrap() != forum_id {
+        // The user opened something else while the posts loaded.
+        return;
+    }
+    let text = crate::utils::i18n_ui::ui_text();
+    // (name, summary, link) of each post; the Slint rows are built on the UI thread.
+    let post_rows: Vec<(String, String, String)> = posts
+        .iter()
+        .map(|post| {
+            (
+                crate::utils::styled_text::plain_display_name(&post.name).to_string(),
+                gateway::threads::post_summary(post, text.thread_messages, text.thread_archived),
+                format!("https://discord.com/channels/{}/{}", guild_id, post.id),
+            )
+        })
+        .collect();
+    let _ = slint::invoke_from_event_loop(move || {
+        if let Some(ui) = app_weak.upgrade() {
+            let mut rows = vec![ChatMessage {
+                author: text.forum_posts_title.into(),
+                content: if post_rows.is_empty() { text.forum_empty.into() } else { "".into() },
+                show_header: true,
+                ..Default::default()
+            }];
+            for (name, summary, url) in post_rows {
+                rows.push(ChatMessage {
+                    author: name.into(),
+                    content: summary.into(),
+                    links: std::rc::Rc::new(slint::VecModel::from(vec![LinkItem {
+                        label: text.forum_open_post.into(),
+                        url: url.into(),
+                    }]))
+                    .into(),
+                    show_header: true,
+                    ..Default::default()
+                });
+            }
+            ui.set_messages(std::rc::Rc::new(slint::VecModel::from(rows)).into());
+            ui.set_has_more_older_messages(false);
+        }
+    });
 }
 
 pub async fn load_messages_for_channel(

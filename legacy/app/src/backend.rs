@@ -520,7 +520,7 @@ async fn load_direct_messages(http: &DiscordHttpClient, shared: &SharedRef) {
             }
             // Most recently used first.
             let last: u64 = dm["last_message_id"].as_str().and_then(|v| v.parse().ok()).unwrap_or(0);
-            Some((last, ChannelData { id, name, is_voice: false, is_category: false, parent_id: None, position: 0, topic: None }))
+            Some((last, ChannelData { id, name, is_voice: false, is_category: false, parent_id: None, position: 0, topic: None, is_thread: false, is_forum: false }))
         })
         .collect();
     channels.sort_by(|a, b| b.0.cmp(&a.0));
@@ -1024,6 +1024,8 @@ pub fn demo_state() -> Shared {
         parent_id: None,
         position,
         topic: None,
+        is_thread: false,
+        is_forum: false,
     };
     let guild = |id: &str, name: &str, channels: Vec<ChannelData>| GuildData { id: id.to_string(), name: name.to_string(), channels };
     let text = |t: &str| vec![spans_from_text(t)];

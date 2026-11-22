@@ -1108,6 +1108,10 @@ pub fn build_ui_channels(
                 ..crate::ui::helpers::channel_emoji_fields(&crate::utils::styled_text::plain_display_name(&ch.name))
             });
         } else {
+            if ch.is_thread {
+                // Listed under its channel, below.
+                continue;
+            }
             if let Some(ref pid) = ch.parent_id {
                 if collapsed_cats.contains(pid) {
                     continue;
@@ -1137,6 +1141,7 @@ pub fn build_ui_channels(
                 unread_count: badge.unread,
                 mention_count: badge.mentions,
                 is_muted: badge.muted,
+                is_forum: ch.is_forum,
                 ..crate::ui::helpers::channel_emoji_fields(&crate::utils::styled_text::plain_display_name(&ch.name))
             });
 
@@ -1167,6 +1172,18 @@ pub fn build_ui_channels(
                     voice_muted: voice_flags.muted,
                     voice_deafened: voice_flags.deafened,
                     ..Default::default()
+                });
+            }
+
+            // Active threads of the channel, under it.
+            for thread in channels_data.iter().filter(|t| t.is_thread && t.parent_id.as_deref() == Some(ch.id.as_str())) {
+                ui_channels.push(ChannelItem {
+                    id: thread.id.clone().into(),
+                    name: crate::utils::styled_text::plain_display_name(&thread.name).as_ref().into(),
+                    parent_channel_id: ch.id.clone().into(),
+                    has_parent: true,
+                    is_thread: true,
+                    ..crate::ui::helpers::channel_emoji_fields(&crate::utils::styled_text::plain_display_name(&thread.name))
                 });
             }
         }
@@ -1288,6 +1305,33 @@ mod hidden_activity_tests {
         assert_eq!(channel_drop_row(&rows, 5, -70.0), 3);
         assert_eq!(channel_drop_row(&rows, 1, -500.0), 0);
         assert_eq!(channel_drop_row(&rows, 1, 5000.0), 5);
+    }
+
+    #[test]
+    fn threads_are_listed_under_their_channel_and_hide_with_its_category() {
+        let chan = |id: &str, is_category: bool, parent: Option<&str>, is_thread: bool| ChannelData {
+            id: id.to_string(),
+            name: id.to_string(),
+            is_voice: false,
+            is_category,
+            parent_id: parent.map(str::to_string),
+            position: 0,
+            topic: None,
+            is_thread,
+            is_forum: false,
+        };
+        let list = vec![
+            chan("cat", true, None, false),
+            chan("a", false, Some("cat"), false),
+            chan("t1", false, Some("a"), true),
+            chan("b", false, Some("cat"), false),
+        ];
+        let ids = |rows: &[ChannelItem]| rows.iter().map(|r| r.id.to_string()).collect::<Vec<_>>();
+        let rows = build_ui_channels(&list, &std::collections::HashSet::new());
+        assert_eq!(ids(&rows), vec!["cat", "a", "t1", "b"]);
+        assert!(rows[2].is_thread && rows[2].has_parent && !rows[1].is_thread);
+        let collapsed: std::collections::HashSet<String> = ["cat".to_string()].into_iter().collect();
+        assert_eq!(ids(&build_ui_channels(&list, &collapsed)), vec!["cat"]);
     }
 
     #[test]

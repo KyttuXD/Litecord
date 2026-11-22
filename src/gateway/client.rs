@@ -56,6 +56,10 @@ const HANDLED_EVENTS: &[&str] = &[
     "CHANNEL_DELETE",
     "GUILD_MEMBERS_CHUNK",
     "GUILD_MEMBER_LIST_UPDATE",
+    "THREAD_CREATE",
+    "THREAD_UPDATE",
+    "THREAD_DELETE",
+    "THREAD_LIST_SYNC",
     "VOICE_STATE_UPDATE",
     "VOICE_SERVER_UPDATE",
     "MESSAGE_CREATE",
@@ -1088,6 +1092,8 @@ impl GatewayClient {
                                     parent_id: ch["parent_id"].as_str().map(|s| s.to_string()),
                                     position: ch["position"].as_i64().unwrap_or(0),
                                     topic: ch["topic"].as_str().filter(|t| !t.trim().is_empty()).map(|t| t.trim().to_string()),
+                                    is_thread: false,
+                                    is_forum: ch_type == super::threads::FORUM_CHANNEL_TYPE,
                                 });
                             }
                         }
@@ -1170,6 +1176,10 @@ impl GatewayClient {
                         let channel_ids: Vec<&str> = channels.iter().map(|c| c.id.as_str()).collect();
                         super::unread::register_channels(&id, &channel_ids);
                     }
+                    // Active threads come with the server; the sidebar lists them under their channel.
+                    super::threads::apply_to_guild(&id, super::threads::guild_create_change(&v["d"], &id));
+                    let _ = self.event_tx.send(GatewayEvent::ThreadsChanged { guild_id: id.clone() }).await;
+
                     let guild = GuildData { id, name, channels };
                     let _ = self.event_tx.send(GatewayEvent::GuildLoaded { guild }).await;
                 }
@@ -1204,6 +1214,12 @@ impl GatewayClient {
                 }
                 "USER_GUILD_SETTINGS_UPDATE" => {
                     super::unread::apply_settings_entry(&v["d"]);
+                }
+                "THREAD_CREATE" | "THREAD_UPDATE" | "THREAD_DELETE" | "THREAD_LIST_SYNC" => {
+                    if let Some((guild_id, change)) = super::threads::parse_event(t, &v["d"]) {
+                        super::threads::apply_to_guild(&guild_id, change);
+                        let _ = self.event_tx.send(GatewayEvent::ThreadsChanged { guild_id }).await;
+                    }
                 }
                 "GUILD_MEMBER_LIST_UPDATE" => {
                     if let Some(update) = super::member_list::parse_update(&v["d"]) {

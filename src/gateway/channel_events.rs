@@ -22,6 +22,8 @@ pub fn parse_channel(v: &Value) -> Option<ChannelData> {
         parent_id: if ch_type == 4 { None } else { v["parent_id"].as_str().map(str::to_string) },
         position: v["position"].as_i64().unwrap_or(0),
         topic,
+        is_thread: false,
+        is_forum: ch_type == super::threads::FORUM_CHANNEL_TYPE,
     })
 }
 
@@ -124,6 +126,8 @@ mod tests {
             parent_id: parent.map(str::to_string),
             position,
             topic: None,
+            is_thread: false,
+            is_forum: false,
         }
     }
 

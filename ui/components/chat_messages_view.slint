@@ -154,6 +154,9 @@ export component ChatMessagesView inherits Rectangle {
     // Message id, reaction key: adds the reaction, or takes it back if it is the user's.
     callback toggle_reaction(string, string);
     callback open_profile(string /* user_id */);
+    // Message action: start a thread from the message with this id.
+    callback create_thread(string);
+    in property <bool> can_create_thread: false;
 
     changed scroll_trigger => {
         root.scroll_to_bottom();
@@ -1432,6 +1435,33 @@ export component ChatMessagesView inherits Rectangle {
                                 }
                             }
                         }
+                    }
+                }
+
+                // Message action, shown on hover: start a thread from this message.
+                if root.can_create_thread && msg.id != "": Rectangle {
+                    x: parent.width - self.width - 8px;
+                    y: 2px;
+                    width: thread_label.preferred-width + 16px;
+                    height: 22px;
+                    visible: row_hover.has-hover || thread_action_ta.has-hover;
+                    background: thread_action_ta.has-hover ? AppTheme.interactive-selected : AppTheme.surface-sidebar;
+                    border-radius: 4px;
+                    border-width: 1px;
+                    border-color: AppTheme.border-subtle;
+
+                    thread_label := Text {
+                        text: Tr.create_thread;
+                        color: thread_action_ta.has-hover ? AppTheme.text-strong : AppTheme.text-primary;
+                        font-size: TypeScale.caption;
+                        font-weight: 600;
+                        horizontal-alignment: center;
+                        vertical-alignment: center;
+                    }
+
+                    thread_action_ta := TouchArea {
+                        mouse-cursor: pointer;
+                        clicked => { root.create_thread(msg.id); }
                     }
                 }
                 }

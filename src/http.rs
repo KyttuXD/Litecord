@@ -274,6 +274,36 @@ impl DiscordHttpClient {
         }
     }
 
+    /// Starts a thread from a message (`POST /channels/{id}/messages/{id}/threads`);
+    /// answers the new thread's channel object.
+    pub async fn create_thread_from_message(&self, channel_id: &str, message_id: &str, name: &str) -> Result<serde_json::Value, String> {
+        let url = format!("https://discord.com/api/v10/channels/{}/messages/{}/threads", channel_id, message_id);
+        let payload = json!({ "name": name, "auto_archive_duration": 1440 });
+        let resp = self.client.post(&url).json(&payload).send().await.map_err(|e| format!("Erro HTTP: {:?}", e))?;
+        let status = resp.status();
+        if !status.is_success() {
+            let err = format!("Status de erro HTTP ao criar thread: {}", status);
+            error!("{}", err);
+            return Err(err);
+        }
+        resp.json::<serde_json::Value>().await.map_err(|e| e.to_string())
+    }
+
+    /// The posts (threads) of a forum channel, most recently active first
+    /// (`GET /channels/{id}/threads/search`); answers `{"threads": [...], ...}`.
+    pub async fn get_forum_posts(&self, forum_id: &str) -> Result<serde_json::Value, String> {
+        let url = format!(
+            "https://discord.com/api/v10/channels/{}/threads/search?sort_by=last_message_time&sort_order=desc&limit=25&archived=true&tag_setting=match_some&offset=0",
+            forum_id
+        );
+        let resp = self.client.get(&url).send().await.map_err(|e| format!("Erro HTTP: {:?}", e))?;
+        let status = resp.status();
+        if !status.is_success() {
+            return Err(format!("Status HTTP {}", status));
+        }
+        resp.json::<serde_json::Value>().await.map_err(|e| e.to_string())
+    }
+
     #[allow(dead_code)]
     pub async fn update_my_voice_state(&self, guild_id: &str, channel_id: &str) -> Result<(), String> {
         let url = format!("https://discord.com/api/v10/guilds/{}/voice-states/@me", guild_id);

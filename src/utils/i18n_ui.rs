@@ -292,6 +292,16 @@ ui_strings! {
     (event_view, set_event_view, "View event", "Ver evento", "Ver evento", "Event ansehen", "Voir l’événement", "Открыть событие", "イベントを見る"),
     (event_live, set_event_live, "Happening now", "Acontecendo agora", "En curso", "Läuft gerade", "En cours", "Идёт сейчас", "開催中"),
     (event_interested, set_event_interested, "{} interested", "{} interessados", "{} interesados", "{} interessiert", "{} intéressés", "{} заинтересованы", "{}人が興味あり"),
+    // Threads and forum posts; {} is the number of messages.
+    (create_thread, set_create_thread, "Thread", "Tópico", "Hilo", "Thread", "Fil", "Ветка", "スレッド"),
+    (thread_default_name, set_thread_default_name, "Thread", "Tópico", "Hilo", "Thread", "Fil", "Ветка", "スレッド"),
+    (thread_messages, set_thread_messages, "{} messages", "{} mensagens", "{} mensajes", "{} Nachrichten", "{} messages", "{} сообщений", "{}件のメッセージ"),
+    (thread_archived, set_thread_archived, "archived", "arquivado", "archivado", "archiviert", "archivé", "в архиве", "アーカイブ済み"),
+    (forum_posts_title, set_forum_posts_title, "Posts in this forum", "Posts deste fórum", "Publicaciones de este foro", "Beiträge in diesem Forum", "Posts de ce forum", "Публикации форума", "このフォーラムの投稿"),
+    (forum_empty, set_forum_empty, "No posts to show.", "Nenhum post para mostrar.", "No hay publicaciones que mostrar.", "Keine Beiträge vorhanden.", "Aucun post à afficher.", "Нет публикаций.", "表示する投稿がありません。"),
+    (forum_open_post, set_forum_open_post, "Open post", "Abrir post", "Abrir publicación", "Beitrag öffnen", "Ouvrir le post", "Открыть публикацию", "投稿を開く"),
+    (thread_in_thread, set_thread_in_thread, "A thread cannot be started inside a thread.", "Não é possível criar um tópico dentro de outro tópico.", "No se puede crear un hilo dentro de otro hilo.", "In einem Thread kann kein weiterer Thread gestartet werden.", "Impossible de créer un fil dans un fil.", "Нельзя создать ветку внутри ветки.", "スレッドの中に別のスレッドは作成できません。"),
+    (thread_create_failed, set_thread_create_failed, "Could not create the thread.", "Não foi possível criar o tópico.", "No se pudo crear el hilo.", "Der Thread konnte nicht erstellt werden.", "Impossible de créer le fil.", "Не удалось создать ветку.", "スレッドを作成できませんでした。"),
 }
 
 #[cfg(test)]
