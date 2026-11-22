@@ -17,6 +17,8 @@ pub mod http_messaging;
 pub mod channel_permissions;
 #[path = "../../../src/relationships.rs"]
 pub mod relationships;
+#[path = "../../../src/server_actions.rs"]
+pub mod server_actions;
 
 pub mod screen_capture;
 pub mod ui;

@@ -11,6 +11,7 @@ pub mod http_messaging;
 pub mod file_picker;
 pub mod relationships;
 pub mod channel_permissions;
+pub mod server_actions;
 pub mod encoder;
 pub mod screen_capture;
 #[cfg(feature = "automation")]
@@ -165,6 +166,62 @@ mod open_url_tests {
         assert_eq!(c[1].1, &["open"][..]);
         assert!(c[0].1.is_empty());
     }
+}
+
+/// Runs a request built by `server_actions` in the background. `on_ok` runs on the UI
+/// thread with the response and returns the notice to show; failures show a generic notice.
+/// The notice goes to the status line of the user menu when `to_status` is set, otherwise to
+/// the server menu.
+fn spawn_server_action<F>(
+    app_weak: slint::Weak<AppWindow>,
+    http_client: Arc<Mutex<Option<DiscordHttpClient>>>,
+    request: Result<crate::server_actions::ApiRequest, String>,
+    to_status: bool,
+    on_ok: F,
+) where
+    F: FnOnce(&AppWindow, &serde_json::Value) -> String + Send + 'static,
+{
+    let set_notice = move |ui: &AppWindow, text: &str| {
+        if to_status {
+            ui.set_status_notice(text.into());
+        } else {
+            ui.set_server_menu_notice(text.into());
+        }
+    };
+    let request = match request {
+        Ok(r) => r,
+        Err(e) => {
+            warn!("Server action rejected: {}", e);
+            if let Some(ui) = app_weak.upgrade() {
+                set_notice(&ui, crate::utils::i18n_ui::ui_text().sa_failed);
+            }
+            return;
+        }
+    };
+    let http_opt = http_client.lock().unwrap().as_ref().cloned();
+    let Some(http) = http_opt else {
+        if let Some(ui) = app_weak.upgrade() {
+            set_notice(&ui, crate::utils::i18n_ui::ui_text().sa_failed);
+        }
+        return;
+    };
+    tokio::spawn(async move {
+        let result = http.execute_action(request).await;
+        let _ = slint::invoke_from_event_loop(move || {
+            if let Some(ui) = app_weak.upgrade() {
+                match result {
+                    Ok(value) => {
+                        let text = on_ok(&ui, &value);
+                        set_notice(&ui, &text);
+                    }
+                    Err(e) => {
+                        warn!("Server action failed: {}", e);
+                        set_notice(&ui, crate::utils::i18n_ui::ui_text().sa_failed);
+                    }
+                }
+            }
+        });
+    });
 }
 
 #[tokio::main(flavor = "multi_thread", worker_threads = 4)]
@@ -4158,6 +4215,157 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }
             });
         }
+    });
+
+    // Server and profile actions (user menu and server menu)
+    let app_weak_mark_read = app_weak.clone();
+    let http_client_mark_read = Arc::clone(&http_client);
+    app.on_mark_server_read(move |guild_id: SharedString| {
+        spawn_server_action(
+            app_weak_mark_read.clone(),
+            Arc::clone(&http_client_mark_read),
+            crate::server_actions::mark_guild_read(guild_id.as_str()),
+            false,
+            |_ui, _v| crate::utils::i18n_ui::ui_text().sa_marked_read.to_string(),
+        );
+    });
+
+    let app_weak_set_gmute = app_weak.clone();
+    let http_client_set_gmute = Arc::clone(&http_client);
+    app.on_set_server_muted(move |guild_id: SharedString, muted: bool| {
+        spawn_server_action(
+            app_weak_set_gmute.clone(),
+            Arc::clone(&http_client_set_gmute),
+            crate::server_actions::set_guild_muted(guild_id.as_str(), muted),
+            false,
+            move |_ui, _v| {
+                let t = crate::utils::i18n_ui::ui_text();
+                (if muted { t.sa_muted } else { t.sa_unmuted }).to_string()
+            },
+        );
+    });
+
+    let app_weak_set_cmute = app_weak.clone();
+    let http_client_set_cmute = Arc::clone(&http_client);
+    app.on_set_channel_muted(move |guild_id: SharedString, channel_id: SharedString, muted: bool| {
+        spawn_server_action(
+            app_weak_set_cmute.clone(),
+            Arc::clone(&http_client_set_cmute),
+            crate::server_actions::set_channel_muted(guild_id.as_str(), channel_id.as_str(), muted),
+            false,
+            move |_ui, _v| {
+                let t = crate::utils::i18n_ui::ui_text();
+                (if muted { t.sa_muted } else { t.sa_unmuted }).to_string()
+            },
+        );
+    });
+
+    let app_weak_invite = app_weak.clone();
+    let http_client_invite = Arc::clone(&http_client);
+    let guilds_map_invite = Arc::clone(&guilds_map);
+    app.on_copy_server_invite(move |guild_id: SharedString| {
+        let gid = guild_id.to_string();
+        // Prefer the open channel when the server is the open one, else its first text channel.
+        let open_channel = match app_weak_invite.upgrade() {
+            Some(ui) if ui.get_active_guild_id().as_str() == gid && !ui.get_active_channel_id().is_empty() => {
+                Some(ui.get_active_channel_id().to_string())
+            }
+            _ => None,
+        };
+        let channel_id = match open_channel {
+            Some(id) => id,
+            None => guilds_map_invite
+                .lock()
+                .ok()
+                .and_then(|m| {
+                    m.get(&gid).and_then(|g| {
+                        g.channels.iter().find(|c| !c.is_voice && !c.is_category).map(|c| c.id.clone())
+                    })
+                })
+                .unwrap_or_default(),
+        };
+        spawn_server_action(
+            app_weak_invite.clone(),
+            Arc::clone(&http_client_invite),
+            crate::server_actions::create_invite(&channel_id),
+            false,
+            |_ui, v| {
+                let t = crate::utils::i18n_ui::ui_text();
+                match v["code"].as_str() {
+                    Some(code) => {
+                        let link = crate::server_actions::invite_url(code);
+                        let copied = copypasta::ClipboardContext::new()
+                            .and_then(|mut ctx| copypasta::ClipboardProvider::set_contents(&mut ctx, link))
+                            .is_ok();
+                        (if copied { t.sa_invite_copied } else { t.sa_failed }).to_string()
+                    }
+                    None => t.sa_failed.to_string(),
+                }
+            },
+        );
+    });
+
+    let app_weak_join = app_weak.clone();
+    let http_client_join = Arc::clone(&http_client);
+    app.on_join_server(move |code: SharedString| {
+        let request = crate::server_actions::join_invite(code.as_str());
+        if request.is_err() {
+            if let Some(ui) = app_weak_join.upgrade() {
+                ui.set_server_menu_notice(crate::utils::i18n_ui::ui_text().sa_invalid_invite.into());
+            }
+            return;
+        }
+        spawn_server_action(
+            app_weak_join.clone(),
+            Arc::clone(&http_client_join),
+            request,
+            false,
+            |_ui, _v| crate::utils::i18n_ui::ui_text().sa_joined.to_string(),
+        );
+    });
+
+    let app_weak_status = app_weak.clone();
+    let http_client_status = Arc::clone(&http_client);
+    app.on_set_custom_status(move |text: SharedString| {
+        spawn_server_action(
+            app_weak_status.clone(),
+            Arc::clone(&http_client_status),
+            Ok(crate::server_actions::set_custom_status(text.as_str(), None, None)),
+            true,
+            |_ui, _v| crate::utils::i18n_ui::ui_text().sa_status_saved.to_string(),
+        );
+    });
+
+    let app_weak_leave_srv = app_weak.clone();
+    let http_client_leave_srv = Arc::clone(&http_client);
+    let guilds_map_leave_srv = Arc::clone(&guilds_map);
+    app.on_leave_server(move |guild_id: SharedString| {
+        let gid = guild_id.to_string();
+        let guilds_map_in = Arc::clone(&guilds_map_leave_srv);
+        spawn_server_action(
+            app_weak_leave_srv.clone(),
+            Arc::clone(&http_client_leave_srv),
+            crate::server_actions::leave_guild(&gid),
+            false,
+            move |ui, _v| {
+                if let Ok(mut map) = guilds_map_in.lock() {
+                    map.remove(&gid);
+                }
+                let remaining: Vec<GuildItem> = ui
+                    .get_guilds()
+                    .iter()
+                    .filter(|g| g.id.as_str() != gid)
+                    .collect();
+                ui.set_guilds(std::rc::Rc::new(slint::VecModel::from(remaining)).into());
+                ui.set_show_server_menu(false);
+                ui.set_server_menu_confirm_leave(false);
+                if ui.get_active_guild_id().as_str() == gid {
+                    ui.set_active_guild_id("@me".into());
+                    ui.invoke_select_guild("@me".into());
+                }
+                crate::utils::i18n_ui::ui_text().sa_left.to_string()
+            },
+        );
     });
 
     // Select Channel Callback

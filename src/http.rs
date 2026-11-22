@@ -548,6 +548,39 @@ impl DiscordHttpClient {
         }
     }
 
+    /// Sends a request built by `server_actions` and returns the JSON response
+    /// (`Null` for empty 204 answers).
+    pub async fn execute_action(&self, req: crate::server_actions::ApiRequest) -> Result<serde_json::Value, String> {
+        use crate::server_actions::ApiMethod;
+        let builder = match req.method {
+            ApiMethod::Post => self.client.post(&req.url),
+            ApiMethod::Patch => self.client.patch(&req.url),
+            ApiMethod::Delete => self.client.delete(&req.url),
+        };
+        let builder = match &req.body {
+            Some(body) => builder.json(body),
+            None => builder,
+        };
+        match builder.send().await {
+            Ok(resp) => {
+                let status = resp.status();
+                if status.is_success() {
+                    let text = resp.text().await.unwrap_or_default();
+                    Ok(serde_json::from_str(&text).unwrap_or(serde_json::Value::Null))
+                } else {
+                    let err = format!("Request failed with HTTP status {}", status);
+                    warn!("{} ({})", err, req.url);
+                    Err(err)
+                }
+            }
+            Err(e) => {
+                let err = format!("Network error: {:?}", e);
+                warn!("{}", err);
+                Err(err)
+            }
+        }
+    }
+
     /// Fetches the pinned messages of a channel (newest pin first).
     pub async fn get_pinned_messages(&self, channel_id: &str) -> Result<Vec<serde_json::Value>, String> {
         let path = pins_path(channel_id).ok_or_else(|| "Invalid channel id".to_string())?;

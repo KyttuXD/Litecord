@@ -1,0 +1,234 @@
+import { VerticalBox, HorizontalBox, LineEdit } from "std-widgets.slint";
+import { AppTheme, TypeScale } from "../theme.slint";
+import { Tr } from "tr.slint";
+
+component ServerMenuRow inherits Rectangle {
+    in property <string> label;
+    in property <bool> danger: false;
+    callback activated();
+
+    height: 34px;
+    border-radius: 6px;
+    background: row_touch.has-hover ? (root.danger ? AppTheme.danger-action : AppTheme.interactive-hover) : transparent;
+
+    Text {
+        x: 10px;
+        width: parent.width - 20px;
+        height: parent.height;
+        text: root.label;
+        color: root.danger ? (row_touch.has-hover ? AppTheme.text-on-accent : AppTheme.danger) : AppTheme.text-strong;
+        font-size: TypeScale.small;
+        font-weight: 600;
+        overflow: elide;
+        vertical-alignment: center;
+    }
+
+    row_touch := TouchArea {
+        mouse-cursor: pointer;
+        clicked => { root.activated(); }
+    }
+}
+
+// Server actions dialog: opened from a server icon (right click) or the channel list header.
+export component ServerMenu inherits Rectangle {
+    in property <string> guild_name;
+    // The channel actions apply to the open channel, so they only show for the open server.
+    in property <bool> show_channel_actions;
+    in property <string> channel_name;
+    in property <string> notice;
+    in-out property <bool> confirm_leave: false;
+
+    callback dismiss();
+    callback mark_read();
+    callback copy_invite();
+    callback mute_server(bool);
+    callback mute_channel(bool);
+    callback leave_server();
+    callback join_server(string);
+
+    background: AppTheme.backdrop-soft;
+    width: 100%;
+    height: 100%;
+
+    TouchArea {
+        mouse-cursor: pointer;
+        clicked => { root.dismiss(); }
+    }
+
+    VerticalLayout {
+        alignment: center;
+        HorizontalLayout {
+            alignment: center;
+
+            Rectangle {
+                width: 320px;
+                background: AppTheme.surface-sidebar;
+                border-radius: 12px;
+                border-width: 1px;
+                border-color: AppTheme.border-subtle;
+                drop-shadow-blur: 24px;
+                drop-shadow-color: AppTheme.backdrop;
+
+                TouchArea {
+                    clicked => {}
+                }
+
+                VerticalBox {
+                    padding: 16px;
+                    spacing: 6px;
+
+                    Text {
+                        text: root.guild_name;
+                        color: AppTheme.text-strong;
+                        font-size: TypeScale.title;
+                        font-weight: 700;
+                        overflow: elide;
+                    }
+
+                    if !root.confirm_leave: VerticalLayout {
+                        spacing: 2px;
+
+                        ServerMenuRow {
+                            label: Tr.sa_mark_read;
+                            activated => { root.mark_read(); }
+                        }
+                        ServerMenuRow {
+                            label: Tr.sa_copy_invite;
+                            activated => { root.copy_invite(); }
+                        }
+                        ServerMenuRow {
+                            label: Tr.sa_mute_server;
+                            activated => { root.mute_server(true); }
+                        }
+                        ServerMenuRow {
+                            label: Tr.sa_unmute_server;
+                            activated => { root.mute_server(false); }
+                        }
+                        if root.show_channel_actions: ServerMenuRow {
+                            label: Tr.sa_mute_channel + " " + root.channel_name;
+                            activated => { root.mute_channel(true); }
+                        }
+                        if root.show_channel_actions: ServerMenuRow {
+                            label: Tr.sa_unmute_channel + " " + root.channel_name;
+                            activated => { root.mute_channel(false); }
+                        }
+
+                        Rectangle {
+                            height: 1px;
+                            background: AppTheme.border-subtle;
+                        }
+
+                        ServerMenuRow {
+                            label: Tr.sa_leave_server;
+                            danger: true;
+                            activated => { root.confirm_leave = true; }
+                        }
+
+                        Rectangle {
+                            height: 1px;
+                            background: AppTheme.border-subtle;
+                        }
+
+                        Text {
+                            text: Tr.sa_join_title;
+                            color: AppTheme.text-muted;
+                            font-size: TypeScale.caption;
+                            font-weight: 700;
+                        }
+                        HorizontalLayout {
+                            spacing: 6px;
+                            join_input := LineEdit {
+                                horizontal-stretch: 1;
+                                placeholder-text: Tr.sa_join_placeholder;
+                                accepted => {
+                                    if (join_input.text != "") {
+                                        root.join_server(join_input.text);
+                                    }
+                                }
+                            }
+                            Rectangle {
+                                width: 62px;
+                                height: 32px;
+                                background: join_touch.has-hover ? AppTheme.accent-hover : AppTheme.accent;
+                                border-radius: 6px;
+                                Text {
+                                    text: Tr.sa_join_btn;
+                                    color: AppTheme.text-on-accent;
+                                    font-size: TypeScale.small;
+                                    font-weight: 600;
+                                    horizontal-alignment: center;
+                                    vertical-alignment: center;
+                                }
+                                join_touch := TouchArea {
+                                    mouse-cursor: pointer;
+                                    clicked => {
+                                        if (join_input.text != "") {
+                                            root.join_server(join_input.text);
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    if root.confirm_leave: VerticalLayout {
+                        spacing: 10px;
+
+                        Text {
+                            text: Tr.sa_leave_confirm;
+                            color: AppTheme.text-secondary;
+                            font-size: TypeScale.small;
+                            wrap: word-wrap;
+                        }
+                        HorizontalLayout {
+                            spacing: 8px;
+                            Rectangle {
+                                height: 32px;
+                                horizontal-stretch: 1;
+                                background: cancel_touch.has-hover ? AppTheme.surface-control-hover : AppTheme.surface-chat;
+                                border-radius: 6px;
+                                Text {
+                                    text: Tr.sa_cancel;
+                                    color: AppTheme.text-strong;
+                                    font-size: TypeScale.small;
+                                    font-weight: 600;
+                                    horizontal-alignment: center;
+                                    vertical-alignment: center;
+                                }
+                                cancel_touch := TouchArea {
+                                    mouse-cursor: pointer;
+                                    clicked => { root.confirm_leave = false; }
+                                }
+                            }
+                            Rectangle {
+                                height: 32px;
+                                horizontal-stretch: 1;
+                                background: leave_touch.has-hover ? AppTheme.danger-action-hover : AppTheme.danger-action;
+                                border-radius: 6px;
+                                Text {
+                                    text: Tr.sa_leave_yes;
+                                    color: AppTheme.text-on-accent;
+                                    font-size: TypeScale.small;
+                                    font-weight: 600;
+                                    horizontal-alignment: center;
+                                    vertical-alignment: center;
+                                }
+                                leave_touch := TouchArea {
+                                    mouse-cursor: pointer;
+                                    clicked => { root.leave_server(); }
+                                }
+                            }
+                        }
+                    }
+
+                    if root.notice != "": Text {
+                        text: root.notice;
+                        color: AppTheme.text-muted;
+                        font-size: TypeScale.caption;
+                        wrap: word-wrap;
+                    }
+                }
+            }
+        }
+    }
+}

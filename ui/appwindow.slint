@@ -8,6 +8,7 @@ import { IconButton } from "components/icon_button.slint";
 import { ChannelSidebar, ChannelItem } from "components/channel_sidebar.slint";
 import { MemberListPanel, MemberRowItem } from "components/member_list_panel.slint";
 import { FriendsView, FriendItem } from "components/friends_view.slint";
+import { ServerMenu } from "components/server_menu.slint";
 import { SettingsView, LanguageItem, SettingOptionItem, AudioDeviceItem } from "components/settings_view.slint";
 import { ChatMessagesView, LinkItem, MessageBlock, MessageLine, MessageAttachment, MessageButton, ChatMessage } from "components/chat_messages_view.slint";
 
@@ -150,6 +151,13 @@ export component AppWindow inherits Window {
     callback toggle_category(string /* category_id */);
     callback select_guild(string /* guild_id */);
     callback toggle_mute();
+    callback leave_server(string /* guild_id */);
+    callback copy_server_invite(string /* guild_id */);
+    callback join_server(string /* invite code or link */);
+    callback set_custom_status(string /* text, empty clears it */);
+    callback mark_server_read(string /* guild_id */);
+    callback set_server_muted(string /* guild_id */, bool /* muted */);
+    callback set_channel_muted(string /* guild_id */, string /* channel_id */, bool /* muted */);
     callback toggle_deafen();
     callback leave_voice();
     callback block_dm_user();  // Blocks the other user of the open 1:1 DM
@@ -500,6 +508,12 @@ export component AppWindow inherits Window {
     in-out property <string> friends_status: "";
     in-out property <bool> friends_status_is_error: false;
     in-out property <string> friends_add_text: "";
+    in-out property <bool> show_server_menu: false;
+    in-out property <string> server_menu_guild_id: "";
+    in-out property <string> server_menu_guild_name: "";
+    in-out property <bool> server_menu_confirm_leave: false;
+    in-out property <string> server_menu_notice: "";
+    in-out property <string> status_notice: "";
     in-out property <[AccountItem]> saved_accounts: [];
     in-out property <string> login_alert_message: "";
     in-out property <bool> login_alert_is_error: true;
@@ -1444,6 +1458,13 @@ export component AppWindow inherits Window {
                                             guild_ta := TouchArea {
                                                 mouse-cursor: pointer;
                                                 pointer-event(event) => {
+                                                    if (event.button == PointerEventButton.right && event.kind == PointerEventKind.down) {
+                                                        root.server_menu_guild_id = guild.id;
+                                                        root.server_menu_guild_name = guild.name;
+                                                        root.server_menu_confirm_leave = false;
+                                                        root.server_menu_notice = "";
+                                                        root.show_server_menu = true;
+                                                    }
                                                     if (event.kind == PointerEventKind.up || event.kind == PointerEventKind.cancel) {
                                                         if (root.dragging_guild_idx >= 0 && root.drop_target_guild_idx >= 0 && root.dragging_guild_idx != root.drop_target_guild_idx) {
                                                             root.reorder_guild(root.dragging_guild_idx, root.drop_target_guild_idx);
@@ -1551,6 +1572,15 @@ export component AppWindow inherits Window {
                 toggle_deafen => { root.toggle_deafen(); }
                 open_settings => { root.open_settings(); }
                 toggle_user_menu => { root.show_user_menu = !root.show_user_menu; }
+                open_server_menu => {
+                    if (root.active_guild_id != "" && root.active_guild_id != "@me") {
+                        root.server_menu_guild_id = root.active_guild_id;
+                        root.server_menu_guild_name = root.active_guild_name;
+                        root.server_menu_confirm_leave = false;
+                        root.server_menu_notice = "";
+                        root.show_server_menu = true;
+                    }
+                }
             }
 
             // 3. Main Content View (Text Chat OR Voice Room View)
@@ -3781,6 +3811,22 @@ export component AppWindow inherits Window {
         check_for_updates => { root.check_for_updates(); }
     }
 
+    // Server actions modal (right click a server icon or click the server name)
+    if root.show_server_menu: ServerMenu {
+        guild_name: root.server_menu_guild_name;
+        show_channel_actions: root.server_menu_guild_id == root.active_guild_id && root.active_channel_id != "";
+        channel_name: root.active_channel_name;
+        notice: root.server_menu_notice;
+        confirm_leave <=> root.server_menu_confirm_leave;
+        dismiss => { root.show_server_menu = false; }
+        mark_read => { root.mark_server_read(root.server_menu_guild_id); }
+        copy_invite => { root.copy_server_invite(root.server_menu_guild_id); }
+        mute_server(muted) => { root.set_server_muted(root.server_menu_guild_id, muted); }
+        mute_channel(muted) => { root.set_channel_muted(root.server_menu_guild_id, root.active_channel_id, muted); }
+        leave_server => { root.leave_server(root.server_menu_guild_id); }
+        join_server(code) => { root.join_server(code); }
+    }
+
     // Multi-Account / Switch Account & Logout Modal
     if root.show_user_menu: Rectangle {
         background: AppTheme.backdrop-soft;
@@ -4042,6 +4088,67 @@ export component AppWindow inherits Window {
                                     root.add_new_account();
                                 }
                             }
+                        }
+
+                        // Custom status
+                        Text {
+                            text: Tr.sa_status_title;
+                            color: AppTheme.text-muted;
+                            font-size: TypeScale.caption;
+                            font-weight: 700;
+                        }
+                        HorizontalLayout {
+                            spacing: 6px;
+                            custom_status_input := LineEdit {
+                                horizontal-stretch: 1;
+                                placeholder-text: Tr.sa_status_placeholder;
+                                accepted => { root.set_custom_status(custom_status_input.text); }
+                            }
+                            Rectangle {
+                                width: 52px;
+                                height: 32px;
+                                background: status_set_touch.has-hover ? AppTheme.accent-hover : AppTheme.accent;
+                                border-radius: 6px;
+                                Text {
+                                    text: Tr.sa_status_set;
+                                    color: AppTheme.text-on-accent;
+                                    font-size: TypeScale.small;
+                                    font-weight: 600;
+                                    horizontal-alignment: center;
+                                    vertical-alignment: center;
+                                }
+                                status_set_touch := TouchArea {
+                                    mouse-cursor: pointer;
+                                    clicked => { root.set_custom_status(custom_status_input.text); }
+                                }
+                            }
+                            Rectangle {
+                                width: 52px;
+                                height: 32px;
+                                background: status_clear_touch.has-hover ? AppTheme.surface-control-hover : AppTheme.surface-chat;
+                                border-radius: 6px;
+                                Text {
+                                    text: Tr.sa_status_clear;
+                                    color: AppTheme.text-strong;
+                                    font-size: TypeScale.small;
+                                    font-weight: 600;
+                                    horizontal-alignment: center;
+                                    vertical-alignment: center;
+                                }
+                                status_clear_touch := TouchArea {
+                                    mouse-cursor: pointer;
+                                    clicked => {
+                                        custom_status_input.text = "";
+                                        root.set_custom_status("");
+                                    }
+                                }
+                            }
+                        }
+                        if root.status_notice != "": Text {
+                            text: root.status_notice;
+                            color: AppTheme.text-muted;
+                            font-size: TypeScale.caption;
+                            wrap: word-wrap;
                         }
 
                         // Separator

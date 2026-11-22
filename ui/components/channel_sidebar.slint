@@ -63,6 +63,7 @@ export component ChannelSidebar inherits Rectangle {
     callback toggle_category(string);
     callback leave_voice();
     callback toggle_user_menu();
+    callback open_server_menu();
     callback toggle_mute();
     callback toggle_deafen();
     callback open_settings();
@@ -89,19 +90,30 @@ export component ChannelSidebar inherits Rectangle {
         padding: 8px;
         spacing: 6px;
 
-        HorizontalLayout {
-            padding-left: 4px;
-            padding-right: 4px;
-            padding-top: 2px;
-            padding-bottom: 2px;
+        Rectangle {
+            height: 28px;
+            border-radius: 4px;
+            background: header_touch.has-hover ? AppTheme.interactive-hover : transparent;
 
-            Text {
-                text: root.active_guild_name != "" ? root.active_guild_name : root.tr_server_channels;
-                color: AppTheme.text-strong;
-                font-size: TypeScale.title;
-                font-weight: 700;
-                overflow: elide;
-                vertical-alignment: center;
+            HorizontalLayout {
+                padding-left: 4px;
+                padding-right: 4px;
+                padding-top: 2px;
+                padding-bottom: 2px;
+
+                Text {
+                    text: root.active_guild_name != "" ? root.active_guild_name : root.tr_server_channels;
+                    color: AppTheme.text-strong;
+                    font-size: TypeScale.title;
+                    font-weight: 700;
+                    overflow: elide;
+                    vertical-alignment: center;
+                }
+            }
+
+            header_touch := TouchArea {
+                mouse-cursor: pointer;
+                clicked => { root.open_server_menu(); }
             }
         }
 

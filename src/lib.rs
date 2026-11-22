@@ -10,6 +10,7 @@ pub mod http_messaging;
 pub mod file_picker;
 pub mod relationships;
 pub mod channel_permissions;
+pub mod server_actions;
 pub mod encoder;
 pub mod screen_capture;
 
