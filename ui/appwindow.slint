@@ -3,6 +3,8 @@ export { Tr }
 import { Button, VerticalBox, HorizontalBox, LineEdit, ScrollView, ListView, TextEdit, CheckBox, Slider } from "std-widgets.slint";
 import { AppTheme, ChatTypography, ThemeMode , TypeScale } from "theme.slint";
 import "../assets/fonts/Inter-Variable.ttf";
+import "../assets/fonts/DejaVuSansMono.ttf";
+import "../assets/fonts/DejaVuSansMono-Bold.ttf";
 
 import { IconButton } from "components/icon_button.slint";
 import { ChannelSidebar, ChannelItem } from "components/channel_sidebar.slint";
@@ -3472,7 +3474,7 @@ export component AppWindow inherits Window {
                                                     text: cmd.usage;
                                                     color: (idx == root.active_suggestion_index) ? AppTheme.text-muted : AppTheme.text-faint;
                                                     font-size: TypeScale.micro;
-                                                    font-family: "Courier New";
+                                                    font-family: TypeScale.mono-family;
                                                     vertical-alignment: center;
                                                 }
                                             }

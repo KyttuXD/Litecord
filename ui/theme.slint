@@ -9,6 +9,7 @@ export enum ThemeMode {
 // Fractional sizes and sub-11px text render blurry with the FemtoVG renderer.
 export global TypeScale {
     out property <string> family: "Inter";
+    out property <string> mono-family: "DejaVu Sans Mono";
     out property <length> micro: 11px;     // badges, all-caps section labels
     out property <length> caption: 12px;   // metadata, hints, timestamps
     out property <length> small: 13px;     // secondary UI text
@@ -20,6 +21,7 @@ export global TypeScale {
 // Chat reads a step larger than the denser navigation and settings UI.
 export global ChatTypography {
     out property <string> family: TypeScale.family;
+    out property <string> mono-family: TypeScale.mono-family;
     out property <length> body-size: 15px;
     out property <length> author-size: 15px;
     out property <length> preview-size: TypeScale.caption;
