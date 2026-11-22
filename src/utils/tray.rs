@@ -23,6 +23,18 @@ pub fn update_tray_tooltip(tooltip: &str) {
     });
 }
 
+/// True when the tray icon was created successfully. Call on the UI thread only.
+pub fn tray_icon_active() -> bool {
+    TRAY_ICON.with(|icon| icon.borrow().is_some())
+}
+
+/// Decides whether "minimize" may hide the window (so it lives only in the tray).
+/// Without a working tray icon (e.g. GNOME without AppIndicator) hiding would make
+/// the window impossible to restore, so we only minimize it. Windows keeps hiding.
+pub fn should_hide_to_tray(tray_active: bool, is_windows: bool) -> bool {
+    tray_active || is_windows
+}
+
 pub struct SystemTrayManager {
     pub show_item_id: MenuId,
     pub quit_item_id: MenuId,
@@ -136,3 +148,16 @@ impl SystemTrayManager {
 }
 
 
+
+#[cfg(test)]
+mod tests {
+    use super::should_hide_to_tray;
+
+    #[test]
+    fn hides_only_when_tray_works_or_on_windows() {
+        assert!(should_hide_to_tray(true, false));
+        assert!(!should_hide_to_tray(false, false));
+        assert!(should_hide_to_tray(false, true));
+        assert!(should_hide_to_tray(true, true));
+    }
+}

@@ -4993,6 +4993,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     app.on_minimize_to_tray(move || {
         info!("Minimizing window to the system tray via Win32 SW_HIDE...");
         crate::ui::window_place::save_now();
+        let hide = should_hide_to_tray(tray_icon_active(), cfg!(target_os = "windows"));
+        if !hide {
+            info!("Tray unavailable: only minimizing the window (not hiding).");
+            if let Some(ui) = app_weak_tray_min.upgrade() {
+                let _ = ui.window().with_winit_window(|winit_win| {
+                    winit_win.set_minimized(true);
+                });
+            }
+            return;
+        }
         crate::ui::invite_cards::clear();
         APP_IS_VISIBLE.store(false, Ordering::Relaxed);
         PENDING_MESSAGES.store(0, Ordering::Relaxed);
@@ -5082,6 +5092,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let app_weak_min = app_weak.clone();
     let hwnd_store_min = Arc::clone(&hwnd_store);
     app.on_minimize_window(move || {
+        if !should_hide_to_tray(tray_icon_active(), cfg!(target_os = "windows")) {
+            info!("Tray unavailable: only minimizing the window (not hiding).");
+            if let Some(ui) = app_weak_min.upgrade() {
+                let _ = ui.window().with_winit_window(|winit_win| {
+                    winit_win.set_minimized(true);
+                });
+            }
+            return;
+        }
         info!("🔕 Minimizing window to the system tray (System Tray) & entering DeepSleep...");
         APP_IS_VISIBLE.store(false, Ordering::Relaxed);
         PENDING_MESSAGES.store(0, Ordering::Relaxed);
