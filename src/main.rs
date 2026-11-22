@@ -103,6 +103,69 @@ fn use_macos_data_dir() {
     }
 }
 
+/// Commands tried (in order) to open a URL in the default browser: program plus leading
+/// arguments; the URL is appended last.
+#[cfg(not(target_os = "windows"))]
+fn open_url_candidates(is_macos: bool) -> Vec<(&'static str, &'static [&'static str])> {
+    if is_macos {
+        vec![("open", &[][..])]
+    } else {
+        vec![
+            ("xdg-open", &[][..]),
+            ("gio", &["open"][..]),
+            ("kde-open", &[][..]),
+            ("gnome-open", &[][..]),
+            ("sensible-browser", &[][..]),
+        ]
+    }
+}
+
+/// Opens `url` with the first candidate command that can be spawned. The child is reaped
+/// in a small thread so it does not stay a zombie.
+#[cfg(not(target_os = "windows"))]
+fn open_url_unix(url: &str) {
+    for (prog, args) in open_url_candidates(cfg!(target_os = "macos")) {
+        match std::process::Command::new(prog)
+            .args(args)
+            .arg(url)
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .spawn()
+        {
+            Ok(mut child) => {
+                std::thread::spawn(move || {
+                    let _ = child.wait();
+                });
+                return;
+            }
+            Err(e) => {
+                log::debug!("Failed to start '{}' to open the link: {}", prog, e);
+            }
+        }
+    }
+    log::warn!("No command available to open the link in a browser: {}", url);
+}
+
+#[cfg(all(test, not(target_os = "windows")))]
+mod open_url_tests {
+    use super::open_url_candidates;
+
+    #[test]
+    fn macos_uses_open_only() {
+        assert_eq!(open_url_candidates(true), vec![("open", &[][..])]);
+    }
+
+    #[test]
+    fn linux_order_and_gio_arg() {
+        let c = open_url_candidates(false);
+        let names: Vec<&str> = c.iter().map(|(p, _)| *p).collect();
+        assert_eq!(names, ["xdg-open", "gio", "kde-open", "gnome-open", "sensible-browser"]);
+        assert_eq!(c[1].1, &["open"][..]);
+        assert!(c[0].1.is_empty());
+    }
+}
+
 #[tokio::main(flavor = "multi_thread", worker_threads = 4)]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     commit_heap_pages_on_demand();
@@ -619,14 +682,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             let file: Vec<u16> = url.encode_utf16().chain(Some(0)).collect();
             ShellExecuteW(0, op.as_ptr(), file.as_ptr(), std::ptr::null(), std::ptr::null(), 1 /* SW_SHOWNORMAL */);
         }
-        #[cfg(target_os = "macos")]
-        {
-            let _ = std::process::Command::new("open").arg(&url).spawn();
-        }
-        #[cfg(not(any(target_os = "windows", target_os = "macos")))]
-        {
-            let _ = std::process::Command::new("xdg-open").arg(&url).spawn();
-        }
+        #[cfg(not(target_os = "windows"))]
+        open_url_unix(&url);
     });
 
     let app_weak_dl = app_weak.clone();
