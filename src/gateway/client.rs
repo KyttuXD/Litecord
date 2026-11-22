@@ -42,7 +42,7 @@ fn close_ends_session(code: u16) -> bool {
     matches!(code, 4004 | 4007 | 4009 | 4010 | 4011 | 4012 | 4013 | 4014)
 }
 
-/// Dispatch events this client acts on. The others (presences, member updates...: most
+/// Dispatch events this client acts on. The others (member updates...: most
 /// of what a big account receives) are dropped after reading their header, without
 /// building a JSON tree for their payload. Typing and reaction events are small.
 const HANDLED_EVENTS: &[&str] = &[
@@ -76,6 +76,7 @@ const HANDLED_EVENTS: &[&str] = &[
     "CALL_DELETE",
     "RELATIONSHIP_ADD",
     "RELATIONSHIP_REMOVE",
+    "PRESENCE_UPDATE",
 ];
 
 /// Events that change what the user may see in a server. They only drop the server's
@@ -1066,6 +1067,16 @@ impl GatewayClient {
                         let _ = self.event_tx.send(GatewayEvent::RelationshipsChanged).await;
                     }
                 }
+                "PRESENCE_UPDATE" => {
+                    // Only friends are stored; everything else is dropped right here.
+                    let id = v["d"]["user"]["id"].as_str().and_then(|s| s.parse::<u64>().ok()).or_else(|| v["d"]["user"]["id"].as_u64());
+                    if let Some(id) = id {
+                        let status = v["d"]["status"].as_str().unwrap_or("offline");
+                        if crate::ui::relationships::update_presence(id, status) {
+                            let _ = self.event_tx.send(GatewayEvent::RelationshipsChanged).await;
+                        }
+                    }
+                }
                 "RELATIONSHIP_REMOVE" => {
                     let id = v["d"]["id"].as_str().and_then(|s| s.parse::<u64>().ok()).or_else(|| v["d"]["id"].as_u64());
                     if let Some(id) = id {
@@ -1253,9 +1264,12 @@ mod tests {
 
     #[test]
     fn only_events_the_app_uses_are_parsed_whole_but_every_sequence_counts() {
-        // Presence and typing are most of what a big account receives: skipped.
+        // Member updates are most of what a big account receives: skipped.
+        let member = r#"{"t":"GUILD_MEMBER_UPDATE","s":41,"op":0,"d":{"guild_id":"1"}}"#;
+        assert!(!peek(member).unwrap().wanted);
+        // Presences are parsed (friends' online status); non-friends are dropped by the handler.
         let presence = r#"{"t":"PRESENCE_UPDATE","s":42,"op":0,"d":{"user":{"id":"1"},"status":"online","activities":[{"name":"x"}]}}"#;
-        assert_eq!(peek(presence), Some(Peek { op: 0, seq: Some(42), wanted: false, permissions: false }));
+        assert_eq!(peek(presence), Some(Peek { op: 0, seq: Some(42), wanted: true, permissions: false }));
         // Fields in any order, nested objects named like the head fields.
         let msg = r#"{"op":0,"d":{"t":"x","s":1,"op":9,"content":"hi"},"s":43,"t":"MESSAGE_CREATE"}"#;
         assert_eq!(peek(msg), Some(Peek { op: 0, seq: Some(43), wanted: true, permissions: false }));

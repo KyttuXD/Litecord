@@ -103,6 +103,20 @@ pub fn parse_online_ids(presences: &Value) -> HashSet<u64> {
     out
 }
 
+/// Applies one PRESENCE_UPDATE to the set of present users. Only friends are tracked
+/// (`is_friend`), so presences of strangers in big servers cost nothing. "invisible"
+/// (what offline normalises to) removes the user. Returns whether the set changed.
+pub fn apply_presence(online: &mut HashSet<u64>, is_friend: bool, user_id: u64, status: &str) -> bool {
+    if !is_friend {
+        return false;
+    }
+    if crate::gateway::presence::normalize_status(status) == "invisible" {
+        online.remove(&user_id)
+    } else {
+        online.insert(user_id)
+    }
+}
+
 fn sort_key(r: &Relationship) -> (String, u64) {
     (r.name.to_lowercase(), r.id)
 }
@@ -208,6 +222,15 @@ pub fn set_online(online: HashSet<u64>) {
     with_store(|s| s.online = online);
 }
 
+/// Stores a friend's new status from PRESENCE_UPDATE (a missing status counts as offline).
+/// Returns true when the Online tab may have changed.
+pub fn update_presence(user_id: u64, status: &str) -> bool {
+    with_store(|s| {
+        let is_friend = s.rels.get(&user_id).is_some_and(|r| r.kind == REL_FRIEND);
+        apply_presence(&mut s.online, is_friend, user_id, status)
+    })
+}
+
 pub fn remove(id: u64) {
     with_store(|s| {
         s.rels.remove(&id);
@@ -272,6 +295,30 @@ mod tests {
         v.sort();
         assert_eq!(v, vec![1, 2, 3]);
         assert!(parse_online_ids(&Value::Null).is_empty());
+    }
+
+    #[test]
+    fn presence_updates_only_track_friends() {
+        let mut online = HashSet::new();
+        assert!(apply_presence(&mut online, true, 1, "online"));
+        assert!(!apply_presence(&mut online, true, 1, "dnd"), "already present");
+        assert!(apply_presence(&mut online, true, 2, "idle"));
+        assert!(!apply_presence(&mut online, false, 3, "online"), "strangers are ignored");
+        assert!(apply_presence(&mut online, true, 1, "offline"));
+        assert!(!apply_presence(&mut online, true, 1, "invisible"), "already gone");
+        assert_eq!(online.into_iter().collect::<Vec<_>>(), vec![2]);
+    }
+
+    #[test]
+    fn store_presence_needs_a_friend_relationship() {
+        replace_all(vec![rel(1, REL_FRIEND, "a"), rel(2, REL_INCOMING, "b")], HashSet::new());
+        assert!(update_presence(1, "online"));
+        assert!(!update_presence(2, "online"));
+        assert!(!update_presence(9, "online"));
+        assert_eq!(snapshot().1, [1u64].into_iter().collect());
+        assert!(update_presence(1, "offline"));
+        assert!(snapshot().1.is_empty());
+        clear();
     }
 
     #[test]
