@@ -35,6 +35,7 @@ the sample data does not depend on downloaded avatars, emoji or attachments.
 | Login | token panel with and without a QR code, QR scanned, error banner, information banner |
 | Chat | server chat (replies, links, commands, custom emoji, bot tag), embed with every button style, code block, image / not yet downloaded image / file attachments, invite and event cards, load older messages, slash command list, command parameter box, typed text, title bar error, hardware monitor off, voice banner (connecting, connected, muted, deafened), web share error toast, wide sidebar |
 | Direct messages | conversation list with unread badges, badge above 99, incoming call panel, call in progress |
+| Members, profile, friends | member list collapsed and loading (the default chat pictures show it filled), threads and a forum under their channels, profile card (loading, full, with a status line, own profile), server menu (plain, notice, confirm leave), account menu with a status notice, friends view (online, all, pending, blocked, empty, add by username ok and error) |
 | Voice room | connecting, participants, own mute, watching a stream, focused stream, own stream (with reduced preview notice), web share states |
 | Dialogs | web share dialog (link, copied), account menu (with and without accounts), update dialog (offer, downloading) |
 | Share your screen | screens (three quality settings), windows, cameras, no camera |

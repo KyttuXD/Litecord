@@ -24,8 +24,8 @@ use slint::{ComponentHandle, Image, LogicalPosition, ModelRc, PhysicalSize, Rgba
 
 use crate::{
     AccountItem, AppWindow, AudioDeviceItem, CameraSourceItem, ChannelItem, ChatMessage,
-    GuildItem, InviteCard, LanguageItem, LinkItem, MessageAttachment,
-    MessageBlock, MessageButton, MessageLine, PopoutStreamWindow, ScreenSourceItem,
+    FriendItem, GuildItem, InviteCard, LanguageItem, LinkItem, MemberRowItem, MessageAttachment,
+    MessageBlock, MessageButton, MessageLine, PopoutStreamWindow, ProfileRole, ScreenSourceItem,
     SettingOptionItem, VoiceParticipant, WindowSourceItem,
 };
 
@@ -248,6 +248,7 @@ impl Shots {
         self.login_screens()?;
         self.chat_screens()?;
         self.direct_message_screens()?;
+        self.social_screens()?;
         self.voice_screens()?;
         self.dialog_screens()?;
         self.stream_modal_screens()?;
@@ -320,6 +321,11 @@ impl Shots {
         ui.set_hardware_ram_text("RAM 142 MB".into());
         ui.set_hardware_gpu_text("GPU 3%".into());
         ui.set_saved_accounts(model(sample_accounts()));
+        ui.set_member_rows(model(sample_members()));
+        ui.set_show_member_list(true);
+        ui.set_show_friends(false);
+        ui.set_show_profile_popout(false);
+        ui.set_show_server_menu(false);
     }
 
     fn chat_screens(&mut self) -> Result<(), Box<dyn Error>> {
@@ -392,6 +398,130 @@ impl Shots {
         ui.set_channel_sidebar_width(300.0);
         self.shot("chat-wide-sidebar", "Chat: channel sidebar dragged wider")?;
         ui.set_channel_sidebar_width(230.0);
+        Ok(())
+    }
+
+    // -------------------------------------------- members, profile, friends
+
+    fn social_screens(&mut self) -> Result<(), Box<dyn Error>> {
+        self.enter_chat();
+        let ui = self.ui.clone_strong();
+        let all = sample_messages();
+        ui.set_messages(model(all[0..5].to_vec()));
+
+        ui.set_show_member_list(false);
+        self.shot("chat-members-hidden", "Chat: member list collapsed from the channel header")?;
+        ui.set_show_member_list(true);
+        ui.set_member_rows(model(Vec::new()));
+        self.shot("chat-members-loading", "Chat: member list before the server sent it")?;
+        ui.set_member_rows(model(sample_members()));
+
+        // Threads under their channel and a forum channel.
+        let mut rows = sample_channels();
+        let at = rows.iter().position(|c| c.id == "c-general").map(|i| i + 1).unwrap_or(rows.len());
+        let mut thread = channel("t-plan", "release plan");
+        thread.is_thread = true;
+        thread.has_parent = true;
+        thread.parent_channel_id = "c-general".into();
+        let mut thread_two = channel("t-bugs", "bug triage");
+        thread_two.is_thread = true;
+        thread_two.has_parent = true;
+        thread_two.parent_channel_id = "c-general".into();
+        let mut forum = channel("c-forum", "ideas");
+        forum.is_forum = true;
+        forum.has_parent = true;
+        forum.parent_channel_id = "cat-text".into();
+        for (offset, row) in [thread, thread_two, forum].into_iter().enumerate() {
+            rows.insert(at + offset, row);
+        }
+        ui.set_channels(model(rows));
+        self.shot("chat-threads-sidebar", "Chat: threads listed under their channel and a forum channel")?;
+        ui.set_channels(model(sample_channels()));
+
+        // Profile card opened from a message author.
+        ui.set_profile_user_id("u-mira".into());
+        ui.set_profile_loading(true);
+        ui.set_profile_name("Mira".into());
+        ui.set_profile_avatar_initial("M".into());
+        ui.set_show_profile_popout(true);
+        self.shot("profile-popout-loading", "Profile card while the profile loads")?;
+        ui.set_profile_loading(false);
+        ui.set_profile_username("@mira".into());
+        ui.set_profile_bio("Designer, coffee drinker, voice chat regular.".into());
+        ui.set_profile_created("Account created Mar 4, 2019".into());
+        ui.set_profile_mutual("3 mutual servers".into());
+        ui.set_profile_has_avatar(true);
+        ui.set_profile_avatar_img(avatar_image(1, 72));
+        ui.set_profile_roles(model(vec![
+            ProfileRole { name: "Moderator".into(), color: slint::Color::from_rgb_u8(46, 204, 113) },
+            ProfileRole { name: "Designer".into(), color: slint::Color::from_rgb_u8(155, 89, 182) },
+        ]));
+        self.shot("profile-popout", "Profile card: bio, roles, mutual servers and actions")?;
+        ui.set_profile_status("Click Block again to confirm".into());
+        self.shot("profile-popout-status", "Profile card with a status line under the actions")?;
+        ui.set_profile_status("".into());
+        ui.set_profile_is_self(true);
+        ui.set_profile_mutual("".into());
+        self.shot("profile-popout-self", "Profile card of the signed in user")?;
+        ui.set_profile_is_self(false);
+        ui.set_show_profile_popout(false);
+
+        // Server menu.
+        ui.set_server_menu_guild_id("g1".into());
+        ui.set_server_menu_guild_name("Litecord HQ".into());
+        ui.set_show_server_menu(true);
+        self.shot("server-menu", "Server menu: mark as read, invite, mute, join and leave")?;
+        ui.set_server_menu_notice("Invite link copied".into());
+        self.shot("server-menu-notice", "Server menu with a notice")?;
+        ui.set_server_menu_notice("".into());
+        ui.set_server_menu_confirm_leave(true);
+        self.shot("server-menu-confirm-leave", "Server menu asking to confirm leaving the server")?;
+        ui.set_server_menu_confirm_leave(false);
+        ui.set_show_server_menu(false);
+
+        // Account menu with the custom status notice.
+        ui.set_show_user_menu(true);
+        ui.set_status_notice("Status updated".into());
+        self.shot("user-menu-status-notice", "Account menu: custom status with a notice")?;
+        ui.set_status_notice("".into());
+        ui.set_show_user_menu(false);
+
+        // Friends view in the direct messages area.
+        ui.set_active_guild_id("@me".into());
+        ui.set_active_guild_name("Direct Messages".into());
+        ui.set_channels(model(sample_dm_channels()));
+        ui.set_avatar_pool(model(vec![avatar_image(1, 48), avatar_image(2, 48), avatar_image(3, 48)]));
+        ui.set_avatar_pool_urls(text_model(&["sample://avatar/1", "sample://avatar/2", "sample://avatar/3"]));
+        ui.set_friends_pending_count(2);
+        ui.set_show_friends(true);
+        ui.set_friends_tab(0);
+        ui.set_friends_items(model(sample_friends(0)));
+        self.shot("friends-online", "Friends: online tab")?;
+        ui.set_friends_tab(1);
+        ui.set_friends_items(model(sample_friends(1)));
+        self.shot("friends-all", "Friends: all tab")?;
+        ui.set_friends_tab(2);
+        ui.set_friends_items(model(sample_friends(2)));
+        self.shot("friends-pending", "Friends: pending requests with accept and ignore")?;
+        ui.set_friends_tab(3);
+        ui.set_friends_items(model(sample_friends(3)));
+        self.shot("friends-blocked", "Friends: blocked users")?;
+        ui.set_friends_tab(1);
+        ui.set_friends_items(model(Vec::new()));
+        self.shot("friends-empty", "Friends: empty list")?;
+        ui.set_friends_items(model(sample_friends(1)));
+        ui.set_friends_add_text("someone#1234".into());
+        ui.set_friends_status("Friend request sent".into());
+        ui.set_friends_status_is_error(false);
+        self.shot("friends-add-ok", "Friends: add by username, request sent")?;
+        ui.set_friends_status("No user with that name was found".into());
+        ui.set_friends_status_is_error(true);
+        self.shot("friends-add-error", "Friends: add by username, error under the box")?;
+        ui.set_friends_status("".into());
+        ui.set_friends_status_is_error(false);
+        ui.set_friends_add_text("".into());
+        ui.set_friends_pending_count(0);
+        ui.set_show_friends(false);
         Ok(())
     }
 
@@ -853,6 +983,58 @@ fn sample_accounts() -> Vec<AccountItem> {
         AccountItem { id: "u-alt".into(), username: "Second Account".into(), tag: "second#0002".into(), avatar_initials: "S".into(), is_active: false, ..Default::default() },
         AccountItem { id: "u-work".into(), username: "Work Account".into(), tag: "work#0003".into(), avatar_initials: "W".into(), is_active: false, ..Default::default() },
     ]
+}
+
+fn sample_members() -> Vec<MemberRowItem> {
+    let group = |text: &str| MemberRowItem { is_group: true, text: text.into(), ..Default::default() };
+    let member = |name: &str, status: i32, bot: bool, color: Option<(u8, u8, u8)>| MemberRowItem {
+        is_group: false,
+        text: name.into(),
+        avatar_text: name.chars().next().map(|c| c.to_string()).unwrap_or_default().into(),
+        status,
+        is_bot: bot,
+        has_color: color.is_some(),
+        name_color: color.map(|(r, g, b)| slint::Color::from_rgb_u8(r, g, b)).unwrap_or_default(),
+        ..Default::default()
+    };
+    vec![
+        group("MODERATOR - 2"),
+        member("Mira", 0, false, Some((46, 204, 113))),
+        member("Jonas", 2, false, Some((46, 204, 113))),
+        group("ONLINE - 3"),
+        member("Aiko", 0, false, None),
+        member("Litebot", 0, true, None),
+        member("Sam", 1, false, None),
+        group("OFFLINE - 2"),
+        member("Noor", 3, false, None),
+        member("Theo", 3, false, None),
+    ]
+}
+
+/// Rows of the friends view for a tab: 0 online, 1 all, 2 pending, 3 blocked.
+fn sample_friends(tab: i32) -> Vec<FriendItem> {
+    let item = |id: &str, name: &str, status: &str, kind: i32, online: bool| FriendItem {
+        id: id.into(),
+        name: name.into(),
+        initials: name.chars().next().map(|c| c.to_string()).unwrap_or_default().into(),
+        status: status.into(),
+        kind,
+        online,
+    };
+    match tab {
+        0 => vec![item("f1", "Mira", "Online", 1, true), item("f2", "Jonas", "Online", 1, true)],
+        1 => vec![
+            item("f1", "Mira", "Online", 1, true),
+            item("f2", "Jonas", "Online", 1, true),
+            item("f3", "Noor", "Offline", 1, false),
+            item("f4", "Theo", "Offline", 1, false),
+        ],
+        2 => vec![
+            item("p1", "Aiko", "Incoming friend request", 3, false),
+            item("p2", "Sam", "Outgoing friend request", 4, false),
+        ],
+        _ => vec![item("b1", "Spammer", "Blocked", 2, false)],
+    }
 }
 
 fn sample_guilds() -> Vec<GuildItem> {

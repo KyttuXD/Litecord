@@ -9,3 +9,5 @@ pub mod helpers {
 pub mod message_grouping;
 #[path = "../../../../src/ui/message_jump.rs"]
 pub mod message_jump;
+#[path = "../../../../src/ui/relationships.rs"]
+pub mod relationships;
