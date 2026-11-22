@@ -1,0 +1,25 @@
+# Compiles the main app for macOS Intel on every push, so macOS-only code is checked
+# without waiting for a nightly. (ci.yml belongs to upstream and is not edited here.)
+name: macOS compile check
+
+on:
+  push:
+    branches: [feature/**]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  check-macos:
+    runs-on: macos-15-intel
+    env:
+      MACOSX_DEPLOYMENT_TARGET: "10.12"
+      RUSTFLAGS: "-C link-arg=-Wl,-weak_framework,AVFoundation -A linker_messages"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-apple-darwin
+      - uses: Swatinem/rust-cache@v2
+      - run: brew install nasm
+      - run: cargo check --bin litecord --target x86_64-apple-darwin
+      - run: cargo test --lib --target x86_64-apple-darwin
