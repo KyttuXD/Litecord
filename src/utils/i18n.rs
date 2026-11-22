@@ -592,22 +592,20 @@ fn env_locale() -> Option<String> {
 
 #[cfg(target_os = "macos")]
 pub fn detect_os_language() -> Language {
-    if let Some(loc) = env_locale() {
-        return language_from_locale(&loc).unwrap_or(Language::English);
-    }
-    // GUI apps launched from Finder have no locale variables; ask the system.
-    let out = std::process::Command::new("/usr/bin/defaults")
+    // The system UI language wins: Terminal and ssh sessions often export LANG=en_US.UTF-8
+    // or LANG=C regardless of it. The environment is only the fallback.
+    let from_defaults = std::process::Command::new("/usr/bin/defaults")
         .args(["read", "-g", "AppleLanguages"])
-        .output();
-    if let Ok(out) = out {
-        if out.status.success() {
-            let text = String::from_utf8_lossy(&out.stdout);
-            if let Some(first) = first_apple_language(&text) {
-                return language_from_locale(&first).unwrap_or(Language::English);
-            }
-        }
+        .output()
+        .ok()
+        .filter(|o| o.status.success())
+        .and_then(|o| first_apple_language(&String::from_utf8_lossy(&o.stdout)));
+    if let Some(first) = from_defaults {
+        return language_from_locale(&first).unwrap_or(Language::English);
     }
-    Language::English
+    env_locale()
+        .and_then(|loc| language_from_locale(&loc))
+        .unwrap_or(Language::English)
 }
 
 #[cfg(not(any(target_os = "windows", target_os = "macos")))]

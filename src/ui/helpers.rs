@@ -1011,37 +1011,44 @@ pub fn trim_process_memory() {
         use windows_sys::Win32::System::Threading::GetCurrentProcess;
         K32EmptyWorkingSet(GetCurrentProcess());
     }
-    #[cfg(target_os = "linux")]
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
     {
         trim_allocator_memory();
     }
-    #[cfg(target_os = "macos")]
-    unsafe {
-        // libSystem: ask every malloc zone to hand free pages back to the OS.
-        extern "C" {
-            fn malloc_zone_pressure_relief(
-                zone: *mut std::ffi::c_void,
-                goal: usize,
-            ) -> usize;
-        }
-        malloc_zone_pressure_relief(std::ptr::null_mut(), 0);
-    }
 }
 
 
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 pub fn trim_allocator_memory() {
     unsafe {
         extern "C" {
-            pub fn malloc_trim(pad: usize) -> i32;
-            pub fn mi_collect(force: bool);
+            fn mi_collect(force: bool);
         }
-        malloc_trim(0);
+        #[cfg(target_os = "linux")]
+        {
+            extern "C" {
+                fn malloc_trim(pad: usize) -> i32;
+            }
+            malloc_trim(0);
+        }
+        // The Rust heap is mimalloc on every platform.
         mi_collect(true);
+        #[cfg(target_os = "macos")]
+        {
+            // libSystem: ask every system malloc zone (AppKit, CoreFoundation, ...) to
+            // hand free pages back to the OS.
+            extern "C" {
+                fn malloc_zone_pressure_relief(
+                    zone: *mut std::ffi::c_void,
+                    goal: usize,
+                ) -> usize;
+            }
+            malloc_zone_pressure_relief(std::ptr::null_mut(), 0);
+        }
     }
 }
 
-#[cfg(not(target_os = "linux"))]
+#[cfg(not(any(target_os = "linux", target_os = "macos")))]
 #[allow(dead_code)]
 pub fn trim_allocator_memory() {}
 

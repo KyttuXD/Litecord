@@ -34,9 +34,21 @@ fn truncate_thread_name(name: &str, max_bytes: usize) -> Vec<u8> {
 // Linux limits the name to 15 bytes plus the NUL (TASK_COMM_LEN is 16).
 #[cfg(target_os = "linux")]
 pub fn set_current_thread_name(name: &str) {
+    unsafe {
+        // The main thread's name is the process name (comm); leave it alone.
+        if libc::syscall(libc::SYS_gettid) as libc::pid_t == libc::getpid() {
+            return;
+        }
+    }
     let buf = truncate_thread_name(name, 15);
     unsafe {
-        let _ = libc::prctl(libc::PR_SET_NAME, buf.as_ptr() as libc::c_ulong, 0, 0, 0);
+        let _ = libc::prctl(
+            libc::PR_SET_NAME,
+            buf.as_ptr() as libc::c_ulong,
+            0 as libc::c_ulong,
+            0 as libc::c_ulong,
+            0 as libc::c_ulong,
+        );
     }
 }
 
