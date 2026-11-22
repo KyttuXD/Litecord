@@ -15,6 +15,7 @@ pub mod encoder;
 pub mod screen_capture;
 #[cfg(feature = "automation")]
 mod automation;
+mod screens;
 
 // Convenient re-exports for modules and root scope
 pub use auth::*;
@@ -172,6 +173,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     #[cfg(target_os = "macos")]
     use_macos_data_dir();
     let _tokio_guard = tokio::runtime::Handle::current().enter();
+
+    // `litecord --screens <dir>`: render every screen to PNG files and exit. Nothing else
+    // starts (no logger, tray, audio, gateway or saved settings); see src/screens.rs.
+    if let Some(dir) = screens::requested_dir() {
+        return screens::run(&dir);
+    }
 
     #[cfg(all(unix, not(target_vendor = "apple")))]
     let _ = i_slint_backend_winit::set_xdg_app_id("litecord");

@@ -76,3 +76,8 @@ desktop.ini
 
 # Local build configuration (machine-specific paths, different for each person)
 .cargo/config.toml
+
+# UI parity screenshots (docs/UI_PARITY.md)
+/out-linux/
+/out-macos/
+/ui-diff/

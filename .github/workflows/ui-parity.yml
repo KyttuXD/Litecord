@@ -1,0 +1,134 @@
+# Renders every screen of the UI with `litecord --screens <dir>` on Linux and on macOS and
+# compares the two sets of pictures (scripts/ui_diff.py). See docs/UI_PARITY.md.
+name: UI parity screenshots
+
+on:
+  push:
+    branches: [feature/**]
+  workflow_dispatch:
+
+jobs:
+  linux:
+    name: Screenshots (Linux)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Linux System Dependencies
+        run: |
+          sudo apt-get update
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+            pkg-config \
+            libasound2-dev \
+            libssl-dev \
+            libgtk-3-dev \
+            libayatana-appindicator3-dev \
+            libxdo-dev \
+            libx11-dev \
+            libxkbcommon-dev \
+            libwayland-dev \
+            libfontconfig1-dev \
+            libfreetype6-dev \
+            libxkbcommon-x11-dev \
+            libxkbcommon-x11-0 \
+            patchelf \
+            xvfb
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: "ui-parity-linux"
+          cache-on-failure: true
+
+      - name: Render the screens
+        run: xvfb-run -a cargo run --release --bin litecord -- --screens out-linux
+
+      - name: Upload Linux screenshots
+        uses: actions/upload-artifact@v4
+        with:
+          name: screens-linux
+          path: |
+            out-linux/*.png
+            out-linux/index.json
+          if-no-files-found: error
+
+  macos:
+    name: Screenshots (macOS)
+    runs-on: macos-15-intel
+    env:
+      MACOSX_DEPLOYMENT_TARGET: "10.12"
+      RUSTFLAGS: "-C link-arg=-Wl,-weak_framework,AVFoundation -A linker_messages"
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-apple-darwin
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: "ui-parity-macos"
+          cache-on-failure: true
+
+      - name: Install build tools
+        run: brew install nasm
+
+      - name: Render the screens
+        run: cargo run --release --bin litecord --target x86_64-apple-darwin -- --screens out-macos
+
+      - name: Upload macOS screenshots
+        uses: actions/upload-artifact@v4
+        with:
+          name: screens-macos
+          path: |
+            out-macos/*.png
+            out-macos/index.json
+          if-no-files-found: error
+
+  compare:
+    name: Compare Linux and macOS
+    needs: [linux, macos]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Download Linux screenshots
+        uses: actions/download-artifact@v4
+        with:
+          name: screens-linux
+          path: out-linux
+
+      - name: Download macOS screenshots
+        uses: actions/download-artifact@v4
+        with:
+          name: screens-macos
+          path: out-macos
+
+      - name: Install Pillow
+        run: python3 -m pip install --user pillow
+
+      - name: Compare
+        run: python3 scripts/ui_diff.py out-linux out-macos --out ui-diff --label-a Linux --label-b macOS
+
+      - name: Add the report to the job summary
+        if: always()
+        run: |
+          if [ -f ui-diff/report.md ]; then
+            cat ui-diff/report.md >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Upload report and diff images
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ui-parity-report
+          path: ui-diff
+          if-no-files-found: warn
