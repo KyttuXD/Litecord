@@ -376,6 +376,22 @@ impl DiscordHttpClient {
         }
     }
 
+    pub async fn get_guild_roles(&self, guild_id: &str) -> Result<Vec<serde_json::Value>, String> {
+        let url = format!("https://discord.com/api/v10/guilds/{}/roles", guild_id);
+        match self.client.get(&url).send().await {
+            Ok(resp) => {
+                let status = resp.status();
+                if status.is_success() {
+                    if let Ok(roles) = resp.json::<Vec<serde_json::Value>>().await {
+                        return Ok(roles);
+                    }
+                }
+                Err(format!("Status HTTP {}", status))
+            }
+            Err(e) => Err(format!("Erro HTTP ao buscar cargos do servidor: {:?}", e)),
+        }
+    }
+
     pub async fn get_guild_application_command_index(&self, guild_id: &str) -> Result<serde_json::Value, String> {
         let url = format!("https://discord.com/api/v9/guilds/{}/application-command-index", guild_id);
         match self.client.get(&url).send().await {

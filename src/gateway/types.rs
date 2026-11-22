@@ -182,6 +182,10 @@ pub enum GatewayEvent {
     CallEnded {
         channel_id: String,
     },
+    /// The member list of a server changed; read it with `member_list::with_list`.
+    MemberListUpdated {
+        guild_id: String,
+    },
 }
 
 #[derive(Debug, Clone)]
@@ -200,6 +204,11 @@ pub enum GatewayCommand {
     /// Op 3: the user picked a new presence status.
     UpdatePresence {
         status: String,
+    },
+    /// Asks the gateway (opcode 14) for the member list as seen from a text channel.
+    SubscribeMemberList {
+        guild_id: String,
+        channel_id: String,
     },
 }
 

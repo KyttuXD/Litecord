@@ -11,6 +11,8 @@ pub mod presence;
 pub mod channel_events;
 #[path = "../../../src/gateway/unread.rs"]
 pub mod unread;
+#[path = "../../../src/gateway/member_list.rs"]
+pub mod member_list;
 #[path = "../../../src/gateway/client.rs"]
 pub mod client;
 

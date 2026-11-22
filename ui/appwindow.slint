@@ -6,6 +6,7 @@ import "../assets/fonts/Inter-Variable.ttf";
 
 import { IconButton } from "components/icon_button.slint";
 import { ChannelSidebar, ChannelItem } from "components/channel_sidebar.slint";
+import { MemberListPanel, MemberRowItem } from "components/member_list_panel.slint";
 import { SettingsView, LanguageItem, SettingOptionItem, AudioDeviceItem } from "components/settings_view.slint";
 import { ChatMessagesView, LinkItem, MessageBlock, MessageLine, MessageAttachment, MessageButton, ChatMessage } from "components/chat_messages_view.slint";
 
@@ -555,6 +556,9 @@ export component AppWindow inherits Window {
     in property <[image]> avatar_pool: [];
     in property <[image]> channel_emoji_pool: [];
     in property <[string]> avatar_pool_urls: [];
+    // Right-hand member list of the open server (filled from the gateway's member list).
+    in-out property <[MemberRowItem]> member_rows: [];
+    in-out property <bool> show_member_list: true;
     in-out property <[ChatMessage]> messages: [
         { author: "Litecord System", show_header: true, timestamp: Tr.now_label, content: Tr.welcome_msg }
     ];
@@ -2746,7 +2750,10 @@ export component AppWindow inherits Window {
                     }
                 }
 
-                if (!root.is_voice_focused || !root.is_in_voice): VerticalBox {
+                if (!root.is_voice_focused || !root.is_in_voice): HorizontalLayout {
+                  spacing: 0px;
+                  VerticalBox {
+                    horizontal-stretch: 1;
                     padding: 0px;
                     spacing: 0px;
 
@@ -2883,6 +2890,32 @@ export component AppWindow inherits Window {
                                     header_search_ta := TouchArea {
                                         mouse-cursor: pointer;
                                         clicked => { root.show_search_popup = !root.show_search_popup; }
+                                    }
+                                }
+                            }
+
+                            // Show / hide the member list — visible only inside servers
+                            if root.active_guild_id != "@me" && root.active_guild_id != "": VerticalLayout {
+                                alignment: center;
+                                Rectangle {
+                                    height: 28px;
+                                    width: 78px;
+                                    border-radius: 4px;
+                                    background: members_toggle_ta.has-hover ? AppTheme.interactive-hover : (root.show_member_list ? AppTheme.interactive-selected : transparent);
+                                    animate background { duration: 120ms; }
+
+                                    Text {
+                                        text: "Members";
+                                        color: root.show_member_list ? AppTheme.text-strong : AppTheme.text-muted;
+                                        font-size: TypeScale.small;
+                                        font-weight: 600;
+                                        horizontal-alignment: center;
+                                        vertical-alignment: center;
+                                    }
+
+                                    members_toggle_ta := TouchArea {
+                                        mouse-cursor: pointer;
+                                        clicked => { root.show_member_list = !root.show_member_list; }
                                     }
                                 }
                             }
@@ -3561,6 +3594,14 @@ export component AppWindow inherits Window {
                             }
                         }
                     }
+                  }
+
+                  // Member list of the open server (collapsible from the channel header)
+                  if root.show_member_list && root.active_guild_id != "@me" && root.active_guild_id != "": MemberListPanel {
+                      rows: root.member_rows;
+                      avatar_pool: root.avatar_pool;
+                      avatar_pool_urls: root.avatar_pool_urls;
+                  }
                 }
             }
         }

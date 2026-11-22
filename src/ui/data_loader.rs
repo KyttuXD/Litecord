@@ -237,6 +237,8 @@ pub async fn fetch_and_populate_channels(
             ui.set_connection_status(format!("Server: {} | Gateway v9 (Online)", g_name_top).into());
             ui.set_active_guild_name(g_name_top.into());
             ui.set_active_guild_id(g_id_top.into());
+            // The members of the previous server must not show while this one loads.
+            ui.set_member_rows(slint::ModelRc::default());
         }
     });
 
@@ -258,6 +260,12 @@ pub async fn fetch_and_populate_channels(
         },
         async { tokio::join!(http.get_guild_channels(guild_id), http.get_channel_permissions(guild_id)) }
     );
+
+    if let Some(ch_id) = opened.as_ref() {
+        if *active_guild_id.lock().unwrap() == guild_id {
+            crate::ui::member_panel::request(&cmd_tx_store, &app_weak, http, guild_id, ch_id);
+        }
+    }
 
     let chans_json = match chans_res {
         Ok(chans) => {
@@ -470,7 +478,13 @@ pub async fn fetch_and_populate_channels(
     if opened.as_ref().is_some_and(|id| channels_data.iter().any(|c| &c.id == id)) {
         return;
     }
-    let opened_now = open_first_readable_channel(http, &app_weak, &active_guild_id, &active_channel_id, guild_id, &channels_data).await.is_some();
+    let opened_channel = open_first_readable_channel(http, &app_weak, &active_guild_id, &active_channel_id, guild_id, &channels_data).await;
+    if let Some(ch_id) = opened_channel.as_ref() {
+        if *active_guild_id.lock().unwrap() == guild_id {
+            crate::ui::member_panel::request(&cmd_tx_store, &app_weak, http, guild_id, ch_id);
+        }
+    }
+    let opened_now = opened_channel.is_some();
     if !opened_now && *active_guild_id.lock().unwrap() == guild_id {
         *active_channel_id.lock().unwrap() = String::new();
         let app_w_none = app_weak.clone();

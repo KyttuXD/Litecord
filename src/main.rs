@@ -4351,6 +4351,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             }
                         });
                     }
+                    crate::ui::member_panel::request(&cmd_tx_chan_select, &app_weak_chan_select, &http, &gid, &ch_id);
                     tokio::spawn(async move {
                         load_messages_for_channel(&http, app_w, &ch_id_clone).await;
                     });
@@ -5619,6 +5620,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     crate::ui::data_loader::remove_guild(
                         app_weak_inner, &guilds_map_inner, &active_guild_inner, &active_channel_inner, &guild_id,
                     );
+                }
+                GatewayEvent::MemberListUpdated { guild_id } => {
+                    if *active_guild_inner.lock().unwrap() == guild_id {
+                        crate::ui::member_panel::refresh(app_weak_inner, &guild_id);
+                    }
                 }
                 GatewayEvent::IncomingCall { channel_id, caller_name } => {
                     // Incoming DM call — show notification panel with the friend's name

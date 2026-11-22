@@ -55,6 +55,7 @@ const HANDLED_EVENTS: &[&str] = &[
     "CHANNEL_UPDATE",
     "CHANNEL_DELETE",
     "GUILD_MEMBERS_CHUNK",
+    "GUILD_MEMBER_LIST_UPDATE",
     "VOICE_STATE_UPDATE",
     "VOICE_SERVER_UPDATE",
     "MESSAGE_CREATE",
@@ -312,6 +313,12 @@ impl GatewayClient {
                             let _ = tx.send(Message::Text(payload.to_string().into())).await;
                         }
                     }
+                    GatewayCommand::SubscribeMemberList { guild_id, channel_id } => {
+                        let payload = super::member_list::subscribe_payload(&guild_id, &channel_id, 99);
+                        if let Some(tx) = client_cmd.ws_tx.lock().await.as_ref() {
+                            let _ = tx.send(Message::Text(payload.to_string().into())).await;
+                        }
+                    }
                 }
             }
         });
@@ -537,6 +544,8 @@ impl GatewayClient {
                     *self.user_id.lock().unwrap() = Some(uid.clone());
                     let uid_num = uid.parse::<u64>().unwrap_or(0);
                     super::unread::apply_ready(&v["d"]);
+                    // The lazy member list subscription does not survive a new session.
+                    super::member_list::reset_all();
 
                     let username = v["d"]["user"]["username"].as_str().unwrap_or("User");
                     let global_name = v["d"]["user"]["global_name"].as_str().unwrap_or(username);
@@ -1153,6 +1162,12 @@ impl GatewayClient {
                 }
                 "USER_GUILD_SETTINGS_UPDATE" => {
                     super::unread::apply_settings_entry(&v["d"]);
+                }
+                "GUILD_MEMBER_LIST_UPDATE" => {
+                    if let Some(update) = super::member_list::parse_update(&v["d"]) {
+                        super::member_list::apply_update(&update);
+                        let _ = self.event_tx.send(GatewayEvent::MemberListUpdated { guild_id: update.guild_id }).await;
+                    }
                 }
                 _ => {}
             }

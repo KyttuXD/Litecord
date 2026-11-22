@@ -1,0 +1,168 @@
+import { ListView } from "std-widgets.slint";
+import { AppTheme, TypeScale } from "../theme.slint";
+
+export struct MemberRowItem {
+    // A group header ("ONLINE - 12", "MODERATOR - 3") instead of a member.
+    is_group: bool,
+    // Header title, or the member's display name.
+    text: string,
+    avatar_text: string,
+    avatar_url: string,
+    avatar_slot: int,
+    // 0 = online, 1 = idle, 2 = do not disturb, 3 = offline
+    status: int,
+    is_bot: bool,
+    // Role colour of the name; only used while has_color is set.
+    has_color: bool,
+    name_color: color,
+}
+
+export component MemberListPanel inherits Rectangle {
+    in property <[MemberRowItem]> rows;
+    // Shared thumbnail pool: a row shows pool[slot] only while pool_urls[slot]
+    // still equals its own avatar_url, so a recycled slot never shows a wrong face.
+    in property <[image]> avatar_pool;
+    in property <[string]> avatar_pool_urls;
+    in property <string> empty_text: "Loading members...";
+
+    width: 240px;
+    background: AppTheme.surface-sidebar;
+
+    // Divider between the chat and the panel
+    Rectangle {
+        x: 0px;
+        y: 0px;
+        width: 1px;
+        height: parent.height;
+        background: AppTheme.separator;
+    }
+
+    if root.rows.length == 0 : Text {
+        text: root.empty_text;
+        color: AppTheme.text-muted;
+        font-size: TypeScale.small;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+    }
+
+    ListView {
+        x: 1px;
+        width: parent.width - 1px;
+        height: parent.height;
+
+        for row in root.rows : Rectangle {
+            height: row.is_group ? 32px : 42px;
+
+            if row.is_group : Text {
+                x: 16px;
+                y: 12px;
+                width: parent.width - 24px;
+                text: row.text;
+                color: AppTheme.text-muted;
+                font-size: TypeScale.micro;
+                font-weight: 700;
+                overflow: elide;
+            }
+
+            if !row.is_group : Rectangle {
+                x: 6px;
+                width: parent.width - 12px;
+                height: 38px;
+                border-radius: 6px;
+                background: member_ta.has-hover ? AppTheme.interactive-hover : transparent;
+                opacity: row.status == 3 ? 0.45 : 1.0;
+
+                HorizontalLayout {
+                    padding-left: 8px;
+                    padding-right: 8px;
+                    spacing: 10px;
+
+                    VerticalLayout {
+                        alignment: center;
+                        Rectangle {
+                            width: 32px;
+                            height: 32px;
+
+                            Rectangle {
+                                width: 32px;
+                                height: 32px;
+                                border-radius: 16px;
+                                background: AppTheme.interactive-selected;
+                                clip: true;
+
+                                Text {
+                                    text: row.avatar_text;
+                                    color: AppTheme.text-strong;
+                                    font-size: TypeScale.small;
+                                    font-weight: 700;
+                                    horizontal-alignment: center;
+                                    vertical-alignment: center;
+                                }
+                                if row.avatar_url != "" && root.avatar_pool_urls[row.avatar_slot] == row.avatar_url : Image {
+                                    source: root.avatar_pool[row.avatar_slot];
+                                    width: 100%;
+                                    height: 100%;
+                                    image-fit: cover;
+                                }
+                            }
+
+                            // Presence dot
+                            Rectangle {
+                                x: parent.width - 12px;
+                                y: parent.height - 12px;
+                                width: 12px;
+                                height: 12px;
+                                border-radius: 6px;
+                                background: AppTheme.surface-sidebar;
+                                Rectangle {
+                                    width: 8px;
+                                    height: 8px;
+                                    border-radius: 4px;
+                                    background: row.status == 0 ? AppTheme.success
+                                        : row.status == 1 ? AppTheme.warning
+                                        : row.status == 2 ? AppTheme.danger
+                                        : AppTheme.text-subtle;
+                                }
+                            }
+                        }
+                    }
+
+                    VerticalLayout {
+                        horizontal-stretch: 1;
+                        alignment: center;
+                        HorizontalLayout {
+                            spacing: 6px;
+                            Text {
+                                text: row.text;
+                                color: row.has_color ? row.name_color : AppTheme.text-primary;
+                                font-size: TypeScale.body;
+                                font-weight: 600;
+                                vertical-alignment: center;
+                                overflow: elide;
+                            }
+                            if row.is_bot : VerticalLayout {
+                                alignment: center;
+                                Rectangle {
+                                    height: 14px;
+                                    width: 28px;
+                                    border-radius: 3px;
+                                    background: AppTheme.accent;
+                                    Text {
+                                        text: "BOT";
+                                        color: AppTheme.text-on-accent;
+                                        font-size: 9px;
+                                        font-weight: 700;
+                                        horizontal-alignment: center;
+                                        vertical-alignment: center;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                member_ta := TouchArea { }
+            }
+        }
+    }
+}

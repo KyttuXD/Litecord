@@ -7,6 +7,7 @@ pub mod message_grouping;
 pub mod message_jump;
 pub mod gpu_video;
 pub mod window_place;
+pub mod member_panel;
 
 pub use helpers::*;
 pub use data_loader::*;
