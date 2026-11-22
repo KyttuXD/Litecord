@@ -12,7 +12,47 @@ pub fn set_current_thread_name(name: &str) {
     }
 }
 
-#[cfg(not(target_os = "windows"))]
+/// Builds the NUL-terminated thread name, cut to at most `max_bytes` bytes (not counting
+/// the NUL) on a char boundary. Interior NULs are dropped so the name is never rejected.
+#[cfg_attr(not(any(unix, test)), allow(dead_code))]
+fn truncate_thread_name(name: &str, max_bytes: usize) -> Vec<u8> {
+    let mut out: Vec<u8> = Vec::with_capacity(max_bytes + 1);
+    for ch in name.chars() {
+        if ch == '\0' {
+            continue;
+        }
+        if out.len() + ch.len_utf8() > max_bytes {
+            break;
+        }
+        let mut buf = [0u8; 4];
+        out.extend_from_slice(ch.encode_utf8(&mut buf).as_bytes());
+    }
+    out.push(0);
+    out
+}
+
+// Linux limits the name to 15 bytes plus the NUL (TASK_COMM_LEN is 16).
+#[cfg(target_os = "linux")]
+pub fn set_current_thread_name(name: &str) {
+    let buf = truncate_thread_name(name, 15);
+    unsafe {
+        let _ = libc::prctl(libc::PR_SET_NAME, buf.as_ptr() as libc::c_ulong, 0, 0, 0);
+    }
+}
+
+// macOS names the calling thread only; the limit is 63 bytes plus the NUL.
+#[cfg(target_os = "macos")]
+pub fn set_current_thread_name(name: &str) {
+    extern "C" {
+        fn pthread_setname_np(name: *const std::os::raw::c_char) -> i32;
+    }
+    let buf = truncate_thread_name(name, 63);
+    unsafe {
+        let _ = pthread_setname_np(buf.as_ptr() as *const std::os::raw::c_char);
+    }
+}
+
+#[cfg(not(any(target_os = "windows", target_os = "linux", target_os = "macos")))]
 pub fn set_current_thread_name(_name: &str) {}
 
 #[cfg(target_os = "windows")]
@@ -136,3 +176,31 @@ pub fn start_thread_cpu_profiler() {
 
 #[cfg(not(target_os = "windows"))]
 pub fn start_thread_cpu_profiler() {}
+
+#[cfg(test)]
+mod tests {
+    use super::truncate_thread_name;
+
+    #[test]
+    fn short_name_is_kept_and_nul_terminated() {
+        assert_eq!(truncate_thread_name("gpu-capture", 15), b"gpu-capture\0".to_vec());
+    }
+
+    #[test]
+    fn long_name_is_cut_to_limit() {
+        let v = truncate_thread_name("wasapi-isolated-loopback", 15);
+        assert_eq!(v, b"wasapi-isolated\0".to_vec());
+    }
+
+    #[test]
+    fn never_splits_a_utf8_char() {
+        // 14 ASCII bytes + a 2-byte char would make 16: the char must be dropped whole.
+        let v = truncate_thread_name("aaaaaaaaaaaaaa\u{e9}", 15);
+        assert_eq!(v, b"aaaaaaaaaaaaaa\0".to_vec());
+    }
+
+    #[test]
+    fn interior_nul_is_removed() {
+        assert_eq!(truncate_thread_name("a\0b", 15), b"ab\0".to_vec());
+    }
+}
