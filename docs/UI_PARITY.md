@@ -86,3 +86,7 @@ Add a `self.shot("name", "one line title")?` call in the matching group of `src/
 the properties that screen needs. Reset them afterwards so the next screen starts clean. Dropdowns are
 opened by clicking at a fixed position of the 1280x800 layout (`click`, `scroll`); if a settings page is
 rearranged, check that the dropdown pictures still show an open list and adjust the coordinates.
+
+## Limits of the pictures
+
+The screenshots are rendered with the Slint software renderer, not the femtovg GPU path of the shipped app. They show layout and content parity, not pixel output. Fonts come from the OS font set, so text differences between Linux and macOS may come from the OS and not from the UI. Consider a higher `--tolerance` for text-heavy screens.

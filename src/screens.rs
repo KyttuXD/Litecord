@@ -83,7 +83,7 @@ pub fn run(dir: &str) -> Result<(), Box<dyn Error>> {
         .map_err(|e| format!("could not install the screenshot platform: {e}"))?;
 
     let ui = AppWindow::new()?;
-    crate::apply_i18n_translations(&ui, crate::i18n::Language::English);
+    crate::apply_i18n_translations(&ui, crate::utils::i18n::Language::English);
     ui.set_use_light_theme(false);
     #[cfg(target_os = "linux")]
     ui.set_is_linux(true);
@@ -857,9 +857,9 @@ fn sample_accounts() -> Vec<AccountItem> {
 
 fn sample_guilds() -> Vec<GuildItem> {
     vec![
-        GuildItem { id: "g1".into(), name: "Litecord HQ".into(), icon: "L".into(), has_image: true, icon_image: icon_image(0, 48) },
+        GuildItem { id: "g1".into(), name: "Litecord HQ".into(), icon: "L".into(), has_image: true, icon_image: icon_image(0, 48), mention_count: 3, ..Default::default() },
         GuildItem { id: "g2".into(), name: "Rust Lounge".into(), icon: "R".into(), has_image: false, ..Default::default() },
-        GuildItem { id: "g3".into(), name: "Game Night".into(), icon: "G".into(), has_image: true, icon_image: icon_image(2, 48) },
+        GuildItem { id: "g3".into(), name: "Game Night".into(), icon: "G".into(), has_image: true, icon_image: icon_image(2, 48), has_unread: true, ..Default::default() },
         GuildItem { id: "g4".into(), name: "Design Club".into(), icon: "D".into(), has_image: false, ..Default::default() },
     ]
 }
