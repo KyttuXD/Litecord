@@ -110,6 +110,7 @@ pub enum GatewayEvent {
         attachments: Vec<MessageAttachmentData>,
         is_self: bool,
         is_edited: bool,
+        is_dm: bool,
         mentions_me: bool,
     },
     MessageUpdated {

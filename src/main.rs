@@ -337,6 +337,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let main_had_area = std::cell::Cell::new(true);
         let main_weak = app_weak.clone();
         app.window().on_winit_window_event(move |window, ev| {
+            if let winit::event::WindowEvent::Focused(focused) = ev {
+                crate::utils::notifications::WINDOW_FOCUSED.store(*focused, Ordering::Relaxed);
+            }
             if let Some(has) = has_area(window, ev) {
                 if has && !main_had_area.replace(has) {
                     i_slint_backend_winit::redraw_whole_window(window);
@@ -2463,6 +2466,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let new_val = video_settings::toggle_show_hardware_monitor();
         if let Some(ui) = app_weak_hw.upgrade() {
             ui.set_show_hardware_monitor(new_val);
+        }
+    });
+
+    let app_weak_notif = app_weak.clone();
+    app.on_toggle_desktop_notifications(move || {
+        let new_val = video_settings::toggle_desktop_notifications();
+        if let Some(ui) = app_weak_notif.upgrade() {
+            ui.set_desktop_notifications(new_val);
         }
     });
 
@@ -5365,13 +5376,29 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         }
                     });
                 }
-                GatewayEvent::MessageCreated { id, channel_id, author, author_id, created_at, avatar_url, is_bot, content, commands, content_lines, embed_content, embed_lines, embed_color, embed_footer, code_block, reply_author, reply_content, reply_command, links, buttons, attachments, is_self, is_edited, mentions_me } => {
+                GatewayEvent::MessageCreated { id, channel_id, author, author_id, created_at, avatar_url, is_bot, content, commands, content_lines, embed_content, embed_lines, embed_color, embed_footer, code_block, reply_author, reply_content, reply_command, links, buttons, attachments, is_self, is_edited, is_dm, mentions_me } => {
                     // Deduplication: ignore if this message was already processed earlier
                     if !id.is_empty() && crate::ui::helpers::mark_msg_seen(&id) {
                         continue;
                     }
 
                     let current_active_ch = active_channel_inner.lock().unwrap().clone();
+
+                    // Desktop notification for DMs and @mentions while the window is not focused.
+                    // Channel muting does not exist yet, so no channel is ever muted.
+                    if crate::utils::notifications::should_notify(
+                        video_settings::get_desktop_notifications(),
+                        is_self,
+                        is_dm,
+                        mentions_me,
+                        crate::utils::notifications::WINDOW_FOCUSED.load(Ordering::Relaxed) && APP_IS_VISIBLE.load(Ordering::Relaxed),
+                        APP_IS_VISIBLE.load(Ordering::Relaxed),
+                        channel_id == current_active_ch,
+                        false,
+                    ) {
+                        let title = if is_dm { author.clone() } else { format!("{} mentioned you", author) };
+                        crate::utils::notifications::show(&title, &content);
+                    }
                     // The sidebar shows one list: the DMs ("@me") or the open server's channels.
                     // Only a channel in that list has a row to update, and only DMs are
                     // ordered by recent activity (server channels keep their positions).

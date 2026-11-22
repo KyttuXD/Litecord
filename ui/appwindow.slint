@@ -404,6 +404,7 @@ export component AppWindow inherits Window {
     in-out property <bool> enable_self_preview_notice: true;
     in-out property <bool> show_hardware_monitor: true;
     in-out property <bool> use_gpu_renderer: false;
+    in-out property <bool> desktop_notifications: true;
     in-out property <bool> net_diag_running: false;
     in-out property <int> net_diag_verdict: -1;
     in-out property <bool> net_diag_signaling_ok: true;
@@ -428,6 +429,7 @@ export component AppWindow inherits Window {
     callback toggle_enable_self_preview_notice();
     callback toggle_hardware_monitor();
     callback toggle_gpu_renderer();
+    callback toggle_desktop_notifications();
     in-out property <length> channel_sidebar_width: 230px;
     callback channel_sidebar_width_committed(length);
     callback run_network_diagnostics();
@@ -3733,6 +3735,7 @@ export component AppWindow inherits Window {
         enable_self_preview_notice: root.enable_self_preview_notice;
         show_hardware_monitor: root.show_hardware_monitor;
         use_gpu_renderer: root.use_gpu_renderer;
+        desktop_notifications: root.desktop_notifications;
         net_diag_running: root.net_diag_running;
         net_diag_verdict: root.net_diag_verdict;
         net_diag_signaling_ok: root.net_diag_signaling_ok;
@@ -3769,6 +3772,7 @@ export component AppWindow inherits Window {
         toggle_enable_self_preview_notice => { root.toggle_enable_self_preview_notice(); }
         toggle_hardware_monitor => { root.toggle_hardware_monitor(); }
         toggle_gpu_renderer => { root.toggle_gpu_renderer(); }
+        toggle_desktop_notifications => { root.toggle_desktop_notifications(); }
         run_network_diagnostics => { root.run_network_diagnostics(); }
         copy_network_diagnostics => { root.copy_network_diagnostics(); }
         select_proxy_mode(arg0) => { root.select_proxy_mode(arg0); }

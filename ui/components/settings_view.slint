@@ -64,6 +64,7 @@ export component SettingsView inherits Rectangle {
     in property <bool> enable_self_preview_notice;
     in property <bool> show_hardware_monitor;
     in property <bool> use_gpu_renderer;
+    in property <bool> desktop_notifications;
     in property <bool> net_diag_running;
     in property <int> net_diag_verdict: -1; // -1 not run, 0 direct, 1 symmetric, 2 varying IP, 3 UDP blocked
     in property <bool> net_diag_signaling_ok: true;
@@ -101,6 +102,7 @@ export component SettingsView inherits Rectangle {
     callback toggle_enable_self_preview_notice();
     callback toggle_hardware_monitor();
     callback toggle_gpu_renderer();
+    callback toggle_desktop_notifications();
     callback run_network_diagnostics();
     callback copy_network_diagnostics();
     callback select_proxy_mode(string);
@@ -508,6 +510,12 @@ export component SettingsView inherits Rectangle {
                                     desc: Tr.perf_monitor_desc;
                                     checked: root.show_hardware_monitor;
                                     toggled => { root.toggle_hardware_monitor(); }
+                                }
+                                SettingsSwitchRow {
+                                    title: Tr.desktop_notifications;
+                                    desc: Tr.desktop_notifications_desc;
+                                    checked: root.desktop_notifications;
+                                    toggled => { root.toggle_desktop_notifications(); }
                                 }
                                 SettingsSwitchRow {
                                     title: Tr.gpu_render;

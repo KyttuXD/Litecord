@@ -895,6 +895,9 @@ impl GatewayClient {
                     let created_at = v["d"]["timestamp"].as_str().unwrap_or("").to_string();
                     let avatar_url = crate::ui::message_grouping::avatar_url_for_message(&v["d"]);
                     let is_bot = v["d"]["author"]["bot"].as_bool().unwrap_or(false);
+                    // A message without guild_id arrived in a DM or group DM.
+                    let is_dm = v["d"]["guild_id"].is_null();
+                    let mentions_me = is_mentioned(&v["d"], &my_uid, &[]);
 
                     let _ = self.event_tx.send(GatewayEvent::MessageCreated {
                         id,
@@ -924,7 +927,8 @@ impl GatewayClient {
                         attachments,
                         is_self,
                         is_edited: is_edited(&v["d"]),
-                        mentions_me: is_mentioned(&v["d"], &my_uid, &[]),
+                        is_dm,
+                        mentions_me,
                     }).await;
                 }
                 "MESSAGE_UPDATE" => {
