@@ -183,18 +183,11 @@ fn macos_hardware_uuid() -> Option<String> {
 }
 
 #[cfg(not(target_os = "windows"))]
-pub fn get_linux_vault_key() -> [u8; 32] {
+const VAULT_STATIC_MACHINE_ID: &str = "litecord_static_mid_fallback";
+
+#[cfg(not(target_os = "windows"))]
+fn derive_vault_key(machine_id: &str, user_id: &str) -> [u8; 32] {
     use sha2::{Sha256, Digest};
-    let machine_id = std::fs::read_to_string("/etc/machine-id")
-        .or_else(|_| std::fs::read_to_string("/var/lib/dbus/machine-id"))
-        .ok()
-        .or_else(macos_hardware_uuid)
-        .ok_or(())
-        .unwrap_or_else(|_| "litecord_static_mid_fallback".to_string());
-    let user_id = std::env::var("USER")
-        .or_else(|_| std::env::var("HOME"))
-        .unwrap_or_else(|_| "default_user".to_string());
-    
     let mut hasher = Sha256::new();
     hasher.update(b"litecord_linux_vault_key_salt_v1_2026");
     hasher.update(machine_id.trim().as_bytes());
@@ -206,12 +199,41 @@ pub fn get_linux_vault_key() -> [u8; 32] {
 }
 
 #[cfg(not(target_os = "windows"))]
-pub fn linux_vault_protect(data: &[u8]) -> Option<Vec<u8>> {
+fn vault_user_id() -> String {
+    std::env::var("USER")
+        .or_else(|_| std::env::var("HOME"))
+        .unwrap_or_else(|_| "default_user".to_string())
+}
+
+/// Derived once per process: reading the machine id (and, on macOS, spawning ioreg)
+/// on every encrypt/decrypt is wasteful.
+#[cfg(not(target_os = "windows"))]
+pub fn get_linux_vault_key() -> [u8; 32] {
+    static VAULT_KEY: std::sync::OnceLock<[u8; 32]> = std::sync::OnceLock::new();
+    *VAULT_KEY.get_or_init(|| {
+        let machine_id = std::fs::read_to_string("/etc/machine-id")
+            .or_else(|_| std::fs::read_to_string("/var/lib/dbus/machine-id"))
+            .ok()
+            .or_else(macos_hardware_uuid)
+            .unwrap_or_else(|| VAULT_STATIC_MACHINE_ID.to_string());
+        derive_vault_key(&machine_id, &vault_user_id())
+    })
+}
+
+/// Key used when no machine id could be read at all; a vault written in that situation
+/// must still be readable once the machine id becomes available (and vice versa).
+#[cfg(not(target_os = "windows"))]
+fn get_static_fallback_vault_key() -> [u8; 32] {
+    static FALLBACK_KEY: std::sync::OnceLock<[u8; 32]> = std::sync::OnceLock::new();
+    *FALLBACK_KEY.get_or_init(|| derive_vault_key(VAULT_STATIC_MACHINE_ID, &vault_user_id()))
+}
+
+#[cfg(not(target_os = "windows"))]
+fn vault_encrypt_with_key(key_bytes: &[u8; 32], data: &[u8]) -> Option<Vec<u8>> {
     use aes_gcm::{aead::{Aead, KeyInit}, Aes256Gcm, Key, Nonce};
     use rand::RngCore;
 
-    let key_bytes = get_linux_vault_key();
-    let key = Key::<Aes256Gcm>::from_slice(&key_bytes);
+    let key = Key::<Aes256Gcm>::from_slice(key_bytes);
     let cipher = Aes256Gcm::new(key);
     let mut nonce_bytes = [0u8; 12];
     rand::thread_rng().fill_bytes(&mut nonce_bytes);
@@ -228,19 +250,55 @@ pub fn linux_vault_protect(data: &[u8]) -> Option<Vec<u8>> {
 }
 
 #[cfg(not(target_os = "windows"))]
-pub fn linux_vault_unprotect(data: &[u8]) -> Option<Vec<u8>> {
+fn vault_decrypt_with_key(key_bytes: &[u8; 32], data: &[u8]) -> Option<Vec<u8>> {
     use aes_gcm::{aead::{Aead, KeyInit}, Aes256Gcm, Key, Nonce};
 
     if data.len() < 12 + 16 {
         return None;
     }
-    let key_bytes = get_linux_vault_key();
-    let key = Key::<Aes256Gcm>::from_slice(&key_bytes);
+    let key = Key::<Aes256Gcm>::from_slice(key_bytes);
     let cipher = Aes256Gcm::new(key);
     let nonce = Nonce::from_slice(&data[..12]);
     let ciphertext = &data[12..];
 
     cipher.decrypt(nonce, ciphertext).ok()
+}
+
+#[cfg(not(target_os = "windows"))]
+pub fn linux_vault_protect(data: &[u8]) -> Option<Vec<u8>> {
+    vault_encrypt_with_key(&get_linux_vault_key(), data)
+}
+
+#[cfg(not(target_os = "windows"))]
+pub fn linux_vault_unprotect(data: &[u8]) -> Option<Vec<u8>> {
+    let key = get_linux_vault_key();
+    if let Some(plain) = vault_decrypt_with_key(&key, data) {
+        return Some(plain);
+    }
+    // Retry once with the static fallback key before the caller treats the vault as empty.
+    let fallback = get_static_fallback_vault_key();
+    if fallback != key {
+        return vault_decrypt_with_key(&fallback, data);
+    }
+    None
+}
+
+/// Writes `data` to `path`, creating the file with mode 0600 from the start so there is
+/// never a window in which it is world-readable.
+#[cfg(unix)]
+fn write_private_file(path: &std::path::Path, data: &[u8]) -> std::io::Result<()> {
+    use std::io::Write;
+    use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
+
+    let mut file = std::fs::OpenOptions::new()
+        .write(true)
+        .create(true)
+        .truncate(true)
+        .mode(0o600)
+        .open(path)?;
+    // `mode` only applies to newly created files; tighten files that already existed.
+    let _ = file.set_permissions(std::fs::Permissions::from_mode(0o600));
+    file.write_all(data)
 }
 
 #[derive(serde::Serialize, serde::Deserialize, Clone, Debug, Default)]
@@ -358,15 +416,12 @@ pub fn save_account_vault(vault: &AccountVault) {
         if let Some(encrypted) = linux_vault_protect(json_str.as_bytes()) {
             let b64 = base64::Engine::encode(&base64::engine::general_purpose::STANDARD, &encrypted);
             let payload = format!("LNX_VAULT:{}", b64);
-            let _ = std::fs::write(&primary_path, &payload);
-            let _ = std::fs::write(&fallback_path, &payload);
+            let _ = write_private_file(&primary_path, payload.as_bytes());
+            let _ = write_private_file(&fallback_path, payload.as_bytes());
         } else {
-            let _ = std::fs::write(&primary_path, &json_str);
-            let _ = std::fs::write(&fallback_path, &json_str);
+            let _ = write_private_file(&primary_path, json_str.as_bytes());
+            let _ = write_private_file(&fallback_path, json_str.as_bytes());
         }
-        use std::os::unix::fs::PermissionsExt;
-        let _ = std::fs::set_permissions(&primary_path, std::fs::Permissions::from_mode(0o600));
-        let _ = std::fs::set_permissions(&fallback_path, std::fs::Permissions::from_mode(0o600));
     }
 }
 
@@ -580,3 +635,55 @@ pub fn auto_detect_discord_tokens() -> Vec<String> {
     tokens
 }
 
+
+#[cfg(all(test, unix))]
+mod tests {
+    use super::*;
+
+    fn scratch_dir(name: &str) -> std::path::PathBuf {
+        let home = std::env::var("HOME").expect("HOME");
+        let dir = std::path::PathBuf::from(home)
+            .join(".cache")
+            .join("claude-work")
+            .join("vault-tests")
+            .join(format!("{}-{}", name, std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    #[test]
+    fn vault_file_is_created_with_mode_0600() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = scratch_dir("mode");
+        let path = dir.join("session.vault");
+        write_private_file(&path, b"secret").unwrap();
+        let mode = std::fs::metadata(&path).unwrap().permissions().mode() & 0o777;
+        assert_eq!(mode, 0o600);
+        assert_eq!(std::fs::read(&path).unwrap(), b"secret");
+
+        // An existing, too-permissive file is tightened and truncated.
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o644)).unwrap();
+        write_private_file(&path, b"x").unwrap();
+        let mode = std::fs::metadata(&path).unwrap().permissions().mode() & 0o777;
+        assert_eq!(mode, 0o600);
+        assert_eq!(std::fs::read(&path).unwrap(), b"x");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn vault_encrypt_decrypt_round_trip() {
+        let plain = br#"{"accounts":[]}"#;
+        let enc = linux_vault_protect(plain).expect("encrypt");
+        assert_ne!(&enc[12..], &plain[..]);
+        assert_eq!(linux_vault_unprotect(&enc).as_deref(), Some(&plain[..]));
+        assert!(linux_vault_unprotect(&enc[..20]).is_none());
+    }
+
+    #[test]
+    fn vault_decrypt_falls_back_to_static_key() {
+        let plain = b"hello";
+        let enc = vault_encrypt_with_key(&get_static_fallback_vault_key(), plain).unwrap();
+        assert_eq!(linux_vault_unprotect(&enc).as_deref(), Some(&plain[..]));
+    }
+}
