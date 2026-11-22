@@ -315,9 +315,6 @@ mod ffi {
 
         pub fn CGWindowListCopyWindowInfo(option: u32, relative_to_window: u32) -> CFTypeRef;
         pub fn CGWindowListCreateImage(screen_bounds: CGRect, list_option: u32, window_id: u32, image_option: u32) -> CFTypeRef;
-        pub fn CGImageGetWidth(image: CFTypeRef) -> usize;
-        pub fn CGImageGetHeight(image: CFTypeRef) -> usize;
-        pub fn CGImageRelease(image: CFTypeRef);
         pub fn CGColorSpaceCreateDeviceRGB() -> CFTypeRef;
         pub fn CGColorSpaceRelease(space: CFTypeRef);
         pub fn CGBitmapContextCreate(
@@ -442,10 +439,10 @@ fn capture_window_rgb(target_hwnd: isize, target_w: u32, target_h: u32, out_bgra
         if image.is_null() {
             return None;
         }
-        let w = ffi::CGImageGetWidth(image);
-        let h = ffi::CGImageGetHeight(image);
+        let w = CGImageGetWidth(image as *mut c_void);
+        let h = CGImageGetHeight(image as *mut c_void);
         if w == 0 || h == 0 || w > 8192 || h > 8192 || w * h > 40_000_000 {
-            ffi::CGImageRelease(image);
+            CGImageRelease(image as *mut c_void);
             return None;
         }
 
@@ -485,7 +482,7 @@ fn capture_window_rgb(target_hwnd: isize, target_w: u32, target_h: u32, out_bgra
             }
             true
         });
-        ffi::CGImageRelease(image);
+        CGImageRelease(image as *mut c_void);
         if !drawn {
             return None;
         }
