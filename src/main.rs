@@ -2833,6 +2833,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 ui.set_active_channel_name(clean_name.into());
                 ui.set_active_channel_topic(tch.topic.clone().unwrap_or_default().into());
                 ui.set_active_channel_id(tch_id.clone().into());
+                ui.set_active_channel_is_forum(tch.is_forum);
 
                 let http_opt = http_client_leave.lock().unwrap().as_ref().cloned();
                 let app_w = app_weak_leave.clone();
@@ -4578,6 +4579,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 ui.set_active_channel_id(ch_id.clone().into());
                 ui.set_show_pins_popup(false);
                 ui.set_pinned_messages(Default::default());
+                ui.set_active_channel_is_forum(is_forum);
                 ui.set_is_voice_focused(false);
                 request_chat_scroll_to_bottom(app_weak_chan_select.clone());
 

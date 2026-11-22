@@ -295,6 +295,7 @@ pub async fn fetch_and_populate_channels(
                     ui.set_channels(slint::ModelRc::default());
                     ui.set_messages(slint::ModelRc::default());
                     ui.set_active_channel_id("".into());
+                    ui.set_active_channel_is_forum(false);
                     ui.set_active_channel_name(crate::utils::i18n_ui::ui_text().perms_unavailable.into());
                     ui.set_active_channel_topic("".into());
                     ui.set_titlebar_error(crate::utils::i18n_ui::ui_text().perms_failed.into());
@@ -341,7 +342,7 @@ pub async fn fetch_and_populate_channels(
                 position,
                 topic: None,
             });
-        } else if ch_type == 0 || ch_type == 2 || ch_type == 5 || ch_type == 13 || ch_type == 15 {
+        } else if ch_type == 0 || ch_type == 2 || ch_type == 5 || ch_type == 13 || ch_type == 15 || ch_type == 16 {
             match permissions.can_view(&ch) {
                 Ok(true) => {}
                 Ok(false) => continue,
@@ -417,7 +418,7 @@ pub async fn fetch_and_populate_channels(
             position: ch.position,
             topic: ch.topic,
             is_thread: false,
-            is_forum: ch.ch_type == gateway::threads::FORUM_CHANNEL_TYPE,
+            is_forum: ch.ch_type == gateway::threads::FORUM_CHANNEL_TYPE || ch.ch_type == 16,
         });
     }
 
@@ -449,7 +450,7 @@ pub async fn fetch_and_populate_channels(
                 position: ch.position,
                 topic: ch.topic,
                 is_thread: false,
-                is_forum: ch.ch_type == gateway::threads::FORUM_CHANNEL_TYPE,
+                is_forum: ch.ch_type == gateway::threads::FORUM_CHANNEL_TYPE || ch.ch_type == 16,
             });
         }
     }
@@ -502,6 +503,7 @@ pub async fn fetch_and_populate_channels(
                 ui.set_active_channel_name(crate::utils::i18n_ui::ui_text().no_text_channel.into());
                 ui.set_active_channel_topic("".into());
                 ui.set_active_channel_id("".into());
+                ui.set_active_channel_is_forum(false);
                 let empty_msgs = vec![ChatMessage {
                     id: "".into(),
                     author: "Litecord System".into(),
@@ -714,12 +716,13 @@ async fn open_first_readable_channel(
             return (!current.is_empty()).then_some(current);
         }
         if readable {
-            let (app_w, name, topic) = (app_weak.clone(), text_ch.name.clone(), text_ch.topic.clone().unwrap_or_default());
+            let (app_w, name, topic, is_forum) = (app_weak.clone(), text_ch.name.clone(), text_ch.topic.clone().unwrap_or_default(), text_ch.is_forum);
             let _ = slint::invoke_from_event_loop(move || {
                 if let Some(ui) = app_w.upgrade() {
                     ui.set_active_channel_name(crate::utils::styled_text::plain_display_name(name.trim_start_matches('#').trim()).as_ref().into());
                     ui.set_active_channel_topic(topic.into());
                     ui.set_active_channel_id(ch_id.into());
+                    ui.set_active_channel_is_forum(is_forum);
                 }
             });
             request_chat_scroll_to_bottom(app_weak.clone());
@@ -939,6 +942,7 @@ pub async fn fetch_and_populate_dms(
                 let _ = slint::invoke_from_event_loop(move || {
                     if let Some(ui) = app_w_name.upgrade() {
                         ui.set_active_channel_id(cid_top.into());
+                        ui.set_active_channel_is_forum(false);
                         ui.set_active_channel_name(crate::utils::styled_text::plain_display_name(&target_name).as_ref().into());
                         ui.set_active_channel_topic("".into());
                         let model = std::rc::Rc::new(slint::VecModel::from(ui_channels_updated));

@@ -1087,7 +1087,7 @@ impl GatewayClient {
                             let ch_type = ch["type"].as_u64().unwrap_or(0);
 
                             // type 0 = text, type 2 = voice, type 4 = category, type 5 = news, type 13 = stage, type 15 = forum
-                            if ch_type == 0 || ch_type == 2 || ch_type == 4 || ch_type == 5 || ch_type == 13 || ch_type == 15 {
+                            if ch_type == 0 || ch_type == 2 || ch_type == 4 || ch_type == 5 || ch_type == 13 || ch_type == 15 || ch_type == 16 {
                                 channels.push(ChannelData {
                                     id: ch_id,
                                     name: if ch_type == 4 { ch_name.to_uppercase() } else { ch_name },
@@ -1097,7 +1097,7 @@ impl GatewayClient {
                                     position: ch["position"].as_i64().unwrap_or(0),
                                     topic: ch["topic"].as_str().filter(|t| !t.trim().is_empty()).map(|t| t.trim().to_string()),
                                     is_thread: false,
-                                    is_forum: ch_type == super::threads::FORUM_CHANNEL_TYPE,
+                                    is_forum: ch_type == super::threads::FORUM_CHANNEL_TYPE || ch_type == 16,
                                 });
                             }
                         }

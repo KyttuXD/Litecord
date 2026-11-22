@@ -67,7 +67,7 @@ pub struct ChannelData {
     pub topic: Option<String>,
     /// A thread under `parent_id` (a text channel); opens like a channel.
     pub is_thread: bool,
-    /// A forum: it has posts (threads) instead of messages.
+    /// A forum (15) or media (16) channel: it has posts (threads) instead of messages.
     pub is_forum: bool,
 }
 

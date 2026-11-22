@@ -484,6 +484,8 @@ export component AppWindow inherits Window {
     in-out property <string> active_channel_name: Tr.select_channel;
     in-out property <string> active_channel_topic: "";
     in-out property <string> active_channel_id: "";
+    // Forum and media channels only take posts through threads, so the composer is hidden.
+    in-out property <bool> active_channel_is_forum: false;
     in-out property <string> active_guild_name: "";
     in-out property <string> active_guild_id: "";
     in-out property <bool> is_muted: false;
@@ -3497,7 +3499,7 @@ export component AppWindow inherits Window {
                             padding: 8px;
                             spacing: 8px;
 
-                            if root.active_command_name != "" : HorizontalLayout {
+                            if !root.active_channel_is_forum && root.active_command_name != "" : HorizontalLayout {
                                 horizontal-stretch: 1;
                                 spacing: 6px;
 
@@ -3607,7 +3609,17 @@ export component AppWindow inherits Window {
                                 }
                             }
 
-                            if root.active_command_name == "" : Rectangle {
+                            if root.active_channel_is_forum : Text {
+                                horizontal-stretch: 1;
+                                text: "Posts in this channel are threads: open one from the thread list";
+                                color: AppTheme.text-subtle;
+                                font-family: ChatTypography.family;
+                                font-size: ChatTypography.body-size;
+                                vertical-alignment: center;
+                                overflow: elide;
+                            }
+
+                            if !root.active_channel_is_forum && root.active_command_name == "" : Rectangle {
                                 horizontal-stretch: 1;
                                 background: AppTheme.surface-input;
                                 border-radius: 4px;
@@ -3673,14 +3685,14 @@ export component AppWindow inherits Window {
                                 }
                             }
 
-                            Button {
+                            if !root.active_channel_is_forum : Button {
                                 text: root.tr_attach;
                                 clicked => {
                                     root.pick_file();
                                 }
                             }
 
-                            Button {
+                            if !root.active_channel_is_forum : Button {
                                 text: root.tr_send;
                                 primary: true;
                                 clicked => {
