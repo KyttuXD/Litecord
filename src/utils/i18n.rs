@@ -533,16 +533,127 @@ pub fn detect_os_language() -> Language {
     }
 }
 
+/// Maps a locale string ("pt_BR.UTF-8", "pt-BR", "de") to a supported language by prefix.
 #[cfg(not(target_os = "windows"))]
+fn language_from_locale(locale: &str) -> Option<Language> {
+    let lower = locale.trim().to_lowercase();
+    if lower.starts_with("pt") { return Some(Language::Portuguese); }
+    if lower.starts_with("es") { return Some(Language::Spanish); }
+    if lower.starts_with("de") { return Some(Language::German); }
+    if lower.starts_with("fr") { return Some(Language::French); }
+    if lower.starts_with("ru") { return Some(Language::Russian); }
+    if lower.starts_with("ja") { return Some(Language::Japanese); }
+    None
+}
+
+/// POSIX precedence: LC_ALL, then LC_MESSAGES, then LANG; unset or empty values are skipped.
+#[cfg(not(target_os = "windows"))]
+fn pick_locale_env(
+    lc_all: Option<String>,
+    lc_messages: Option<String>,
+    lang: Option<String>,
+) -> Option<String> {
+    [lc_all, lc_messages, lang]
+        .into_iter()
+        .flatten()
+        .find(|v| !v.trim().is_empty())
+}
+
+/// First entry of the plist-style output of `defaults read -g AppleLanguages`,
+/// e.g. "(\n    \"pt-BR\",\n    en\n)".
+#[cfg(not(target_os = "windows"))]
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+fn first_apple_language(output: &str) -> Option<String> {
+    for line in output.lines() {
+        let entry = line
+            .trim()
+            .trim_start_matches('(')
+            .trim_end_matches(')')
+            .trim()
+            .trim_end_matches(',')
+            .trim()
+            .trim_matches('"')
+            .trim();
+        if !entry.is_empty() {
+            return Some(entry.to_string());
+        }
+    }
+    None
+}
+
+#[cfg(not(target_os = "windows"))]
+fn env_locale() -> Option<String> {
+    pick_locale_env(
+        std::env::var("LC_ALL").ok(),
+        std::env::var("LC_MESSAGES").ok(),
+        std::env::var("LANG").ok(),
+    )
+}
+
+#[cfg(target_os = "macos")]
 pub fn detect_os_language() -> Language {
-    if let Ok(lang) = std::env::var("LANG").or_else(|_| std::env::var("LC_ALL")).or_else(|_| std::env::var("LC_MESSAGES")) {
-        let lower = lang.to_lowercase();
-        if lower.starts_with("pt") { return Language::Portuguese; }
-        if lower.starts_with("es") { return Language::Spanish; }
-        if lower.starts_with("de") { return Language::German; }
-        if lower.starts_with("fr") { return Language::French; }
-        if lower.starts_with("ru") { return Language::Russian; }
-        if lower.starts_with("ja") { return Language::Japanese; }
+    if let Some(loc) = env_locale() {
+        return language_from_locale(&loc).unwrap_or(Language::English);
+    }
+    // GUI apps launched from Finder have no locale variables; ask the system.
+    let out = std::process::Command::new("/usr/bin/defaults")
+        .args(["read", "-g", "AppleLanguages"])
+        .output();
+    if let Ok(out) = out {
+        if out.status.success() {
+            let text = String::from_utf8_lossy(&out.stdout);
+            if let Some(first) = first_apple_language(&text) {
+                return language_from_locale(&first).unwrap_or(Language::English);
+            }
+        }
     }
     Language::English
+}
+
+#[cfg(not(any(target_os = "windows", target_os = "macos")))]
+pub fn detect_os_language() -> Language {
+    env_locale()
+        .and_then(|loc| language_from_locale(&loc))
+        .unwrap_or(Language::English)
+}
+
+#[cfg(all(test, not(target_os = "windows")))]
+mod os_language_tests {
+    use super::*;
+
+    fn s(v: &str) -> Option<String> { Some(v.to_string()) }
+
+    #[test]
+    fn prefix_matching() {
+        assert_eq!(language_from_locale("pt_BR.UTF-8"), Some(Language::Portuguese));
+        assert_eq!(language_from_locale("PT-br"), Some(Language::Portuguese));
+        assert_eq!(language_from_locale("es"), Some(Language::Spanish));
+        assert_eq!(language_from_locale("de_DE"), Some(Language::German));
+        assert_eq!(language_from_locale("fr-CA"), Some(Language::French));
+        assert_eq!(language_from_locale("ru_RU"), Some(Language::Russian));
+        assert_eq!(language_from_locale("ja_JP.UTF-8"), Some(Language::Japanese));
+        assert_eq!(language_from_locale("en_US.UTF-8"), None);
+        assert_eq!(language_from_locale("C"), None);
+        assert_eq!(language_from_locale(""), None);
+    }
+
+    #[test]
+    fn env_precedence() {
+        assert_eq!(pick_locale_env(s("a"), s("b"), s("c")), s("a"));
+        assert_eq!(pick_locale_env(None, s("b"), s("c")), s("b"));
+        assert_eq!(pick_locale_env(s(""), s("b"), s("c")), s("b"));
+        assert_eq!(pick_locale_env(s(""), s(""), s("c")), s("c"));
+        assert_eq!(pick_locale_env(None, None, s("  ")), None);
+        assert_eq!(pick_locale_env(None, None, None), None);
+    }
+
+    #[test]
+    fn apple_languages_output() {
+        let out = "(\n    \"pt-BR\",\n    en\n)\n";
+        assert_eq!(first_apple_language(out), s("pt-BR"));
+        assert_eq!(first_apple_language("(\n    en,\n    \"de-DE\"\n)"), s("en"));
+        assert_eq!(first_apple_language("(\"fr\")"), s("fr"));
+        assert_eq!(first_apple_language("(\n)\n"), None);
+        assert_eq!(first_apple_language(""), None);
+    }
 }
