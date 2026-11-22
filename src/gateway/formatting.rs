@@ -89,6 +89,15 @@ pub fn is_mentioned(m: &Value, own_id: &str, own_roles: &[String]) -> bool {
     m["mention_roles"].as_array().is_some_and(|l| l.iter().filter_map(|r| r.as_str()).any(|r| own_roles.iter().any(|o| o == r)))
 }
 
+/// Whether a message replies to one of `own_id`'s messages and pings them: the replied-to
+/// author is the user and the user is in `mentions` (absent when the reply ping is off).
+pub fn is_reply_to(m: &Value, own_id: &str) -> bool {
+    if own_id.is_empty() || m["referenced_message"]["author"]["id"].as_str() != Some(own_id) {
+        return false;
+    }
+    m["mentions"].as_array().is_some_and(|l| l.iter().any(|u| u["id"].as_str() == Some(own_id)))
+}
+
 /// Whether a message was edited (`edited_timestamp` is a string, not null).
 pub fn is_edited(m: &Value) -> bool {
     m["edited_timestamp"].as_str().is_some_and(|t| !t.is_empty())
@@ -1855,6 +1864,12 @@ mod tests {
         assert!(!is_mentioned(&m, "2", &["r1".to_string()]));
         assert!(!is_mentioned(&m, "", &[]));
         assert!(is_mentioned(&serde_json::json!({"mention_everyone":true}), "2", &[]));
+        let reply = serde_json::json!({"referenced_message":{"author":{"id":"2"}},"mentions":[{"id":"2"}]});
+        assert!(is_reply_to(&reply, "2"));
+        assert!(!is_reply_to(&reply, "3"));
+        let silent = serde_json::json!({"referenced_message":{"author":{"id":"2"}},"mentions":[]});
+        assert!(!is_reply_to(&silent, "2"));
+        assert!(!is_reply_to(&serde_json::json!({"mentions":[{"id":"2"}]}), "2"));
         assert!(is_edited(&m));
         assert!(!is_edited(&serde_json::json!({"edited_timestamp":null})));
         assert!(!is_edited(&serde_json::json!({})));

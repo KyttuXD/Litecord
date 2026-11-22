@@ -15,13 +15,15 @@ const MAX_BODY_CHARS: usize = 200;
 ///
 /// Silent when the user turned notifications off, wrote the message, the window is
 /// focused, the channel is muted, or the channel is open on a visible window. Otherwise
-/// only direct messages and @mentions notify.
+/// only direct messages, mentions (user, @everyone or a role the user holds) and replies
+/// to the user's messages that ping them notify.
 #[allow(clippy::too_many_arguments)]
 pub fn should_notify(
     enabled: bool,
     is_self: bool,
     is_dm: bool,
     mentions_me: bool,
+    reply_to_me: bool,
     window_focused: bool,
     window_visible: bool,
     channel_open: bool,
@@ -33,7 +35,7 @@ pub fn should_notify(
     if channel_open && window_visible {
         return false;
     }
-    is_dm || mentions_me
+    is_dm || mentions_me || reply_to_me
 }
 
 /// True when the message pings the current user: listed in `mentions`, or @everyone.
@@ -180,15 +182,26 @@ fn send(_title: &str, _body: &str) -> std::io::Result<()> {
 mod tests {
     use super::*;
 
-    type Case = (bool, bool, bool, bool, bool, bool, bool, bool);
+    type Case = (bool, bool, bool, bool, bool, bool, bool, bool, bool);
 
-    // enabled, is_self, is_dm, mentions_me, focused, visible, open, muted
+    // enabled, is_self, is_dm, mentions_me, reply_to_me, focused, visible, open, muted
     fn base() -> Case {
-        (true, false, true, false, false, false, false, false)
+        (true, false, true, false, false, false, false, false, false)
     }
 
     fn run(t: Case) -> bool {
-        should_notify(t.0, t.1, t.2, t.3, t.4, t.5, t.6, t.7)
+        should_notify(t.0, t.1, t.2, t.3, t.4, t.5, t.6, t.7, t.8)
+    }
+
+    #[test]
+    fn reply_to_me_in_server_notifies() {
+        let mut t = base();
+        t.2 = false;
+        assert!(!run(t));
+        t.4 = true;
+        assert!(run(t));
+        t.8 = true;
+        assert!(!run(t));
     }
 
     #[test]
@@ -220,20 +233,20 @@ mod tests {
         t.1 = true;
         assert!(!run(t));
         let mut t = base();
-        t.4 = true;
+        t.5 = true;
         assert!(!run(t));
         let mut t = base();
-        t.7 = true;
+        t.8 = true;
         assert!(!run(t));
     }
 
     #[test]
     fn open_channel_is_silent_only_while_window_visible() {
         let mut t = base();
+        t.7 = true;
         t.6 = true;
-        t.5 = true;
         assert!(!run(t));
-        t.5 = false;
+        t.6 = false;
         assert!(run(t));
     }
 

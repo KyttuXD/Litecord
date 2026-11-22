@@ -112,6 +112,8 @@ pub enum GatewayEvent {
         is_edited: bool,
         is_dm: bool,
         mentions_me: bool,
+        /// A reply to one of my messages that pings me (reply ping not turned off).
+        reply_to_me: bool,
     },
     MessageUpdated {
         id: String,

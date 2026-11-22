@@ -5586,7 +5586,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         }
                     });
                 }
-                GatewayEvent::MessageCreated { id, channel_id, author, author_id, created_at, avatar_url, is_bot, content, commands, content_lines, embed_content, embed_lines, embed_color, embed_footer, code_block, reply_author, reply_content, reply_command, links, buttons, attachments, is_self, is_edited, is_dm, mentions_me } => {
+                GatewayEvent::MessageCreated { id, channel_id, author, author_id, created_at, avatar_url, is_bot, content, commands, content_lines, embed_content, embed_lines, embed_color, embed_footer, code_block, reply_author, reply_content, reply_command, links, buttons, attachments, is_self, is_edited, is_dm, mentions_me, reply_to_me } => {
                     // Deduplication: ignore if this message was already processed earlier
                     if !id.is_empty() && crate::ui::helpers::mark_msg_seen(&id) {
                         continue;
@@ -5601,12 +5601,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         is_self,
                         is_dm,
                         mentions_me,
+                        reply_to_me,
                         crate::utils::notifications::WINDOW_FOCUSED.load(Ordering::Relaxed) && APP_IS_VISIBLE.load(Ordering::Relaxed),
                         APP_IS_VISIBLE.load(Ordering::Relaxed),
                         channel_id == current_active_ch,
                         false,
                     ) {
-                        let title = if is_dm { author.clone() } else { format!("{} mentioned you", author) };
+                        let title = if is_dm {
+                            author.clone()
+                        } else if reply_to_me && !mentions_me {
+                            format!("{} replied to you", author)
+                        } else {
+                            format!("{} mentioned you", author)
+                        };
                         crate::utils::notifications::show(&title, &content);
                     }
                     // The sidebar shows one list: the DMs ("@me") or the open server's channels.

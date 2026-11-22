@@ -382,6 +382,7 @@ impl GatewayClient {
                                 if head.permissions {
                                     if let Some(guild_id) = permission_change(&text, crate::gateway::get_my_user_id()) {
                                         crate::channel_permissions::forget(&guild_id);
+                                        super::own_roles::apply_member_update(&text, &guild_id, crate::gateway::get_my_user_id());
                                     }
                                 }
                                 if !head.wanted {
@@ -550,6 +551,7 @@ impl GatewayClient {
                     *self.user_id.lock().unwrap() = Some(uid.clone());
                     let uid_num = uid.parse::<u64>().unwrap_or(0);
                     super::unread::apply_ready(&v["d"]);
+                    super::own_roles::apply_ready(&v["d"], &uid);
                     // The lazy member list subscription does not survive a new session.
                     super::member_list::reset_all();
 
@@ -897,7 +899,9 @@ impl GatewayClient {
                     let is_bot = v["d"]["author"]["bot"].as_bool().unwrap_or(false);
                     // A message without guild_id arrived in a DM or group DM.
                     let is_dm = v["d"]["guild_id"].is_null();
-                    let mentions_me = is_mentioned(&v["d"], &my_uid, &[]);
+                    let own_roles = v["d"]["guild_id"].as_str().map(super::own_roles::get).unwrap_or_default();
+                    let mentions_me = is_mentioned(&v["d"], &my_uid, &own_roles);
+                    let reply_to_me = is_reply_to(&v["d"], &my_uid);
 
                     let _ = self.event_tx.send(GatewayEvent::MessageCreated {
                         id,
@@ -929,6 +933,7 @@ impl GatewayClient {
                         is_edited: is_edited(&v["d"]),
                         is_dm,
                         mentions_me,
+                        reply_to_me,
                     }).await;
                 }
                 "MESSAGE_UPDATE" => {
@@ -1077,6 +1082,10 @@ impl GatewayClient {
                 }
                 "GUILD_CREATE" => {
                     let id = v["d"]["id"].as_str().unwrap_or("").to_string();
+                    {
+                        let my_uid = self.user_id.lock().unwrap().clone().unwrap_or_default();
+                        super::own_roles::apply_guild_create(&v["d"], &my_uid);
+                    }
                     let name = v["d"]["name"].as_str().unwrap_or("Server").to_string();
                     let mut channels = Vec::new();
 

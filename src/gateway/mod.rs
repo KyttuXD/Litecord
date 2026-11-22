@@ -10,6 +10,7 @@ pub mod client;
 pub mod voice;
 pub mod presence;
 pub mod unread;
+pub mod own_roles;
 
 pub use types::*;
 pub use formatting::*;
